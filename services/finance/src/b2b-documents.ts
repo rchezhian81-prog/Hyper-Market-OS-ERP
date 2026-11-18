@@ -112,6 +112,11 @@ export interface B2BDocumentsDeps {
   /** The quotation ids that have already become an order — the `already_converted` guard (one quote, one order). */
   readonly convertedQuotationIds: (tenantId: string, customerId: string) => Promise<readonly string[]> | readonly string[];
   readonly recordDocument: (tenantId: string, customerId: string, doc: StoredB2BDocument) => Promise<void> | void;
+  /**
+   * OB-847: record a business customer's TAX INVOICE with its format-A number (`BINV/26-27/00001`), taken in the same save.
+   * Answers the invoice as saved. Absent → the older series (`allocateNumber` + `recordDocument`).
+   */
+  readonly recordNumberedTaxInvoice?: (tenantId: string, customerId: string, doc: StoredB2BDocument) => Promise<StoredB2BDocument>;
   /** Draw the next gap-free number for a (tenant, doc type). Called ONLY once the engine would issue. */
   readonly allocateNumber: (tenantId: string, docType: string) => Promise<number> | number;
   /** Does credit control clear an order of this value for this customer? (M22-FR-01). */
@@ -349,12 +354,17 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
             nextSafeAction: 'Deliver (challan) what is to be billed first. No number was drawn.',
           });
         }
-        const seq = await deps.allocateNumber(ctx.tenantId, DOCTYPE.tax_invoice);
+        // OB-847: with the numbered save, nothing is drawn before — the number (BINV/26-27/00001) is taken in the invoice's own save.
+        const numbered = deps.recordNumberedTaxInvoice !== undefined;
+        const seq = numbered ? 0 : await deps.allocateNumber(ctx.tenantId, DOCTYPE.tax_invoice);
         const result = issueTaxInvoice({ documentId, order, challans, alreadyInvoiced, format: FORMAT.tax_invoice, seq, at, ...(placeOfSupply === undefined ? {} : { placeOfSupply }) });
-        const doc = result.document;
-        if (doc === undefined) throw notFound(`invoice ${documentId}`); // unreachable — the probe issued
-        const stored: StoredB2BDocument = { ...doc, orderId: order.documentId, ...(gstNotJudged === undefined ? {} : { gstNotJudged }), ...(buyer === undefined ? {} : { buyer }) };
-        await deps.recordDocument(ctx.tenantId, customerId, stored);
+        const issuedDoc = result.document;
+        if (issuedDoc === undefined) throw notFound(`invoice ${documentId}`); // unreachable — the probe issued
+        const draft: StoredB2BDocument = { ...issuedDoc, orderId: order.documentId, ...(gstNotJudged === undefined ? {} : { gstNotJudged }), ...(buyer === undefined ? {} : { buyer }) };
+        let stored: StoredB2BDocument;
+        if (deps.recordNumberedTaxInvoice !== undefined) stored = await deps.recordNumberedTaxInvoice(ctx.tenantId, customerId, draft);
+        else { stored = draft; await deps.recordDocument(ctx.tenantId, customerId, stored); }
+        const doc = stored;
         // FUL-09: the invoice is now money owed — a receivable on the customer's terms, on the AR ledger, and for the books.
         const owed = await deps.afterTaxInvoice?.(ctx.tenantId, customerId, stored);
         // FUL-09 · M22-FR-03: the attributed salesperson's commission, derived from this invoice by the approved rule.

@@ -18,6 +18,8 @@
 //      means take me out of rotation, not restart me.
 //   5. **On SIGTERM, drain.** In-flight requests finish before the process goes.
 
+import { documentNumberRoutes, issuedDocumentNumbers } from '../../platform/src/document-number-issue';
+import { bankedReceiptCounts, formatAPackSection } from './adapters';
 import { once } from 'node:events';
 import { Pool, Client } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
@@ -547,6 +549,8 @@ export function buildSurface(deps: {
   readonly revocations?: TokenRevocationList;
   /** Durable gap-free number series (a SqlNumberSeriesStore-backed store in production). */
   readonly numberSeries?: NumberSeriesStore;
+  /** OB-847: false only in a test of the OLDER till numbering — store packs then carry no format-A section. Absent → format A. */
+  readonly tillFormatA?: boolean;
   /** The identity server's directory (OB-15-c): people's sign-ins given and ended from the product. Omitted: not connected. */
   readonly identityDirectory?: IdentityDirectory;
   /** The one shop whose realm that directory provisions into (OB-15-d). Other shops: not connected. */
@@ -1360,6 +1364,7 @@ export function buildSurface(deps: {
         storeName: async (tt, sid) => (await orgStructureAdapter({ store, now }).nodes(tt)).find((n) => n.nodeId === sid)?.name,
         // Verifier r18 OB85-2: the bill-number high-water resumes from its persisted snapshot (O(prefixes) per pack build).
         ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }),
+        ...(deps.tillFormatA === false ? { tillFormatA: false } : {}), // OB-847
         b2cDynamicQr: b2cDynamicQrSettingOf(settings), // A22 (OB-326, switched off)
         tillPolicies: tillSidePoliciesOf(settings, { store, now }), // OB-288 till side: OB-348/OB-354 shop state from the GSTIN · OB-299 delivery-fee product
         staffPurchase: staffPurchaseTillPolicyOf({ store, now }), // OB-301: the staff-purchase policy, judged by the box before its disk
@@ -1373,6 +1378,16 @@ export function buildSurface(deps: {
         supplierClaimDisputes: claimDisputeCountsFor({ store, now, calendar: shopCalendar }), // U7 · OB-727: the disputed supplier claims on Today
         storeTown: async (tt) => { const town = String(await settings.value(tt, SETTINGS.STORE_TOWN) ?? '').trim(); return town === '' ? undefined : town; }, // Batch 15
       }, t, storeId),
+    }),
+    // OB-847 · OB-844 A: every document-number range, its last number and the 90,000 warning; each till's lane code.
+    ...documentNumberRoutes(store === undefined ? { now, issues: async () => [], tills: async () => [] } : {
+      now,
+      issues: (t) => issuedDocumentNumbers(store, t),
+      tills: async (t) => {
+        const banked = await bankedReceiptCounts(store, t);
+        const branches = (await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').slice(0, 9);
+        return Promise.all(branches.map(async (b) => ({ storeId: b.nodeId, ...await formatAPackSection(store, now, t, b.nodeId, banked) })));
+      },
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
     // characters with the count, versioned and audited — and the store pack carries it to the till's store computer.
@@ -2487,6 +2502,8 @@ export interface RunningApi {
  * certified, is handed in here — and the notification worker starts with it. Tests hand in the recording adapter.
  */
 export interface ApiProviders {
+  /** OB-847: false only in a test of the OLDER till numbering (store packs with no format-A section). Absent → format A. */
+  readonly tillFormatA?: boolean;
   readonly notificationTransport?: NotificationTransport;
   /** R4 Lane 3 · EA-07 · OB-222: the brief's sending link — tests only; production has none, so sending stays off. */
   readonly briefSendingLink?: BriefSendingLink;
@@ -2757,6 +2774,7 @@ export async function startApi(
     // restart, the same table and rules the in-memory path uses in tests.
     settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))),
     numberSeries: new SqlNumberSeriesStore(pgPoolClient(db)),
+    ...(providers.tillFormatA === false ? { tillFormatA: false } : {}), // OB-847: tests of the older till numbering only
     // Durable projection snapshots (CORE-03): bounded reads resume from the last persisted fold
     // across a restart, rather than re-folding the whole ledger on a cold start.
     snapshots,

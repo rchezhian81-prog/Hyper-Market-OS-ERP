@@ -153,7 +153,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-204 · 
       await page.click('#return');
       await confirmIt(page); // U1 · OB-698: "Send … back to the supplier" asks the sheet first
       await page.locator('#result.tone-ok').filter({ hasText: 'Recorded' }).waitFor({ timeout: 15_000 });
-      await expect.poll(() => line(page).locator('.r-word').textContent(), { timeout: 15_000 }).toBe('Gone back to the supplier');
+      await expect.poll(() => line(page).locator('.r-word').textContent(), { timeout: 15_000 }).toMatch(/^Gone back to the supplier · RTS1\/\d\d-\d\d\/\d{5}$/); // OB-850: with its return-to-supplier number
       expect(await line(page).locator('.sre-chip.ewb').textContent()).toBe(`Dispatched under e-way bill ${EWB}`);
       const record = await headOffice();
       expect(record.lineReturns).toEqual([expect.objectContaining({ lineId: 'L1', dispatch: expect.objectContaining({ ewbNo: EWB, movementId: MOVEMENT }) })]);

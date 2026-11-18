@@ -9,6 +9,8 @@
 // route, or a compensating event a person's match caused (P-05). One entry point, `p3ProcureRoutes`, is registered from
 // main.ts; the hooks below are spread into the existing routes' deps there.
 
+import { appendWithDocumentNumber } from '../../platform/src/document-number-issue';
+import { numberedWords } from './adapters';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { InMemoryEventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
@@ -147,13 +149,16 @@ export function blanketReleaseHooks(input: Base): BlanketReleaseHooks {
         guard: { key, expectedVersion },
       };
     },
-    propose: async (tenantId, po, guard) => {
-      // The same event the ordinary proposal writes (same id and key), under the agreement's guard.
-      await input.store.appendBatch(tenantId, [{ stream: PURCHASE_ORDERS, event: makeEvent({
+    propose: async (tenantId, po, guard) => numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+      // The same event the ordinary proposal writes (same id and key), under the agreement's guard — and, OB-847, the
+      // order's number taken in the same save (the range's guard held together with the agreement's).
+      range: { kind: 'purchase_order' }, documentRef: po.poId, at: po.at, options: { guard },
+      entries: (documentNumber) => [{ stream: PURCHASE_ORDERS, event: makeEvent({
         id: `po-${po.poId}-proposed`, type: 'PurchaseOrderProposed', occurredAt: input.now(),
-        idempotencyKey: `po-${tenantId}-${po.poId}-proposed`, source: 'api/purchase', payload: po as unknown as Record<string, unknown>,
-      }) }], { guard });
-    },
+        idempotencyKey: `po-${tenantId}-${po.poId}-proposed`, source: 'api/purchase',
+        payload: (documentNumber === '' ? po : { ...po, documentNumber }) as unknown as Record<string, unknown>,
+      }) }],
+    })),
     issue: async (tenantId, poId, approvedBy, issuedAt, reason, guard, budgetGuard) => {
       await input.store.appendBatch(tenantId, [{ stream: PURCHASE_ORDERS, event: makeEvent({
         id: `po-${poId}-issued`, type: 'PurchaseOrderIssued', occurredAt: issuedAt,

@@ -245,7 +245,7 @@ describe('OB-81 — bill numbers unique across stores (real API in memory, real 
   let h: ApiHarness;
   let cloud: Cloud;
   beforeAll(async () => {
-    h = apiHarness();
+    h = apiHarness({ tillFormatA: false /* OB-847: proves the older numbering */ });
     await h.seedOwner(tenant, OWNER);
     cloud = {
       tenant, url: 'https://cloud.example.test',
@@ -276,7 +276,7 @@ describe('OB-81 — bill numbers unique across stores (real API in memory, real 
 describe('OB-81 · OB-85 — a single-store business keeps its numbering where it has history; a second store moves an unissued till off it', () => {
   it('one store with R-lane-1- history: the box resumes above head office\'s banked count; a REPLACED box resumes above it too; a second store: the store-coded fallback', async () => {
     const tenant = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa1b81';
-    const h = apiHarness();
+    const h = apiHarness({ tillFormatA: false /* OB-847: proves the older numbering */ });
     await h.seedOwner(tenant, OWNER);
     const call = (method: HttpRequest['method'], path: string, body?: unknown, user = OWNER, branchId?: string) => h.raw({ method, path, token: TEST_IDP.issue({ sub: user, tenantId: tenant, ...(branchId === undefined ? {} : { branchId }) }), ...(body === undefined ? {} : { body, idempotencyKey: `k-${randomUUID()}` }) });
     expect((await call('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
@@ -360,7 +360,7 @@ describe.skipIf(DATABASE_URL === undefined)('OB-81 — on real PostgreSQL: two s
   let real: RealCloud;
   let cloud: Cloud;
   beforeAll(async () => {
-    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: TEST_PACK_KEY });
+    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: TEST_PACK_KEY, providers: { tillFormatA: false } });
     const send = async (method: HttpRequest['method'], path: string, token: string, body?: unknown, key?: string, query?: Record<string, string>): Promise<Reply> => {
       const qs = query === undefined ? '' : `?${new URLSearchParams(query).toString()}`;
       const res = await fetch(`${real.baseUrl}${path}${qs}`, {
@@ -387,7 +387,7 @@ describe.skipIf(DATABASE_URL === undefined)('OB-81 — on real PostgreSQL: two s
   it('after an API restart head office still holds every till\'s prefix and its history (PostgreSQL)', async () => {
     const tenantId = real.tenantId;
     await real.stop();
-    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId, owner: OWNER, packSigningKey: TEST_PACK_KEY });
+    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId, owner: OWNER, packSigningKey: TEST_PACK_KEY, providers: { tillFormatA: false } });
     const tills = ((await cloud.call('GET', '/v1/receipt-prefixes', OWNER)).body as { tills: TillPrefixView[] }).tills;
     expect(tills.map((t) => [t.storeId, t.tillId, t.prefix, t.version])).toEqual([[S1, 'lane-1', 'S1A1-', 2], [S2, 'lane-1', 'S2L1-', 1]]);
     expect(tills[0]!.history.map((x) => x.prefix)).toEqual(['S1L1-', 'S1A1-']);

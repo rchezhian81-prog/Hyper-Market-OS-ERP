@@ -169,7 +169,7 @@ async function tradeOfflineAndSync(cloud: Cloud): Promise<void> {
     expect(await onHand('p-oil')).toBe(10 - 2);
     expect(await onHand('p-combo')).toBe(0);
     expect(await onHand('p-rice')).toBe(10 - 1);
-    const order = await cloud.request({ method: 'GET', path: `/v1/orders/till-S-${delivered}`, userId: OWNER });
+    const order = await cloud.request({ method: 'GET', path: `/v1/orders/${encodeURIComponent(`till-S-${delivered}`)}` /* OB-847: a bill number has "/" in it */, userId: OWNER });
     expect(order.status, JSON.stringify(order.body)).toBe(200);
     expect(order.body).toMatchObject({ state: 'confirmed' });
     // Nothing is left to send; a resend of the bill books nothing twice.

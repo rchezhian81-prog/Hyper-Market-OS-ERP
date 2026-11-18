@@ -54,7 +54,7 @@ describe.each(backings)('A2 — the bill series starts again on 1 April — on $
     expect(series.map((s) => [s.prefix, s.financialYear]).sort()).toEqual([['S1A26-', '2026-27'], ['S1A27-', '2027-28']]);
 
     // The store computer: head office's series in its setup, then NO head office (the till trades offline).
-    const box = await startBox({ tenantId: ho.tenantId, people: [{ userId: 'u-lanecash', displayName: 'Lane Cashier' }], pack: { ...storePack(STORE), receiptSeries: series, receiptNumbering: sections['receiptNumbering'] } });
+    const box = await startBox({ tenantId: ho.tenantId, people: [{ userId: 'u-lanecash', displayName: 'Lane Cashier' }], pack: { ...storePack(STORE), receiptSeries: series, receiptNumbering: { ...(sections['receiptNumbering'] as object), formatA: undefined /* OB-847: proves the older numbering */ } } });
     boxes.push(box);
     const next = async (): Promise<string> => receiptNumberAt(box.edge.lane!.port, await signInAtLane(box.edge.lane!.port, 'u-lanecash'));
     const numbers: string[] = [await next()];

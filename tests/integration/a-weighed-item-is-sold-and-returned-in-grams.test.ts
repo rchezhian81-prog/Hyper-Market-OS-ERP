@@ -89,7 +89,7 @@ describe('a weighed item is sold and returned in grams, end to end (OB-31)', () 
       // 500 g come back: the bill's own price for 500 g is 4936 × 500 ÷ 1234 = ₹20.00.
       const bill = (await till.lookupRefund(receipt))!;
       const approval = await managerApprovesOn(till, 'u-mgr', { kind: 'refund', billRef: 'S-TOM', valueMinor: 2_000, reason: 'damaged' });
-      const back = await bill.submit({ returnId: 'RT-TOM', number: await till.nextReceipt(), reasonCode: 'damaged', lines: [{ productId: 'TOM', uom: 'kg', quantityMinor: 500, disposition: 'resell' }], refundMinor: 2_000, refundTender: 'cash', approval });
+      const back = await bill.submit({ returnId: 'RT-TOM', number: await till.nextReceipt('return'), reasonCode: 'damaged', lines: [{ productId: 'TOM', uom: 'kg', quantityMinor: 500, disposition: 'resell' }], refundMinor: 2_000, refundTender: 'cash', approval });
       expect(JSON.stringify(back)).not.toMatch(/refused|Nothing was saved/);
       expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
       expect(await moves('returned')).toEqual([[500, 'kg']]);

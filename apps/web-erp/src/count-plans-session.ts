@@ -25,6 +25,8 @@ export interface CountPlanViewer { readonly userId?: string; readonly permission
 
 /** The plan as head office keeps it (the fields this screen reads). */
 export interface CountPlanRecord {
+  /** OB-850: the stock count's format-A number (`CNT1/26-27/00001`); absent before. */
+  readonly documentNumber?: string;
   readonly planId: string;
   readonly locationId: string;
   readonly productIds: readonly string[];

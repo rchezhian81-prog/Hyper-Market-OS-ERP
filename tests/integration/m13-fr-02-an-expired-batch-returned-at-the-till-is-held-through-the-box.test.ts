@@ -55,7 +55,7 @@ const returnsAt = async (till: ReturnType<typeof bootPos>, items: readonly (read
   for (const [returnId, batchId] of items) {
     const approval = await managerApprovesOn(till, MANAGER, { kind: 'no_receipt_return', valueMinor: 6_000, reason: 'changed_mind' });
     out.push(await desk.submit({
-      returnId, number: await till.nextReceipt(), reasonCode: 'changed_mind', refundMinor: 6_000, refundTender: 'cash', approval,
+      returnId, number: await till.nextReceipt('return'), reasonCode: 'changed_mind', refundMinor: 6_000, refundTender: 'cash', approval,
       lines: [{ productId: CURD, uom: 'ea', quantityMinor: 1, disposition: 'resell', batchId }],
     }));
   }

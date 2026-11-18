@@ -60,7 +60,7 @@ describe('U6 · supplier claims are one register, both sides (M07-FR-03 · M24-F
     const issued = await post(h, `/v1/purchase/suppliers/s-1/debit-notes/${note!.claimId}/issue`, 'u-acct', {});
     expect(issued.status, JSON.stringify(issued.body)).toBe(201);
     const two = (await get(h, '/v1/purchase/supplier-claims', 'u-acct')).body as Register;
-    expect(two.shopClaims.find((c) => c.claimId === note!.claimId)).toMatchObject({ state: 'issued', number: expect.stringMatching(/^DN-\d{6}$/) });
+    expect(two.shopClaims.find((c) => c.claimId === note!.claimId)).toMatchObject({ state: 'issued', number: expect.stringMatching(/^SDN\/\d{2}-\d{2}\/\d{5}$/) });
     expect(two.counts).toMatchObject({ raised: 0, issued: 1 });
 
     // The SUPPLIER raises its own claim through the portal (M24-FR-02): awaiting a buyer; a buyer rejects it with the reason.
@@ -80,7 +80,7 @@ describe('U6 · supplier claims are one register, both sides (M07-FR-03 · M24-F
     const mine = (await get(h, '/v1/supplier-portal/me/claims', 'u-sup')).body as { claimsKnown: boolean; claims: { claimId: string; kind: string; state: string; number: string | null }[] };
     expect(mine.claimsKnown).toBe(true);
     expect(mine.claims.map((c) => [c.kind, c.state])).toEqual(expect.arrayContaining([['debit_note', 'issued'], ['refused_at_door', 'never_owed']]));
-    expect(mine.claims.find((c) => c.kind === 'debit_note')?.number).toMatch(/^DN-/);
+    expect(mine.claims.find((c) => c.kind === 'debit_note')?.number).toMatch(/^SDN\//);
     expect((await get(h, '/v1/supplier-portal/me/claims', 'u-sup2')).body).toMatchObject({ claimsKnown: true, claims: [] });
     expect((await get(h, '/v1/supplier-portal/me/claims', 'u-sup2', { partnerId: 's-1' })).status).toBe(403);
   });

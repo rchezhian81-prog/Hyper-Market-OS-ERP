@@ -61,6 +61,8 @@ export interface IndentIssueView {
 /** One indent as head office lists it — its state, who asked and approved, the figures per line, the issues, the reasons. */
 export interface IndentRowView {
   readonly indentId: string;
+  /** OB-850: the indent's format-A number; absent on an indent from before. */
+  readonly documentNumber?: string;
   readonly state: string;
   readonly requestedBy: string;
   readonly requestedAt: string;
@@ -329,6 +331,8 @@ const FLAG_COPY: Readonly<Record<string, CopyKey>> = Object.freeze({
 export interface PresentedIndent {
   readonly status: StatusPresentation;
   readonly indentId: string;
+  /** OB-850: the indent's format-A number (`IND1/26-27/00001`); absent on an indent from before. */
+  readonly documentNumber?: string;
   readonly state: string;
   readonly stateLabel: string;
   readonly requestedBy: string;
@@ -517,7 +521,7 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
       ? row.issues.filter((i) => shortfallOpen(i) && i.issuedBy !== config.userId && (i.receivedBy ?? null) !== config.userId)
       : [];
     return {
-      status, indentId: row.indentId, state: row.state, stateLabel: t(STATE_COPY[row.state] ?? 'stRequested'),
+      status, indentId: row.indentId, ...(row.documentNumber === undefined ? {} : { documentNumber: row.documentNumber }), state: row.state, stateLabel: t(STATE_COPY[row.state] ?? 'stRequested'),
       requestedBy: row.requestedBy, requestedAt: row.requestedAt, approvedBy: row.approvedBy, reason: row.reason,
       needsAttention: row.needsAttention,
       flags: row.flags.filter((f) => FLAG_COPY[f] !== undefined).map((flag) => ({ flag, label: t(FLAG_COPY[flag]!) })),

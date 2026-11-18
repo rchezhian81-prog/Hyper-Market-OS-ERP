@@ -142,7 +142,8 @@ describe('Store setup on the box: head office\'s setup before anything is drawn'
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     expect(out.data).toMatchObject({ userId: 'u-owner', status: STATUS });
-    expect(ho.calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/platform/setup', 'GET /v1/receipt-prefixes']);
+    // OB-847: and the document-number ranges (Store setup → Document numbers), in the same session.
+    expect(ho.calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/platform/setup', 'GET /v1/receipt-prefixes', 'GET /v1/document-numbers']);
   });
 
   it('nobody named, unreachable, or refused: nothing to draw — said, never a sample', async () => {

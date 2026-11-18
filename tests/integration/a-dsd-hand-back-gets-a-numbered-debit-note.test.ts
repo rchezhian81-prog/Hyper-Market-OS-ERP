@@ -69,7 +69,7 @@ describe.each(backings)('a DSD hand-back gets a numbered debit note — on $name
     expect(code(await req('POST', '/v1/inventory/dsd-checkins/c-1/close', { ...note('DN-SUP-1', 'Ravi'), cashMinor: 100 }, 'u-recv'))).toBe('no_cash_at_the_door');
     expect(code(await req('POST', '/v1/inventory/dsd-checkins/c-1/close', {}, 'u-recv'))).toBe('delivery_note_not_signed');
     const c1 = (await ok(req('POST', '/v1/inventory/dsd-checkins/c-1/close', note('DN-SUP-1', 'Ravi'), 'u-recv'), 'close c-1')).body as Closed;
-    expect(c1.checkIn.debitNote).toMatchObject({ debitNoteRef: 'DN-DSD-c-1', number: 'DN-000001', seq: 1, valueMinor: 7_500 });
+    expect(c1.checkIn.debitNote).toMatchObject({ debitNoteRef: 'DN-DSD-c-1', number: 'SDN/26-27/00001', seq: 1, valueMinor: 7_500 });
 
     // ── c-2: nothing handed back — no note, no number spent ──
     await open('c-2', '2030-06-02T06:30:00.000Z');
@@ -80,20 +80,20 @@ describe.each(backings)('a DSD hand-back gets a numbered debit note — on $name
     h = life.make(); // ── COLD RESTART ──────────────────────────────────────────────────────────────────────────
 
     // A resent close keeps its number.
-    expect(((await ok(req('POST', '/v1/inventory/dsd-checkins/c-1/close', note('DN-SUP-1', 'Ravi'), 'u-recv'), 'close c-1 again')).body as Closed & { alreadyClosed: boolean })).toMatchObject({ alreadyClosed: true, checkIn: { debitNote: { number: 'DN-000001' } } });
+    expect(((await ok(req('POST', '/v1/inventory/dsd-checkins/c-1/close', note('DN-SUP-1', 'Ravi'), 'u-recv'), 'close c-1 again')).body as Closed & { alreadyClosed: boolean })).toMatchObject({ alreadyClosed: true, checkIn: { debitNote: { number: 'SDN/26-27/00001' } } });
 
     // ── c-3: the next hand-back takes the NEXT number — no gap ──
     await open('c-3', '2030-06-03T06:30:00.000Z');
     await scan('c-3', 's3', 6);
     await handBack('c-3', 'h3', 2);
     const c3 = (await ok(req('POST', '/v1/inventory/dsd-checkins/c-3/close', note('DN-SUP-3', 'Ravi'), 'u-recv'), 'close c-3')).body as Closed;
-    expect(c3.checkIn.debitNote).toMatchObject({ number: 'DN-000002', seq: 2, valueMinor: 5_000 });
+    expect(c3.checkIn.debitNote).toMatchObject({ number: 'SDN/26-27/00002', seq: 2, valueMinor: 5_000 });
 
     // ── ONE series: a debit note the supplier master issues for a returned receipt line takes the next number ──
     await ok(req('POST', '/v1/inventory/goods-receipt/grn-1', { warehouseId: 'S-A', receivedOnDate: '2030-06-04', currency: 'INR', poId: 'po-dairy', lines: [{ lineId: 'L1', productId: 'p-milk', orderedMinor: 2, countedMinor: 2, uom: 'ea', unitCost: cost, condition: 'damaged' }] }, 'u-recv'), 'grn');
     await ok(req('POST', '/v1/inventory/goods-receipt/grn-1/lines/L1/disposition', { disposition: 'return', reason: 'dented' }, 'u-mgr2'), 'disposition');
     const issued = (await ok(req('POST', '/v1/purchase/suppliers/sup-dairy/debit-notes/DN-grn-1-L1/issue', {}, 'u-mgr2'), 'issue')).body as { number: string };
-    expect(issued.number).toBe('DN-000003');
+    expect(issued.number).toBe('SDN/26-27/00003');
 
     // ── the supplier's statement shows the door notes, numbered; they are shown, not netted (OB-196 open question) ──
     const st = (await ok(req('GET', '/v1/purchase/suppliers/sup-dairy/account'), 'statement')).body as {
@@ -101,10 +101,10 @@ describe.each(backings)('a DSD hand-back gets a numbered debit note — on $name
       doorDebitNotesTotal: { valueMinor: number; notesWithValueUnknown: number; nettedInBalance: boolean };
       debitNotes: { debitNoteRef: string; number: string | null }[]; totals: { debitNotesMinor: number };
     };
-    expect(st.doorDebitNotes.map((d) => `${d.debitNoteRef}=${d.number}`)).toEqual(['DN-DSD-c-1=DN-000001', 'DN-DSD-c-3=DN-000002']);
+    expect(st.doorDebitNotes.map((d) => `${d.debitNoteRef}=${d.number}`)).toEqual(['DN-DSD-c-1=SDN/26-27/00001', 'DN-DSD-c-3=SDN/26-27/00002']);
     expect(st.doorDebitNotes.every((d) => d.nettedInBalance === false)).toBe(true);
     expect(st.doorDebitNotesTotal).toEqual({ valueMinor: 12_500, notesWithValueUnknown: 0, nettedInBalance: false });
-    expect(st.debitNotes).toEqual([expect.objectContaining({ debitNoteRef: 'DN-grn-1-L1', number: 'DN-000003' })]);
+    expect(st.debitNotes).toEqual([expect.objectContaining({ debitNoteRef: 'DN-grn-1-L1', number: 'SDN/26-27/00003' })]);
     expect(st.totals.debitNotesMinor).toBe(5_000); // the receipt-line note only; the door notes are not netted
     // A cashier cannot read the statement.
     expect((await req('GET', '/v1/purchase/suppliers/sup-dairy/account', undefined, 'u-till')).status).toBe(403);

@@ -70,6 +70,8 @@ export interface ReceiptForAccount {
 /** SP-7c — a payment recorded against the supplier (supplier-master.ts): a fact a second person approved, netting the balance. */
 export interface SupplierPayment {
   readonly paymentId: string;
+  /** OB-847 (document numbers, format A): `SPAY/26-27/00001`, made automatically when the payment is saved. Absent before. */
+  readonly documentNumber?: string;
   readonly supplierId: string;
   readonly amountMinor: number;
   readonly currency: 'INR';

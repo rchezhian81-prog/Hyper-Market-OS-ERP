@@ -53,7 +53,7 @@ interface PosWindow {
     scan(item: { productId: string; description: string; unitPriceMinor: number; qty: number }): void;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
     /** The next receipt number, from the store computer (audit PF-04). */
-    nextReceipt(): Promise<string>;
+    nextReceipt(kind?: 'sale' | 'return'): Promise<string>;
     signIn(cashierId: string): void;
     operator(): string | undefined;
     newSale(): void;
@@ -137,7 +137,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
       if (bill === null) return { found: false } as const;
 
       const draft = {
-        returnId: 'RT-1', number: await w.posSession!.nextReceipt(), reasonCode: 'damaged',
+        returnId: 'RT-1', number: await w.posSession!.nextReceipt('return'), reasonCode: 'damaged',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         // The whole bill back: the amount actually paid — the ₹640 shelf price, the 18% GST INSIDE it (A9; F15 fixed) —
         // which is what the screen offers as the ceiling.
@@ -214,7 +214,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
       // Store credit chosen: the draft carries the customer it belongs to (M13-FR-03). Offline, store
       // credit settles at the lane like cash — the credit is issued at the cloud when it reconciles.
       const out = await bill.submit({
-        returnId: 'RT-3', number: await w.posSession!.nextReceipt(), reasonCode: 'customer_changed_mind',
+        returnId: 'RT-3', number: await w.posSession!.nextReceipt('return'), reasonCode: 'customer_changed_mind',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: 64_000, refundTender: 'store_credit',
         approval: await (async () => {
@@ -638,7 +638,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
       const bill = await w.posSession!.lookupRefund(receipt);
       // No approval supplied — the §28 guard must refuse before any money moves.
       return bill!.submit({
-        returnId: 'RT-2', number: await w.posSession!.nextReceipt(), reasonCode: 'damaged',
+        returnId: 'RT-2', number: await w.posSession!.nextReceipt('return'), reasonCode: 'damaged',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: 64_000, refundTender: 'cash',
       });

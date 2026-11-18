@@ -49,6 +49,8 @@ export interface TransferLine {
 
 export interface Transfer {
   readonly transferId: string;
+  /** OB-850 (document numbers, format A): a transfer out's `TRF1/26-27/00001`, made when it is raised. Absent before. */
+  readonly documentNumber?: string;
   readonly fromLocationId: string;
   readonly toLocationId: string;
   readonly lines: readonly TransferLine[];

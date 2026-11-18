@@ -100,7 +100,7 @@ describe('the store computer seals who it verified; head office checks the seal'
     const bill = (await till.lookupRefund('SEAL-000001'))!;
     const approval = await managerApprovesOn(till, 'u-mgr', { kind: 'refund', billRef: 'S-SEAL-1', valueMinor: 48_000 });
     expect(await bill.submit({
-      returnId: 'RT-SEAL-1', number: await till.nextReceipt(), reasonCode: 'damaged', refundMinor: 48_000, refundTender: 'cash',
+      returnId: 'RT-SEAL-1', number: await till.nextReceipt('return'), reasonCode: 'damaged', refundMinor: 48_000, refundTender: 'cash',
       lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'damaged' }], approval,
     })).toMatchObject({ kind: 'settled' });
     // ₹2,000 float + ₹960 sale − ₹480 refund = ₹2,480 in the drawer.

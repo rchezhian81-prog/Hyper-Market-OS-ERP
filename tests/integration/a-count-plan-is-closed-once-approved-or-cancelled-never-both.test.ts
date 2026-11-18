@@ -83,7 +83,9 @@ async function shop(harness: () => ApiHarness) {
   /** A plan on one product, opened, counted 2 short by u-c1, its cause set — ready for approval. */
   const countedPlan = async (planId: string, productId: string) => {
     await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: `rcv-${productId}`, productId, locationId: 'S1', kind: 'received', quantityMinor: 20, uom: 'EA', occurredAt: `${TODAY}T00:00:00.000Z`, enteredBy: 'u-owner', unitCostMinor: 1_000 }), 'stock');
-    await ok(call('POST', `/v1/inventory/count-plans/${planId}`, 'u-plan', { locationId: 'S1', productIds: [productId], recountThresholdMinor: 1_000_000, note: 'aisle' }), 'plan');
+    const planned = await ok(call('POST', `/v1/inventory/count-plans/${planId}`, 'u-plan', { locationId: 'S1', productIds: [productId], recountThresholdMinor: 1_000_000, note: 'aisle' }), 'plan');
+    // OB-850: the stock count's own number (CNT1 — store 1), made when it is planned.
+    expect((planned.body as { plan: { documentNumber?: string } }).plan.documentNumber).toMatch(/^CNT1\/\d{2}-\d{2}\/\d{5}$/);
     await ok(call('POST', `/v1/inventory/count-plans/${planId}/open`, 'u-plan', {}), 'open');
     await ok(call('POST', `/v1/inventory/count-plans/${planId}/counts/k-${planId}`, 'u-c1', { productId, locationId: 'S1', uom: 'EA', countedMinor: 18 }), 'count');
     await ok(call('POST', `/v1/inventory/count-plans/${planId}/counts/k-${planId}/cause`, 'u-plan', { causeCode: 'theft_suspected', note: 'two tins missing' }), 'cause');

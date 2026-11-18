@@ -3,3 +3,4 @@
 
 export * from './numbering';
 export * from './invoice-series';
+export * from './document-numbers';

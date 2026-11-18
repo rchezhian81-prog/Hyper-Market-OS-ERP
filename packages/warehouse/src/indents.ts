@@ -141,6 +141,8 @@ export type IndentFlag = (typeof INDENT_FLAGS)[number];
 
 export interface FloorIndent {
   readonly indentId: string;
+  /** OB-850 (document numbers, format A): `IND1/26-27/00001`, made when the indent is raised. Absent before. */
+  readonly documentNumber?: string;
   /** The back store (where the stock is drawn from). */
   readonly fromLocationId: string;
   /** The floor (where it becomes shelf availability — the place the till sells from). */

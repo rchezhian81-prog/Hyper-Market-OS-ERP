@@ -130,6 +130,12 @@ export interface DsdCheckInDeps {
    * debit notes under, so the two never give one number twice. Called once, only when a check-in with hand-backs closes.
    */
   readonly allocateDebitNoteNumber?: (tenantId: string) => Promise<number>;
+  /**
+   * OB-847: record a CLOSED check-in whose hand-backs raised a debit note, with the note's format-A number
+   * (`SDN/26-27/00001`, the supplier debit-note range) taken in the same save. Answers the record as saved. When present,
+   * `allocateDebitNoteNumber` is not used.
+   */
+  readonly recordNumberedCheckIn?: (tenantId: string, rec: DsdCheckInRecord) => Promise<DsdCheckInRecord>;
   readonly locationBranches?: LocationBranches;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /**
@@ -211,7 +217,8 @@ async function close(deps: DsdCheckInDeps, tenantId: string, rec: DsdCheckInReco
   const needsDecision = heldLines.length > 0 && heldNeedsSecondPerson(reconciliation.heldValueMinor);
   // OB-196: numbered from the shop's own series — drawn last, once everything else about the close has succeeded, so a
   // refused close never spends a number (the series stays gap-free).
-  const seq = rec.handBacks.length === 0 || deps.allocateDebitNoteNumber === undefined ? null : await deps.allocateDebitNoteNumber(tenantId);
+  // OB-847: with `recordNumberedCheckIn`, nothing is drawn here — the number is taken in the record's own save.
+  const seq = rec.handBacks.length === 0 || deps.allocateDebitNoteNumber === undefined || deps.recordNumberedCheckIn !== undefined ? null : await deps.allocateDebitNoteNumber(tenantId);
   const debitNote: DsdDebitNote | null = rec.handBacks.length === 0 ? null : {
     debitNoteRef: dsdDebitNoteRef(rec.checkInId), number: seq === null ? null : formatNumber(DEBIT_NOTE_NUMBER_FORMAT, seq), seq,
     supplierId: rec.supplierId, checkInId: rec.checkInId,
@@ -226,6 +233,13 @@ async function close(deps: DsdCheckInDeps, tenantId: string, rec: DsdCheckInReco
     receivedMovementIds: movements.map((m) => m.movementId),
     held: { state: heldLines.length === 0 ? 'none' : needsDecision ? 'pending' : 'approved', lines: heldLines, valueMinor: reconciliation.heldValueMinor, decidedBy: null, decidedAt: null, reason: null, movementIds: [] },
   }, at);
+}
+
+/** OB-847: record a closed check-in — numbered in the same save when it raised a debit note and the numbered save is wired. */
+async function recordClosed(deps: DsdCheckInDeps, tenantId: string, rec: DsdCheckInRecord): Promise<DsdCheckInRecord> {
+  if (rec.debitNote !== null && rec.debitNote.number === null && deps.recordNumberedCheckIn !== undefined) return deps.recordNumberedCheckIn(tenantId, rec);
+  await deps.recordCheckIn(tenantId, rec);
+  return rec;
 }
 
 /** OB-604: what a line receives at close — the whole line, or one part per batch (with that batch's facts). */
@@ -423,8 +437,8 @@ export function dsdCheckInRoutes(deps: DsdCheckInDeps): readonly Route[] {
         const existing = await deps.checkIn(ctx.tenantId, id);
         if (existing?.status === 'closed') return { status: 200, body: { checkIn: present(existing), alreadyClosed: true } };
         const rec = await openOne(ctx);
-        const done = await close(deps, ctx.tenantId, rec, (ctx.body ?? {}) as Record<string, unknown>, ctx.userId, deps.now());
-        await deps.recordCheckIn(ctx.tenantId, done);
+        const closed = await close(deps, ctx.tenantId, rec, (ctx.body ?? {}) as Record<string, unknown>, ctx.userId, deps.now());
+        const done = await recordClosed(deps, ctx.tenantId, closed);
         await audit(deps, ctx, 'dsd.check_in.close', done, { noteRef: done.deliveryNote!.noteRef, driverSignedName: done.deliveryNote!.driverSignedName, debitNoteRef: done.debitNote?.debitNoteRef ?? '', debitNoteNumber: done.debitNote?.number ?? '', held: done.held.state, discrepancies: String(done.reconciliation!.discrepancies.length) });
         return { status: 200, body: { checkIn: present(done) } };
       },
@@ -459,8 +473,7 @@ export function dsdCheckInRoutes(deps: DsdCheckInDeps): readonly Route[] {
         const unbacked = flags.includes('receiver_unknown') || flags.includes('receiver_lacks_authority');
         const judged: DsdCheckInRecord = { ...opened, scans, handBacks, flags, ...(unbacked ? { against: { kind: 'route', routeId: 'receiver-not-backed' } as const } : {}) };
         const done = await close(deps, ctx.tenantId, judged, b, receivedBy, deps.now());
-        const kept: DsdCheckInRecord = { ...done, against: opened.against };
-        await deps.recordCheckIn(ctx.tenantId, kept);
+        const kept = await recordClosed(deps, ctx.tenantId, { ...done, against: opened.against });
         await audit(deps, ctx, 'dsd.check_in.synced', kept, { relayedBy: ctx.userId, flags: kept.flags.join(','), held: kept.held.state, debitNoteNumber: kept.debitNote?.number ?? '' }, receivedBy);
         return { status: 201, body: { checkIn: present(kept), flags: kept.flags } };
       },

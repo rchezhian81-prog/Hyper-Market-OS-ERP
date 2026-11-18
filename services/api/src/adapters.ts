@@ -19,6 +19,9 @@
 //   • **Streams are per tenant and per domain.** `tenantId` is the argument to every call, not a
 //     column somebody remembers to filter on (OB-01).
 
+import { appendWithDocumentNumbers, type NumberedDocument } from '../../platform/src/document-numbers-batch';
+import { appendWithDocumentNumber, type NumberedSave } from '../../platform/src/document-number-issue';
+import { readDocumentNumber, TILL_LANE_MAX } from '../../../packages/numbering/src/document-numbers';
 import type { ReplenishmentParameterDeps, StoredParameters } from '../../inventory/src/replenishment-parameters';
 import { returnedValue as returnedValueOf } from '../../../packages/finance/src/day-book';
 import { latestStoreReports, nothingUnsentAtFor } from './report-producers';
@@ -29,7 +32,7 @@ import { money } from '../../../packages/contracts/src/money';
 import type { AppendResult, BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
-import { splitReceiptNumber, RECEIPT_COUNTER_MAX, RECEIPT_COUNTER_DIGITS } from '../../../packages/contracts/src/receipt-number';
+import { splitReceiptNumber, receiptNumberFor, isFormatAHead, RECEIPT_COUNTER_MAX } from '../../../packages/contracts/src/receipt-number';
 import { notCanonical } from '../../platform/src/store-computer-identity';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
@@ -1731,6 +1734,61 @@ const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
  * clash since round 12; a raw 500 on PostgreSQL before), so the second fact was lost. With the id derived from the key,
  * the same fact again is the same id and key (a dedup) and a different fact is a different id.
  */
+/** The note, its AR movement, its posting fact and the customer index — ONE batch (a customer credit or debit note). */
+function customerNoteEntries(tenantId: string, note: CustomerNote, issuedBy: string, at: string): BatchEntry[] {
+  const credit = note.kind === 'credit_note';
+  const ar: RecordedReceivable = {
+    movementId: `${credit ? 'cn' : 'dn'}-${note.noteId}`, customerId: note.customerId, kind: credit ? 'credit_note' : 'invoice',
+    deltaMinor: credit ? -note.grossMinor : note.grossMinor, at, ref: note.number, on: note.issuedOn,
+  };
+  const postable: B2BPostable = {
+    sourceId: notePostableSourceId(note), kind: note.kind, customerId: note.customerId, documentDate: note.issuedOn,
+    components: { total: note.grossMinor, net: note.taxableMinor, tax: note.taxMinor }, ref: note.number,
+  };
+  return [
+    { stream: STREAM.finance, event: makeEvent({ id: note.noteId, type: 'CreditNoteIssued', occurredAt: at, idempotencyKey: `creditnote-${tenantId}-${note.noteId}`, source: 'api/finance', payload: { ...note, issuedBy } }) },
+    { stream: forB2BCustomer(note.customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+    { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+    receivableCustomerIndexEntry(tenantId, note.customerId, at),
+  ];
+}
+
+/**
+ * OB-847: the store a place belongs to, and its STORE NUMBER (1–9) — the last digit of a store-ranged prefix (`GRN1`). A
+ * store's number is its place in head office's register of branches, in the order they were first registered (OB-848,
+ * decided under OB-801): store 1 is the first branch ever registered, and a closed branch keeps its number (it is never
+ * given to another). The place is read the way every other store question is (`storeOfLocationResolver`: the org tree,
+ * a store's back-store setting). A place head office cannot put in any registered store numbers under store 1 (OB-848):
+ * the number is still unique — only its range is the first store's — and the record still names its own place.
+ */
+export async function storeNumberFor(store: EventStore, now: () => string, tenantId: string, placeId: string | null | undefined): Promise<{ readonly storeNumber: number; readonly storeId?: string }> {
+  const branches = (await orgStructureAdapter({ store, now }).nodes(tenantId)).filter((n) => n.kind === 'branch');
+  const storeId = placeId === null || placeId === undefined || placeId === '' ? undefined : (await storeOfLocationResolver({ store, now }, tenantId)).storeOf(placeId);
+  const index = storeId === undefined ? -1 : branches.findIndex((b) => b.nodeId === storeId);
+  if (index >= 9) {
+    throw new RangeError(`Store ${storeId ?? ''} is the ${index + 1}th store registered; document numbers carry one digit for the store, so stores 10 and above need the owner's decision. Nothing was saved.`);
+  }
+  if (index >= 0) return { storeNumber: index + 1, storeId: branches[index]!.nodeId };
+  return { storeNumber: 1, ...(branches[0] === undefined ? {} : { storeId: branches[0].nodeId }) };
+}
+
+/** OB-850: the number each write-off in a save takes — its own store's `WOF` range. */
+export async function writeOffDocs(store: EventStore, now: () => string, tenantId: string, writeOffs: readonly StoredWriteOff[]): Promise<readonly NumberedDocument[]> {
+  return Promise.all(writeOffs.map(async (w) => {
+    const place = await storeNumberFor(store, now, tenantId, w.locationId);
+    return { range: { kind: 'write_off' as const, storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: w.id };
+  }));
+}
+
+/** OB-847: a numbered save's answer for the route — the number, and the 90,000 warning in words when it is due. */
+export function numberedWords(n: NumberedSave | null): { readonly documentNumber?: string; readonly numberWarning?: string } {
+  if (n === null) return {};
+  return {
+    documentNumber: n.number,
+    ...(n.warn ? { numberWarning: `Document numbers in this range are running out: ${n.remaining.toLocaleString('en-IN')} left this financial year. Tell the owner.` } : {}),
+  };
+}
+
 function keyedEventId(prefix: string, key: string): string {
   return `${prefix}-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
 }
@@ -5890,7 +5948,7 @@ export function b2bOutwardSupplyOf(doc: StoredB2BDocument, customerId: string, d
 
 export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; readonly now: () => string }): {
   afterTaxInvoice: (tenantId: string, customerId: string, doc: StoredB2BDocument) => Promise<{ readonly dueOn: string }>;
-  recordPaymentWithMoney: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string) => Promise<void>;
+  recordPaymentWithMoney: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string, storeId?: string | null) => Promise<void | { readonly documentNumber?: string }>;
 } {
   const credit = b2bCreditAdapter(input);
   return {
@@ -5915,16 +5973,27 @@ export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; read
       ]);
       return { dueOn };
     },
-    recordPaymentWithMoney: async (tenantId, customerId, payment, receivedOn) => {
+    // OB-850: the money receipt takes its number (RCT<store>/YY-YY/NNNNN — the store it was taken at; store 1 when the
+    // request names none) in the SAME save as the payment, its AR movement and its posting fact.
+    recordPaymentWithMoney: async (tenantId, customerId, payment, receivedOn, storeId) => {
       const at = input.now();
-      const ar: RecordedReceivable = { movementId: `rcpt-${payment.receiptId}`, customerId, kind: 'payment', deltaMinor: -payment.receivedMinor, at, ref: payment.receiptId, on: receivedOn };
-      const postable: B2BPostable = { sourceId: `receipt:${customerId}:${payment.receiptId}`, kind: 'receipt', customerId, documentDate: receivedOn, components: { amount: payment.receivedMinor }, ref: payment.receiptId };
-      await input.store.appendBatch(tenantId, [
-        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-pay-${customerId}-${payment.receiptId}`, type: 'B2BPaymentAllocated', occurredAt: at, idempotencyKey: `b2b-pay-${tenantId}-${customerId}-${payment.receiptId}`, source: 'api/finance', payload: payment }) },
-        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
-        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
-        receivableCustomerIndexEntry(tenantId, customerId, at),
-      ]);
+      const place = await storeNumberFor(input.store, input.now, tenantId, storeId ?? null);
+      const [n] = await appendWithDocumentNumbers(input.store, tenantId, {
+        docs: [{ range: { kind: 'money_receipt', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: `${customerId}/${payment.receiptId}` }], at,
+        entries: (numbers) => {
+          const number = numbers[0] === '' || numbers[0] === undefined ? undefined : numbers[0];
+          const ref = number ?? payment.receiptId;
+          const ar: RecordedReceivable = { movementId: `rcpt-${payment.receiptId}`, customerId, kind: 'payment', deltaMinor: -payment.receivedMinor, at, ref, on: receivedOn };
+          const postable: B2BPostable = { sourceId: `receipt:${customerId}:${payment.receiptId}`, kind: 'receipt', customerId, documentDate: receivedOn, components: { amount: payment.receivedMinor }, ref };
+          return [
+            { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-pay-${customerId}-${payment.receiptId}`, type: 'B2BPaymentAllocated', occurredAt: at, idempotencyKey: `b2b-pay-${tenantId}-${customerId}-${payment.receiptId}`, source: 'api/finance', payload: number === undefined ? payment : { ...payment, documentNumber: number } }) },
+            { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+            { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+            receivableCustomerIndexEntry(tenantId, customerId, at),
+          ];
+        },
+      });
+      return n === null || n === undefined ? {} : { documentNumber: n };
     },
   };
 }
@@ -5995,6 +6064,17 @@ export function b2bDocumentsAdapter(input: {
         .filter((d) => d.kind === 'sales_order' && d.derivedFrom !== undefined)
         .map((d) => d.derivedFrom as string),
 
+    // OB-847: a business customer's tax invoice takes its number (BINV/26-27/00001) in the SAME save as the invoice.
+    recordNumberedTaxInvoice: async (tenantId, customerId, draft) => {
+      const saved = await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: 'business_invoice' }, documentRef: `${customerId}/${draft.documentId}`, at: input.now(),
+        entries: (number) => [{ stream: forB2BDocuments(customerId), event: makeEvent({
+          id: `b2b-doc-${customerId}-${draft.documentId}`, type: 'B2BDocumentIssued', occurredAt: input.now(),
+          idempotencyKey: `b2b-doc-${tenantId}-${customerId}-${draft.documentId}`, source: 'api/finance', payload: number === '' ? draft : { ...draft, number },
+        }) }],
+      });
+      return saved === null ? draft : { ...draft, number: saved.number };
+    },
     recordDocument: async (tenantId, customerId, doc) => {
       await input.store.append(tenantId, forB2BDocuments(customerId), makeEvent({
         id: `b2b-doc-${customerId}-${doc.documentId}`,
@@ -6447,8 +6527,15 @@ export function transfersAdapter(input: {
       return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
     },
 
+    // OB-850: a transfer out takes its number (TRF<store>/YY-YY/NNNNN — the store it leaves) in the SAME save.
     recordProposed: async (tenantId, transfer) => {
-      await input.store.append(tenantId, transfersStream, transferProposedEvent(tenantId, transfer, input.now()));
+      const at = input.now();
+      const place = await storeNumberFor(input.store, input.now, tenantId, transfer.fromLocationId);
+      const [n] = await appendWithDocumentNumbers(input.store, tenantId, {
+        docs: [{ range: { kind: 'transfer_out', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: transfer.transferId }], at,
+        entries: (numbers) => [{ stream: transfersStream, event: transferProposedEvent(tenantId, numbers[0] === '' || numbers[0] === undefined ? transfer : { ...transfer, documentNumber: numbers[0] }, at) }],
+      });
+      return n === null || n === undefined ? transfer : { ...transfer, documentNumber: n };
     },
 
     // The source location's stock guard (Wave 2a · SF-04): one version per location, read before the stock and bumped by
@@ -6577,7 +6664,17 @@ export function floorIndentsAdapter(input: {
       const step = type === 'FloorIndentRequested' ? 'requested' : type === 'FloorIndentApproved' ? 'approved' : type === 'FloorIndentRejected' ? 'rejected' : type === 'FloorIndentCancelled' ? 'cancelled' : 'return-requested';
       const sub = type === 'FloorIndentReturnRequested' ? (indent.returns.at(-1)?.returnId ?? null) : null;
       const at = input.now();
+      if (type === 'FloorIndentRequested') {
+        // OB-850: a raised indent takes its number (IND<store>/YY-YY/NNNNN — the floor's store) in the SAME save.
+        const place = await storeNumberFor(input.store, input.now, tenantId, indent.toLocationId);
+        const [n] = await appendWithDocumentNumbers(input.store, tenantId, {
+          docs: [{ range: { kind: 'floor_indent', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: indent.indentId }], at,
+          entries: (numbers) => [stepEvent(tenantId, type, numbers[0] === '' || numbers[0] === undefined ? indent : { ...indent, documentNumber: numbers[0] }, step, sub, at)],
+        });
+        return n === null || n === undefined ? indent : { ...indent, documentNumber: n };
+      }
       await input.store.append(tenantId, indentsStream, stepEvent(tenantId, type, indent, step, sub, at).event);
+      return undefined;
     },
     // An ISSUE: the indent step, the transfer proposed + dispatched, and the `transferred_out` movements — one atomic batch.
     // Batch 2 · the write guards on the chain: the back store's stock guard (the SAME key a transfer dispatch takes, SF-04)
@@ -6607,7 +6704,12 @@ export function floorIndentsAdapter(input: {
     recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion, held, writeOffs) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
-      await input.store.appendBatch(tenantId, [
+      // OB-850: each damaged write-off in this receipt gets its OWN number (WOF<store>/YY-YY/NNNNN), in this same save.
+      const wos = writeOffs ?? [];
+      await appendWithDocumentNumbers(input.store, tenantId, {
+        docs: await writeOffDocs(input.store, input.now, tenantId, wos), at,
+        ...(expectedIndentVersion === undefined ? {} : { options: { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } } }),
+        entries: (numbers) => [
         stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', guardedSub(issue?.issueId ?? transfer.transferId, indent, expectedIndentVersion), at),
         // The transfer's own record carries what it brought IN; a damaged write-off (SP-8c) rides the same batch as a movement only.
         { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
@@ -6616,8 +6718,9 @@ export function floorIndentsAdapter(input: {
         ...(held ?? []).map((h) => heldWriteOffEntry(tenantId, h)),
         // OB-71: a damaged write-off with NO count holding it — on the write-off register (M28) in the same write, keyed on its
         // `wasted` posting, so a replayed receipt records it once and the books post it once (stock_write_off).
-        ...(writeOffs ?? []).map((w) => writeOffCommittedEntry(tenantId, w)),
-      ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
+        ...wos.map((w, i) => writeOffCommittedEntry(tenantId, numbers[i] === '' || numbers[i] === undefined ? w : { ...w, documentNumber: numbers[i] })),
+        ],
+      });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
     // one step — a trolley walk — with the `transferred_out` (floor) and `transferred_in` (back store) movements.
@@ -6737,17 +6840,28 @@ export function countsAdapter(input: {
       (await foldReconciliations(tenantId)).some((r) => r.countId === countId),
 
     // SP-5b (F06): the record and — when the count corrected at once — its M08 movement (and bin movement) in ONE write.
+    // OB-850: a count outside any plan takes its own number (CNT<store>/YY-YY/NNNNN) in the SAME save; a planned count
+    // carries its plan's number (the plan is the stock count's document).
     recordReconciliation: async (tenantId, rec) => {
-      await input.store.appendBatch(tenantId, countBatch(tenantId, makeEvent({
-        id: `count-${rec.countId}`,
-        type: 'CountReconciled',
-        occurredAt: rec.at,
-        // The count's own id — a re-sent reconciliation of the same count collapses rather than
-        // layering the correction twice (append-only, #2). A re-count is a NEW count id.
-        idempotencyKey: `count-${tenantId}-${rec.countId}`,
-        source: 'api/inventory',
-        payload: rec,
-      }), rec));
+      const place = rec.planId === undefined ? await storeNumberFor(input.store, input.now, tenantId, rec.locationId) : undefined;
+      const [n] = await appendWithDocumentNumbers(input.store, tenantId, {
+        docs: place === undefined ? [] : [{ range: { kind: 'stock_count', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: `count:${rec.countId}` }],
+        at: rec.at,
+        entries: (numbers) => {
+          const r = numbers[0] === '' || numbers[0] === undefined ? rec : { ...rec, documentNumber: numbers[0] };
+          return countBatch(tenantId, makeEvent({
+            id: `count-${rec.countId}`,
+            type: 'CountReconciled',
+            occurredAt: rec.at,
+            // The count's own id — a re-sent reconciliation of the same count collapses rather than
+            // layering the correction twice (append-only, #2). A re-count is a NEW count id.
+            idempotencyKey: `count-${tenantId}-${rec.countId}`,
+            source: 'api/inventory',
+            payload: r,
+          }), r);
+        },
+      });
+      return n === null || n === undefined ? {} : { documentNumber: n };
     },
   };
 
@@ -6811,8 +6925,12 @@ export function writeOffAdapter(input: {
         // WF-09 (round 8): a batch's write-off takes the stock off THAT batch.
         ...(rec.batchId === undefined ? {} : { batchId: rec.batchId }),
       });
-      const entry = writeOffCommittedEntry(tenantId, rec);
-      await input.store.append(tenantId, entry.stream, entry.event);
+      // OB-847: the write-off's number (WOF1/26-27/00001 — its store's range) in the SAME save as its record.
+      const place = await storeNumberFor(input.store, input.now, tenantId, rec.locationId);
+      return numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: 'write_off', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: rec.id, at: rec.at,
+        entries: (documentNumber) => [writeOffCommittedEntry(tenantId, documentNumber === '' ? rec : { ...rec, documentNumber })],
+      }));
     },
     // SF-05: head office's own average unit cost of the stock at the location — the same read a transfer values by.
     unitCostAt: async (tenantId, locationId, productId) => {
@@ -7304,22 +7422,28 @@ export function goodsReceiptAdapter(input: {
     },
     orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
     // SF-02: under the order's guard when the receipt posts against it — two receipts never spend the same remainder.
+    // OB-847: the receipt's number (GRN1/26-27/00001 — the store's own range) is taken in the SAME save as the receipt.
     commit: async (tenantId, record, movements, key, poReceipt, orderGuard) => {
-      await input.store.appendBatch(tenantId, [
-        {
-          stream: grnStream,
-          event: makeEvent({
-            id: `grn-${record.grnId}-${key}`,
-            type: 'GoodsReceived',
-            occurredAt: input.now(),
-            idempotencyKey: `grn-${tenantId}-${record.grnId}`,
-            source: 'api/inventory',
-            payload: record,
-          }),
-        },
-        ...movements.map((m) => movementEvent(tenantId, m)),
-        ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
-      ], orderGuard === undefined ? undefined : { guard: { key: purchaseOrderGuardKey(orderGuard.poId), expectedVersion: orderGuard.expectedVersion } });
+      const place = await storeNumberFor(input.store, input.now, tenantId, record.warehouseId);
+      return numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: 'goods_receipt', storeNumber: place.storeNumber, storeId: place.storeId }, documentRef: record.grnId, at: record.receivedAt,
+        ...(orderGuard === undefined ? {} : { options: { guard: { key: purchaseOrderGuardKey(orderGuard.poId), expectedVersion: orderGuard.expectedVersion } } }),
+        entries: (documentNumber) => [
+          {
+            stream: grnStream,
+            event: makeEvent({
+              id: `grn-${record.grnId}-${key}`,
+              type: 'GoodsReceived',
+              occurredAt: input.now(),
+              idempotencyKey: `grn-${tenantId}-${record.grnId}`,
+              source: 'api/inventory',
+              payload: documentNumber === '' ? record : { ...record, documentNumber },
+            }),
+          },
+          ...movements.map((m) => movementEvent(tenantId, m)),
+          ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
+        ],
+      }));
     },
     // SP-6 (M07-FR-03): the disposition and the movement an accept releases — one append; one disposition per line.
     commitDisposition: async (tenantId, record, movements, key) => {
@@ -7339,21 +7463,28 @@ export function goodsReceiptAdapter(input: {
       ]);
     },
     // SP-7b: the physical return of a rejected excess and the movements that take it off on-hand — one append, once per receipt.
+    // OB-850: a return to the supplier takes its number (RTS<store>/YY-YY/NNNNN) in the SAME save as its record.
     commitExcessReturn: async (tenantId, record, movements, key) => {
-      await input.store.appendBatch(tenantId, [
-        {
-          stream: grnStream,
-          event: makeEvent({
-            id: `grn-excess-return-${key}`,
-            type: 'GoodsReceiptExcessReturned',
-            occurredAt: record.excessReturn?.returnedAt ?? input.now(),
-            idempotencyKey: `grn-excess-return-${tenantId}-${record.grnId}`,
-            source: 'api/inventory',
-            payload: record,
-          }),
-        },
-        ...movements.map((m) => movementEvent(tenantId, m)),
-      ]);
+      const at = record.excessReturn?.returnedAt ?? input.now();
+      const place = await storeNumberFor(input.store, input.now, tenantId, record.warehouseId);
+      const [n] = await appendWithDocumentNumbers(input.store, tenantId, {
+        docs: record.excessReturn === undefined ? [] : [{ range: { kind: 'return_to_supplier', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: `${record.grnId}/excess` }], at,
+        entries: (numbers) => [
+          {
+            stream: grnStream,
+            event: makeEvent({
+              id: `grn-excess-return-${key}`,
+              type: 'GoodsReceiptExcessReturned',
+              occurredAt: at,
+              idempotencyKey: `grn-excess-return-${tenantId}-${record.grnId}`,
+              source: 'api/inventory',
+              payload: numbers[0] === '' || numbers[0] === undefined || record.excessReturn === undefined ? record : { ...record, excessReturn: { ...record.excessReturn, documentNumber: numbers[0] } },
+            }),
+          },
+          ...movements.map((m) => movementEvent(tenantId, m)),
+        ],
+      });
+      return n === null || n === undefined ? {} : { documentNumber: n };
     },
     // OB-31 · SF-11: the master's base unit for a product (else the published pack's), and its pack levels.
     productUom: async (tenantId, productId) => {
@@ -7382,15 +7513,23 @@ export function goodsReceiptAdapter(input: {
       return out;
     },
     // Batch 2: a quarantined line's physical return to the supplier — the receipt's next state, once per line.
+    // OB-850: a return to the supplier takes its number (RTS<store>/YY-YY/NNNNN) in the SAME save as its record.
     commitLineReturn: async (tenantId, record, key) => {
-      await input.store.append(tenantId, grnStream, makeEvent({
-        id: `grn-line-return-${key}`,
-        type: 'GoodsReceiptLineReturned',
-        occurredAt: record.lineReturns?.at(-1)?.returnedAt ?? input.now(),
-        idempotencyKey: `grn-line-return-${tenantId}-${key}`,
-        source: 'api/inventory',
-        payload: record,
-      }));
+      const at = record.lineReturns?.at(-1)?.returnedAt ?? input.now();
+      const last = record.lineReturns?.at(-1);
+      const place = await storeNumberFor(input.store, input.now, tenantId, record.warehouseId);
+      const [n] = await appendWithDocumentNumbers(input.store, tenantId, {
+        docs: last === undefined ? [] : [{ range: { kind: 'return_to_supplier', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: `${record.grnId}/${last.lineId}` }], at,
+        entries: (numbers) => [{ stream: grnStream, event: makeEvent({
+          id: `grn-line-return-${key}`,
+          type: 'GoodsReceiptLineReturned',
+          occurredAt: at,
+          idempotencyKey: `grn-line-return-${tenantId}-${key}`,
+          source: 'api/inventory',
+          payload: numbers[0] === '' || numbers[0] === undefined || last === undefined ? record : { ...record, lineReturns: [...record.lineReturns!.slice(0, -1), { ...last, documentNumber: numbers[0] }] },
+        }) }],
+      });
+      return n === null || n === undefined ? {} : { documentNumber: n };
     },
     // The product master's word on tracking (F03): the published catalogue is the master the whole estate runs on.
     // Wave 3 · SF-07: batch tracking from the published catalogue (F03, as before); the handling class and cold-chain limits
@@ -7898,17 +8037,19 @@ export function purchaseOrdersAdapter(input: {
     // OB-32 "A": the supplier master's word on this supplier — active (approved), proposed (waiting), or unknown.
     supplierStatus: async (tenantId, supplierId) => (await foldSupplierRecords(input.store, tenantId)).get(supplierId)?.status,
 
-    propose: async (tenantId, po) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+    // OB-847: the order's number (PO/26-27/00001) is taken in the SAME save as the order — no gap, no duplicate.
+    propose: async (tenantId, po) => numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+      range: { kind: 'purchase_order' }, documentRef: po.poId, at: po.at,
+      entries: (documentNumber) => [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
         id: `po-${po.poId}-proposed`,
         type: 'PurchaseOrderProposed',
         occurredAt: input.now(),
         // Keyed on the PO id alone: a re-sent proposal of the same PO collapses to one (never two POs).
         idempotencyKey: `po-${tenantId}-${po.poId}-proposed`,
         source: 'api/purchase',
-        payload: po,
-      }));
-    },
+        payload: documentNumber === '' ? po : { ...po, documentNumber },
+      }) }],
+    })),
 
     issue: async (tenantId, poId, approvedBy, issuedAt, reason, _key, budgetGuard) => {
       const event = makeEvent({
@@ -8999,16 +9140,34 @@ export function supplierMasterAdapter(input: {
       return [...currentAccount.entries()].map(([holderId, accountRef]) => ({ holderId, holderType: 'supplier' as const, accountRef }));
     },
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
-    recordPayment: async (tenantId, payment) => {
-      await input.store.append(tenantId, SUPPLIER_PAYMENTS_STREAM, makeEvent({
+    // OB-847: the payment's number (SPAY/26-27/00001) is taken in the SAME save as the payment.
+    recordPayment: async (tenantId, payment) => numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+      range: { kind: 'supplier_payment' }, documentRef: payment.paymentId, at: payment.recordedAt,
+      entries: (documentNumber) => [{ stream: SUPPLIER_PAYMENTS_STREAM, event: makeEvent({
         id: `supplier-payment-${payment.paymentId}`,
         type: 'SupplierPaymentRecorded',
         occurredAt: payment.recordedAt,
         // One payment, one record — a retry never pays twice.
         idempotencyKey: `supplier-payment-${tenantId}-${payment.paymentId}`,
         source: 'api/purchase',
-        payload: payment,
-      }));
+        payload: documentNumber === '' ? payment : { ...payment, documentNumber },
+      }) }],
+    })),
+    // OB-847: a debit note's number (SDN/26-27/00001) is taken in the SAME save as its issue — never allocated apart.
+    recordNumberedDebitNoteIssue: async (tenantId, draft) => {
+      const build = (number: string): DebitNoteIssue => ({ ...draft, number, seq: readDocumentNumber(number)?.count ?? 0 });
+      const saved = await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: 'supplier_debit_note' }, documentRef: `${draft.supplierId}/${draft.debitNoteRef}`, at: draft.issuedAt,
+        entries: (number) => [{ stream: DEBIT_NOTE_ISSUES_STREAM, event: makeEvent({
+          id: `dn-issue-${draft.debitNoteRef}`,
+          type: 'SupplierDebitNoteIssued',
+          occurredAt: draft.issuedAt,
+          idempotencyKey: `dn-issue-${tenantId}-${draft.supplierId}-${draft.debitNoteRef}`,
+          source: 'api/purchase',
+          payload: build(number),
+        }) }],
+      });
+      return build(saved?.number ?? '');
     },
     allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
     recordDebitNoteIssue: async (tenantId, issue) => {
@@ -9436,22 +9595,17 @@ export function financeNotesAdapter(input: {
     // ONE batch: the note, its movement on the customer's AR ledger (a credit note brings what is owed down, a debit note
     // up) and its fact for the books (posted by the accountant's B2B posting run through HIS rule, or visibly waiting).
     recordCustomerNote: async (tenantId, note, issuedBy) => {
+      await input.store.appendBatch(tenantId, customerNoteEntries(tenantId, note, issuedBy, input.now()));
+    },
+    // OB-847: a note's number (CCN/26-27/00001, CDN/26-27/00001) is taken in the SAME batch as the note, its AR movement
+    // and its posting fact — never drawn apart, so a refused or failed note leaves no gap.
+    recordNumberedCustomerNote: async (tenantId, draft, issuedBy) => {
       const at = input.now();
-      const credit = note.kind === 'credit_note';
-      const ar: RecordedReceivable = {
-        movementId: `${credit ? 'cn' : 'dn'}-${note.noteId}`, customerId: note.customerId, kind: credit ? 'credit_note' : 'invoice',
-        deltaMinor: credit ? -note.grossMinor : note.grossMinor, at, ref: note.number, on: note.issuedOn,
-      };
-      const postable: B2BPostable = {
-        sourceId: notePostableSourceId(note), kind: note.kind, customerId: note.customerId, documentDate: note.issuedOn,
-        components: { total: note.grossMinor, net: note.taxableMinor, tax: note.taxMinor }, ref: note.number,
-      };
-      await input.store.appendBatch(tenantId, [
-        { stream: STREAM.finance, event: makeEvent({ id: note.noteId, type: 'CreditNoteIssued', occurredAt: at, idempotencyKey: `creditnote-${tenantId}-${note.noteId}`, source: 'api/finance', payload: { ...note, issuedBy } }) },
-        { stream: forB2BCustomer(note.customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
-        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
-        receivableCustomerIndexEntry(tenantId, note.customerId, at),
-      ]);
+      const saved = await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: draft.kind === 'credit_note' ? 'customer_credit_note' : 'customer_debit_note' }, documentRef: draft.noteId, at,
+        entries: (number) => customerNoteEntries(tenantId, { ...draft, number }, issuedBy, at),
+      });
+      return { ...draft, number: saved?.number ?? draft.number };
     },
 
     // Σ of what earlier CREDIT notes already took off this invoice, projected through the snapshot
@@ -14244,15 +14398,20 @@ export function heldStockDecisionsAdapter(input: { readonly store: EventStore; r
     held: (tenantId) => allOf<HeldReturnedStock>(input.store, tenantId, HELD_RETURNED_STOCK, 'ReturnedStockHeld'),
     decisions: (tenantId) => allOf<HeldStockDecision>(input.store, tenantId, decisionsStream, 'HeldStockDecided'),
     guardVersion: (tenantId, heldId) => input.store.guardVersion(tenantId, `held-stock:${heldId}`),
+    // OB-850: a returned item written off takes its own number (WOF<store>/YY-YY/NNNNN) in the same save as the decision.
     commit: async (tenantId, d, movements, writeOff, expectedVersion) => {
-      await input.store.appendBatch(tenantId, [
-        {
-          stream: decisionsStream,
-          event: makeEvent({ id: `held-decision-${d.decisionId}`, type: 'HeldStockDecided', occurredAt: d.decidedAt, idempotencyKey: `held-decision-${tenantId}-${d.decisionId}`, source: 'api/pos', payload: d }),
-        },
-        ...movements.map((m) => movementEvent(tenantId, m)),
-        ...(writeOff === undefined ? [] : [writeOffCommittedEntry(tenantId, writeOff)]),
-      ], { guard: { key: `held-stock:${d.heldId}`, expectedVersion } });
+      await appendWithDocumentNumbers(input.store, tenantId, {
+        docs: await writeOffDocs(input.store, input.now, tenantId, writeOff === undefined ? [] : [writeOff]), at: d.decidedAt,
+        options: { guard: { key: `held-stock:${d.heldId}`, expectedVersion } },
+        entries: (numbers) => [
+          {
+            stream: decisionsStream,
+            event: makeEvent({ id: `held-decision-${d.decisionId}`, type: 'HeldStockDecided', occurredAt: d.decidedAt, idempotencyKey: `held-decision-${tenantId}-${d.decisionId}`, source: 'api/pos', payload: d }),
+          },
+          ...movements.map((m) => movementEvent(tenantId, m)),
+          ...(writeOff === undefined ? [] : [writeOffCommittedEntry(tenantId, numbers[0] === '' || numbers[0] === undefined ? writeOff : { ...writeOff, documentNumber: numbers[0] })]),
+        ],
+      });
     },
     permissionsOf: async (tenantId, userId) => {
       const grants = await effectiveGrants(input.store, tenantId);
@@ -14548,11 +14707,20 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
     plan: async (tenantId, planId) => (await foldPlans(tenantId)).find((p) => p.planId === planId),
     plans: foldPlans,
     recordPlan: async (tenantId, plan, step) => {
-      await input.store.append(tenantId, COUNT_PLANS_STREAM, makeEvent({
-        id: `count-plan-${plan.planId}-${step}`, type: 'CountPlanRecorded', occurredAt: input.now(),
+      const at = input.now();
+      const event = (p: CountPlan) => makeEvent({
+        id: `count-plan-${p.planId}-${step}`, type: 'CountPlanRecorded', occurredAt: at,
         // One event per plan per step: a re-sent step collapses (append-only, #2).
-        idempotencyKey: `count-plan-${tenantId}-${plan.planId}-${step}`, source: 'api/inventory', payload: { step, plan },
-      }));
+        idempotencyKey: `count-plan-${tenantId}-${p.planId}-${step}`, source: 'api/inventory', payload: { step, plan: p },
+      });
+      if (step !== 'created') { await input.store.append(tenantId, COUNT_PLANS_STREAM, event(plan)); return undefined; }
+      // OB-850: a planned stock count takes its number (CNT<store>/YY-YY/NNNNN) in the SAME save as the plan.
+      const place = await storeNumberFor(input.store, input.now, tenantId, plan.locationId);
+      const [n] = await appendWithDocumentNumbers(input.store, tenantId, {
+        docs: [{ range: { kind: 'stock_count', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: `plan:${plan.planId}` }], at,
+        entries: (numbers) => [{ stream: COUNT_PLANS_STREAM, event: event(numbers[0] === '' || numbers[0] === undefined ? plan : { ...plan, documentNumber: numbers[0] }) }],
+      });
+      return n === null || n === undefined ? plan : { ...plan, documentNumber: n };
     },
     // WF-08 (hard rule #10): approved OR cancelled — ONE terminal decision per plan, on one key; the loser collapses onto it
     // and is told what stands. The id is unique per write so a race meets on the key, never on the ledger's id constraint.
@@ -14625,11 +14793,15 @@ export async function applyHeldWriteOffsFor(store: EventStore, tenantId: string,
   const out: HeldWriteOffApplied[] = [];
   for (const h of held.filter((x) => x.planId === plan.planId && !done.has(x.heldId))) {
     const app = heldApplication(h, plan.state, by, at);
-    await store.appendBatch(tenantId, [
-      ...movementEntries(tenantId, [app.inMovement, app.wasted]),
-      writeOffCommittedEntry(tenantId, app.writeOff, at),
-      { stream: COUNT_PLANS_STREAM, event: makeEvent({ id: `count-held-write-off-applied-${h.heldId}`, type: 'CountHeldWriteOffApplied', occurredAt: at, idempotencyKey: `count-held-write-off-applied-${tenantId}-${h.heldId}`, source: 'api/inventory', payload: app.applied }) },
-    ]);
+    // OB-850: the held write-off takes its own number (WOF<store>/YY-YY/NNNNN) in the same save as it is applied.
+    await appendWithDocumentNumbers(store, tenantId, {
+      docs: await writeOffDocs(store, () => at, tenantId, [app.writeOff]), at,
+      entries: (numbers) => [
+        ...movementEntries(tenantId, [app.inMovement, app.wasted]),
+        writeOffCommittedEntry(tenantId, numbers[0] === '' || numbers[0] === undefined ? app.writeOff : { ...app.writeOff, documentNumber: numbers[0] }, at),
+        { stream: COUNT_PLANS_STREAM, event: makeEvent({ id: `count-held-write-off-applied-${h.heldId}`, type: 'CountHeldWriteOffApplied', occurredAt: at, idempotencyKey: `count-held-write-off-applied-${tenantId}-${h.heldId}`, source: 'api/inventory', payload: app.applied }) },
+      ],
+    });
     out.push(app.applied);
   }
   return out;
@@ -15990,7 +16162,8 @@ async function finishStoreComputerReading(
     return refundTimes;
   };
   const unreceived = new Map<string, UnreceivedNumbers[]>();
-  const numberOf = (prefix: string, n: number): string => `${prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
+  // OB-847: 6 digits under an older prefix, 5 under a format-A head.
+  const numberOf = (prefix: string, n: number): string => receiptNumberFor(prefix, n);
   const heldKeys = async (keys: readonly string[]): Promise<ReadonlySet<string>> => (store.existingIdempotencyKeys !== undefined
     ? store.existingIdempotencyKeys(tenantId, keys)
     : new Set((await Promise.all(keys.map(async (k) => ((await store.findByIdempotencyKey(tenantId, k)) === undefined ? undefined : k)))).filter((k): k is string => k !== undefined)));
@@ -16085,6 +16258,51 @@ function storeComputerTimeOf(v: unknown): string | undefined {
   return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined;
 }
 
+/**
+ * OB-847 (document numbers, format A): each till lane's code at a store — `L01`… for a till, `Q01`… for a handheld queue
+ * till — given AUTOMATICALLY, never typed: in the order head office first knew the lane at this store (a till or handheld
+ * registered there, a lane a prefix was issued to, a lane its store computer registered), oldest first, ties by name. Every
+ * source is append-only and a retired device keeps its place, so a lane's code never changes and is never given to
+ * another lane (OB-848, decided under OB-801). At most 49 of each: 51…99 are kept for the +50 overflow ranges (OB-844 A).
+ */
+export async function tillLaneCodes(store: EventStore, tenantId: string, storeId: string): Promise<Readonly<Record<string, string>>> {
+  const seen: { lane: string; at: string; queue: boolean }[] = [];
+  for (const d of await allOf<DeviceRegistryEvent>(store, tenantId, streamName(STREAM.platform, 'devices'), 'DeviceRegistryEvent')) {
+    if (d.kind !== 'registered' || d.branchId !== storeId) continue;
+    if (d.deviceKind === 'pos_lane') seen.push({ lane: d.deviceId, at: d.at, queue: false });
+    else if (d.deviceKind === 'handheld') seen.push({ lane: `device:${d.deviceId}`, at: d.at, queue: true });
+  }
+  for (const i of await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued')) {
+    if (i.storeId === storeId) seen.push({ lane: i.tillId, at: i.setAt, queue: i.tillId.startsWith('device:') });
+  }
+  for (const r of await lanePrefixRegistrationsOf(store, tenantId)) {
+    if (r.storeId !== storeId) continue;
+    for (const p of r.prefixes) {
+      const lane = /^R-(.+)-$/.exec(p)?.[1];
+      if (lane !== undefined) seen.push({ lane, at: r.at, queue: lane.startsWith('device:') });
+    }
+  }
+  seen.sort((a, b) => (a.at === b.at ? (a.lane < b.lane ? -1 : a.lane > b.lane ? 1 : 0) : a.at < b.at ? -1 : 1));
+  const out: Record<string, string> = {};
+  let tills = 0; let queues = 0;
+  for (const s of seen) {
+    if (out[s.lane] !== undefined) continue;
+    if (s.queue) { if (queues < TILL_LANE_MAX) { queues += 1; out[s.lane] = `Q${String(queues).padStart(2, '0')}`; } }
+    else if (tills < TILL_LANE_MAX) { tills += 1; out[s.lane] = `L${String(tills).padStart(2, '0')}`; }
+  }
+  return out;
+}
+
+/** OB-847: the store pack's `receiptNumbering.formatA` for one store — its number, its lanes' codes, its banked ranges. */
+export async function formatAPackSection(store: EventStore, now: () => string, tenantId: string, storeId: string, banked: ReadonlyMap<string, number>): Promise<{
+  readonly storeNumber: number; readonly laneCodes: Readonly<Record<string, string>>; readonly banked: Readonly<Record<string, number>>;
+}> {
+  const { storeNumber } = await storeNumberFor(store, now, tenantId, storeId);
+  const mine: Record<string, number> = {};
+  for (const [head, n] of banked) if (isFormatAHead(head) && head.startsWith(String(storeNumber))) mine[head] = n;
+  return { storeNumber, laneCodes: await tillLaneCodes(store, tenantId, storeId), banked: mine };
+}
+
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
 export async function issuedReceiptSeries(store: EventStore, tenantId: string, storeId: string): Promise<ReturnType<typeof issuedSeriesFor>> {
   return issuedSeriesFor(await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'), storeId);
@@ -16119,7 +16337,10 @@ export async function bankedReceiptCounts(
     // computers' REGISTERED lane prefixes) — also for a report kept before head office judged reports at arrival.
     const issued = await issuedPrefixStores(store, tenantId);
     const registeredHere = registeredByStore(await lanePrefixRegistrationsOf(store, tenantId)).get(opts.storeId) ?? new Set<string>();
-    const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (registeredHere.has(prefix) && !issued.has(prefix));
+    // OB-847: a format-A range head is this store's when it starts with this store's number (`1L01/26-27/` → store 1).
+    const storeDigit = String((await storeNumberFor(store, () => new Date().toISOString(), tenantId, opts.storeId)).storeNumber);
+    const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (registeredHere.has(prefix) && !issued.has(prefix))
+      || (isFormatAHead(prefix) && prefix.startsWith(storeDigit));
     // Verifier r20 BOX-2: and only up to PLAUSIBLE_ISSUED_AHEAD above what sales and refunds bank — the same bound head
     // office judges a report by at arrival, so a report kept before that judging can never lock a till either.
     // The running maximum is exact while it is plausible; when it is not (an implausible report kept before judging), the

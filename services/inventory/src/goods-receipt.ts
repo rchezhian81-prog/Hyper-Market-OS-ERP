@@ -201,6 +201,8 @@ export interface BillValuedRelease {
  */
 export interface LineReturn {
   readonly lineId: string;
+  /** OB-850 (document numbers, format A): the return to the supplier's `RTS1/26-27/00001`. Absent before. */
+  readonly documentNumber?: string;
   readonly productId: string;
   readonly quantityMinor: number;
   readonly valueMinor: number;
@@ -222,6 +224,8 @@ export interface LineReturn {
  * account stops showing the return as pending.
  */
 export interface ExcessReturn {
+  /** OB-850 (document numbers, format A): the return to the supplier's `RTS1/26-27/00001`. Absent before. */
+  readonly documentNumber?: string;
   readonly returnedBy: string;
   readonly returnedAt: string;
   readonly reason: string;
@@ -240,6 +244,8 @@ export interface ExcessReturn {
 /** A committed goods receipt — the durable GRN record, carrying the checked outcome. */
 export interface GrnRecord {
   readonly grnId: string;
+  /** OB-847 (document numbers, format A): `GRN1/26-27/00001`, made automatically when the receipt is saved. Absent before. */
+  readonly documentNumber?: string;
   /** OB-164: the D-6 receiving checklist on file for this delivery when it was booked (a cold-chain receipt needs one). */
   readonly receivingChecklist?: ReceivingChecklistOnFile;
   /** OB-172: why a checklist carried in from the dock was not accepted (with the `receiving_checklist_not_accepted` flag). */
@@ -677,7 +683,8 @@ export interface GoodsReceiptDeps {
    * Record the GRN and its inbound movements as ONE atomic append (FND-01) — and, when `poReceipt` is given (SP-6 · F01),
    * the receipt's posting against the purchase order in the SAME append, idempotent on the receipt id.
    */
-  readonly commit: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting, orderGuard?: OrderGuard) => Promise<void> | void;
+  /** OB-847: answers the receipt's format-A number (`GRN1/26-27/00001`), taken in the same save. */
+  readonly commit: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting, orderGuard?: OrderGuard) => Promise<void | { readonly documentNumber?: string }> | void | { readonly documentNumber?: string };
   /**
    * SF-02 — the order's write-guard version, read BEFORE the order itself. Every receipt, cancellation and posting against
    * the order moves it, so a receipt decided on a remaining quantity that has since changed is refused, never doubled.
@@ -714,9 +721,10 @@ export interface GoodsReceiptDeps {
    */
   readonly commitExcessDecision: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting) => Promise<void> | void;
   /** SP-7b — record the physical return of a rejected excess and, where the scans had put it on-hand, the movements that take it off — ONE append. */
-  readonly commitExcessReturn: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void> | void;
+  /** OB-850: answers the return's format-A number (`RTS1/26-27/00001`), taken in the same save. */
+  readonly commitExcessReturn: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void | { readonly documentNumber?: string }> | void | { readonly documentNumber?: string };
   /** Batch 2 — record the physical return of a quarantined line disposed of as `return`, once per line. */
-  readonly commitLineReturn: (tenantId: string, record: GrnRecord, key: string) => Promise<void> | void;
+  readonly commitLineReturn: (tenantId: string, record: GrnRecord, key: string) => Promise<void | { readonly documentNumber?: string }> | void | { readonly documentNumber?: string };
   /**
    * R3 · A23 · OB-194: the e-way-bill gate for a supplier return (the receipt, the return's movement and its value at cost →
    * Lane 2's `checkDispatchEwb` verdict, the route from the warehouse's GST state to the supplier's), and the dispatch
@@ -987,13 +995,14 @@ export async function commitAgainstOrder(
   const final = await withProcureChecks(deps, tenantId, record, opts.asnId);
   const guard = poReceipt !== undefined && order.poId !== null && order.expectedVersion !== undefined
     ? { poId: order.poId, expectedVersion: order.expectedVersion } : undefined;
+  let numbered: void | { readonly documentNumber?: string };
   try {
-    await deps.commit(tenantId, final, movements, key, poReceipt, guard);
+    numbered = await deps.commit(tenantId, final, movements, key, poReceipt, guard);
   } catch (e) {
     if (e instanceof ConcurrencyConflictError) throw concurrentChange(`purchase order ${order.poId ?? ''}`);
     throw e;
   }
-  return final;
+  return numbered?.documentNumber === undefined ? final : { ...final, documentNumber: numbered.documentNumber };
 }
 
 /**
@@ -1306,11 +1315,13 @@ export async function returnRejectedExcess(deps: GoodsReceiptDeps, input: {
     ...(followed.dispatch === undefined ? {} : { dispatch: followed.dispatch }),
     ...(held.some((l) => l.costNotKnown === true) ? { valueNotKnown: true as const } : {}),
   };
-  const returned: GrnRecord = {
+  let returned: GrnRecord = {
     ...rec, excessReturn,
     governanceFlags: [...(rec.governanceFlags ?? []).filter((f) => f !== 'excess_on_hand_pending_return' && f !== 'excess_returned_to_supplier'), 'excess_returned_to_supplier'],
   };
-  await deps.commitExcessReturn(input.tenantId, returned, movements, `${rec.grnId}:excess-return`);
+  // OB-850: the return to the supplier carries its own number (RTS1/26-27/00001), taken in the same save.
+  const rts = await deps.commitExcessReturn(input.tenantId, returned, movements, `${rec.grnId}:excess-return`);
+  if (rts?.documentNumber !== undefined) returned = { ...returned, excessReturn: { ...excessReturn, documentNumber: rts.documentNumber } };
   await deps.recordAudit?.(input.tenantId, {
     actorId: input.returnedBy, action: 'receipt.excess.return', objectType: 'goods_receipt', objectId: rec.grnId,
     at: returnedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },
@@ -1361,14 +1372,19 @@ export async function returnDisposedLine(deps: GoodsReceiptDeps, input: {
   const followed = await dispatchFollowed(deps, input.tenantId, rec, { kind: 'line', lineId: line.lineId }, valueAtCost(line.quarantinedMinor, line.uom, line.unitCost));
   if (!followed.ok) return { ok: false, refusedBecause: 'supplier_return_not_dispatched', detail: followed.detail };
   const returnedAt = deps.now();
-  const lineReturn: LineReturn = {
+  let lineReturn: LineReturn = {
     lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: valueAtCost(line.quarantinedMinor, line.uom, line.unitCost),
     currency: line.unitCost.currency, returnedBy: input.returnedBy, returnedAt, reason: input.reason, movementIds: [],
     ...(followed.dispatch === undefined ? {} : { dispatch: followed.dispatch }),
     ...(line.costNotKnown === true ? { valueNotKnown: true as const } : {}),
   };
-  const returned: GrnRecord = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
-  await deps.commitLineReturn(input.tenantId, returned, `${rec.grnId}:${line.lineId}`);
+  let returned: GrnRecord = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
+  // OB-850: the return to the supplier carries its own number (RTS1/26-27/00001), taken in the same save.
+  const rts = await deps.commitLineReturn(input.tenantId, returned, `${rec.grnId}:${line.lineId}`);
+  if (rts?.documentNumber !== undefined) {
+    lineReturn = { ...lineReturn, documentNumber: rts.documentNumber };
+    returned = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
+  }
   await deps.recordAudit?.(input.tenantId, {
     actorId: input.returnedBy, action: 'receipt.line.return', objectType: 'goods_receipt', objectId: rec.grnId,
     at: returnedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },

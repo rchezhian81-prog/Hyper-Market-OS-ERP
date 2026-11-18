@@ -23385,6 +23385,50 @@
         }
       }
     },
+    "/v1/document-numbers": {
+      "get": {
+        "operationId": "getDocumentNumbers",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "org.branch.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDocumentNumbersReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"org.branch.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/documents/issued/{documentId}": {
       "get": {
         "operationId": "getDocumentsIssuedByDocumentId",
@@ -124104,15 +124148,15 @@
           "waits": {
             "type": "object",
             "required": [
-              "refund",
               "purchase_order",
+              "refund",
               "stock_adjustment"
             ],
             "properties": {
-              "refund": {
+              "purchase_order": {
                 "type": "number"
               },
-              "purchase_order": {
+              "refund": {
                 "type": "number"
               },
               "stock_adjustment": {
@@ -131905,6 +131949,109 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/platform/src/device-events.ts"
+      },
+      "GetDocumentNumbersReply": {
+        "type": "object",
+        "required": [
+          "ranges",
+          "tills",
+          "warnings",
+          "rule",
+          "asAt"
+        ],
+        "properties": {
+          "ranges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeStanding"
+            }
+          },
+          "tills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "storeId",
+                "storeNumber",
+                "lanes",
+                "ranges"
+              ],
+              "properties": {
+                "storeId": {
+                  "type": "string"
+                },
+                "storeNumber": {
+                  "type": "number"
+                },
+                "lanes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "laneId",
+                      "code"
+                    ],
+                    "properties": {
+                      "laneId": {
+                        "type": "string"
+                      },
+                      "code": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "ranges": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "head",
+                      "lastNumber",
+                      "remaining",
+                      "warn"
+                    ],
+                    "properties": {
+                      "says": {
+                        "type": "string"
+                      },
+                      "head": {
+                        "type": "string"
+                      },
+                      "lastNumber": {
+                        "type": "string"
+                      },
+                      "remaining": {
+                        "type": "number"
+                      },
+                      "warn": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rule": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/document-number-issue.ts"
       },
       "GetDocumentsIssuedByDocumentIdReply": {
         "type": "object",
@@ -145974,6 +146121,9 @@
                     "planId": {
                       "type": "string"
                     },
+                    "documentNumber": {
+                      "type": "string"
+                    },
                     "locationId": {
                       "type": "string"
                     },
@@ -147524,6 +147674,9 @@
               "grnId": {
                 "type": "string"
               },
+              "documentNumber": {
+                "type": "string"
+              },
               "receivingChecklist": {
                 "$ref": "#/components/schemas/ReceivingChecklistOnFile"
               },
@@ -147722,6 +147875,9 @@
                     "grnId": {
                       "type": "string"
                     },
+                    "documentNumber": {
+                      "type": "string"
+                    },
                     "receivingChecklist": {
                       "$ref": "#/components/schemas/ReceivingChecklistOnFile"
                     },
@@ -147889,6 +148045,9 @@
                       }
                     },
                     "grnId": {
+                      "type": "string"
+                    },
+                    "documentNumber": {
                       "type": "string"
                     },
                     "receivingChecklist": {
@@ -148095,6 +148254,9 @@
                     "grnId": {
                       "type": "string"
                     },
+                    "documentNumber": {
+                      "type": "string"
+                    },
                     "receivingChecklist": {
                       "$ref": "#/components/schemas/ReceivingChecklistOnFile"
                     },
@@ -148262,6 +148424,9 @@
                       }
                     },
                     "grnId": {
+                      "type": "string"
+                    },
+                    "documentNumber": {
                       "type": "string"
                     },
                     "receivingChecklist": {
@@ -164160,6 +164325,9 @@
               "number": {
                 "type": "string"
               },
+              "documentNumber": {
+                "type": "string"
+              },
               "supplierId": {
                 "type": "string"
               },
@@ -164350,6 +164518,9 @@
                   "type": "string"
                 },
                 "number": {
+                  "type": "string"
+                },
+                "documentNumber": {
                   "type": "string"
                 },
                 "supplierId": {
@@ -177906,15 +178077,12 @@
       "PostB2bCollectionsByCustomerIdPaymentsByReceiptIdReply": {
         "type": "object",
         "required": [
-          "receiptId",
           "allocatedMinor",
           "unappliedMinor",
-          "allocations"
+          "allocations",
+          "receiptId"
         ],
         "properties": {
-          "receiptId": {
-            "type": "string"
-          },
           "allocatedMinor": {
             "type": "number"
           },
@@ -177926,6 +178094,12 @@
             "items": {
               "$ref": "#/components/schemas/PaymentAllocation"
             }
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "receiptId": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -214482,7 +214656,6 @@
       "PostInventoryCountsByCountIdReply": {
         "type": "object",
         "required": [
-          "countId",
           "expectedMinor",
           "countedMinor",
           "varianceMinor",
@@ -214492,12 +214665,10 @@
           "requiredApproval",
           "pendingApproval",
           "movementId",
-          "flags"
+          "flags",
+          "countId"
         ],
         "properties": {
-          "countId": {
-            "type": "string"
-          },
           "expectedMinor": {
             "type": "number"
           },
@@ -214537,6 +214708,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "countId": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -220987,6 +221164,9 @@
           "lineId": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "productId": {
             "type": "string"
           },
@@ -221053,6 +221233,9 @@
             "type": "boolean"
           },
           "lineId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {
@@ -222135,18 +222318,15 @@
           {
             "type": "object",
             "required": [
-              "id",
               "lossType",
               "qtyRemoved",
               "valueMinor",
               "requiredApproval",
               "evidenceRef",
-              "alreadyRecorded"
+              "alreadyRecorded",
+              "id"
             ],
             "properties": {
-              "id": {
-                "type": "string"
-              },
               "lossType": {
                 "type": "string",
                 "enum": [
@@ -222185,6 +222365,12 @@
               },
               "alreadyRecorded": {
                 "type": "boolean"
+              },
+              "documentNumber": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
               }
             },
             "additionalProperties": true
@@ -222192,17 +222378,14 @@
           {
             "type": "object",
             "required": [
-              "id",
               "lossType",
               "qtyRemoved",
               "valueMinor",
               "requiredApproval",
-              "evidenceRef"
+              "evidenceRef",
+              "id"
             ],
             "properties": {
-              "id": {
-                "type": "string"
-              },
               "lossType": {
                 "type": "string",
                 "enum": [
@@ -222238,6 +222421,12 @@
                     "type": "string"
                   }
                 ]
+              },
+              "documentNumber": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
               }
             },
             "additionalProperties": true
@@ -263938,19 +264127,16 @@
       "PostWarehouseTransfersByTransferIdReply": {
         "type": "object",
         "required": [
-          "transferId",
           "state",
           "fromLocationId",
           "toLocationId",
           "lines",
           "unitCostsMinor",
           "costUnknown",
-          "ignoredFromCaller"
+          "ignoredFromCaller",
+          "transferId"
         ],
         "properties": {
-          "transferId": {
-            "type": "string"
-          },
           "state": {
             "type": "string"
           },
@@ -263987,6 +264173,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "transferId": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -269920,6 +270112,9 @@
                 "type": "string"
               }
             ]
+          },
+          "documentNumber": {
+            "type": "string"
           },
           "applications": {
             "type": "array",
@@ -282476,6 +282671,9 @@
           "planId": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "locationId": {
             "type": "string"
           },
@@ -290552,6 +290750,9 @@
           "via"
         ],
         "properties": {
+          "documentNumber": {
+            "type": "string"
+          },
           "returnedBy": {
             "type": "string"
           },
@@ -294361,6 +294562,9 @@
         ],
         "properties": {
           "grnId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "receivingChecklist": {
@@ -299484,8 +299688,8 @@
               "storeId",
               "kind",
               "tradingDay",
-              "attemptId",
               "laneId",
+              "attemptId",
               "billRef",
               "amountMinor",
               "askedAt",
@@ -299511,10 +299715,10 @@
               "tradingDay": {
                 "type": "string"
               },
-              "attemptId": {
+              "laneId": {
                 "type": "string"
               },
-              "laneId": {
+              "attemptId": {
                 "type": "string"
               },
               "billRef": {
@@ -299552,8 +299756,8 @@
               "storeId",
               "kind",
               "tradingDay",
-              "attemptId",
               "laneId",
+              "attemptId",
               "billRef",
               "amountMinor",
               "askedAt",
@@ -299579,10 +299783,10 @@
               "tradingDay": {
                 "type": "string"
               },
-              "attemptId": {
+              "laneId": {
                 "type": "string"
               },
-              "laneId": {
+              "attemptId": {
                 "type": "string"
               },
               "billRef": {
@@ -301178,6 +301382,9 @@
         ],
         "properties": {
           "lineId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {
@@ -312726,6 +312933,67 @@
             "type": "number"
           },
           "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RangeStanding": {
+        "type": "object",
+        "required": [
+          "prefix",
+          "yearLabel",
+          "kind",
+          "words",
+          "issued",
+          "lastNumber",
+          "remaining",
+          "warn"
+        ],
+        "properties": {
+          "prefix": {
+            "type": "string"
+          },
+          "yearLabel": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "business_invoice",
+              "customer_credit_note",
+              "customer_debit_note",
+              "floor_indent",
+              "goods_receipt",
+              "money_receipt",
+              "purchase_order",
+              "return_to_supplier",
+              "sale_bill",
+              "stock_count",
+              "supplier_advance",
+              "supplier_debit_note",
+              "supplier_payment",
+              "till_return",
+              "transfer_out",
+              "write_off"
+            ]
+          },
+          "words": {
+            "type": "string"
+          },
+          "issued": {
+            "type": "number"
+          },
+          "lastNumber": {
+            "type": "string"
+          },
+          "remaining": {
+            "type": "number"
+          },
+          "warn": {
+            "type": "boolean"
+          },
+          "says": {
             "type": "string"
           }
         },
@@ -324895,6 +325163,9 @@
           "number": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "supplierId": {
             "type": "string"
           },
@@ -325239,6 +325510,9 @@
         ],
         "properties": {
           "countId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {
@@ -325964,6 +326238,9 @@
         ],
         "properties": {
           "id": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {
@@ -327116,6 +327393,9 @@
         ],
         "properties": {
           "paymentId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "supplierId": {
@@ -330629,6 +330909,9 @@
         ],
         "properties": {
           "transferId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "fromLocationId": {

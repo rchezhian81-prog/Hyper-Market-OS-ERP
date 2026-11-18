@@ -300,9 +300,10 @@ export interface LaneHeldBillsPort {
 
 /** The receipt-number register this socket asks (`ReceiptNumbers`). */
 export interface LaneReceiptNumberPort {
-  issue(input: { readonly laneId: string; readonly requestKey: unknown; readonly issuedTo: string }): Promise<IssueOutcome>;
-  checkUse(input: { readonly laneId: string; readonly receiptNumber: unknown; readonly recordId: string }): UseCheck;
-  status(laneId: string): ReceiptNumberStatus;
+  /** OB-846 A: `kind` names the range — a sale bill (default) or a return at the till. */
+  issue(input: { readonly laneId: string; readonly requestKey: unknown; readonly issuedTo: string; readonly kind?: 'sale' | 'return' }): Promise<IssueOutcome>;
+  checkUse(input: { readonly laneId: string; readonly receiptNumber: unknown; readonly recordId: string; readonly kind?: 'sale' | 'return' }): UseCheck;
+  status(laneId: string, kind?: 'sale' | 'return'): ReceiptNumberStatus;
 }
 
 /** The approval register this socket asks (`TillApprovals`). */
@@ -1280,7 +1281,8 @@ export function startLaneServer(input: {
         if (!check.ok) { send(res, 200, refused(check.refusedBecause, check.laneMessage), cors); return; }
         const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
         try {
-          send(res, 200, await numbers.issue({ laneId: ops.laneId, requestKey: b['requestKey'], issuedTo: check.userId }), { ...cors, 'cache-control': 'no-store' });
+          // OB-846 A: a return at the till asks for its number from the return range (`kind: "return"`).
+          send(res, 200, await numbers.issue({ laneId: ops.laneId, requestKey: b['requestKey'], issuedTo: check.userId, ...(b['kind'] === 'return' ? { kind: 'return' as const } : {}) }), { ...cors, 'cache-control': 'no-store' });
         } catch (e) {
           send(res, 200, refused('could_not_write_durably', e instanceof Error ? e.message : String(e)), cors);
         }
@@ -2095,7 +2097,7 @@ export function startLaneServer(input: {
         // A gift card's sale is not a bill: it takes no bill number (its own id is its identity — OB-677).
         if (!isTag && !isGiftCardSaleRecord(parsed) && input.receiptNumbers !== undefined && input.operators !== undefined) {
           const r = (parsed ?? {}) as Record<string, unknown>;
-          numberUse = input.receiptNumbers.checkUse({ laneId: input.operators.laneId, receiptNumber: isReturn ? r['number'] : (r['receiptNumber'] ?? r['number']), recordId: id });
+          numberUse = input.receiptNumbers.checkUse({ laneId: input.operators.laneId, receiptNumber: isReturn ? r['number'] : (r['receiptNumber'] ?? r['number']), recordId: id, kind: isReturn ? 'return' : 'sale' });
           if (!numberUse.ok) {
             send(res, 200, { committed: false, refusedBecause: numberUse.refusedBecause, laneMessage: numberUse.laneMessage }, cors);
             return;

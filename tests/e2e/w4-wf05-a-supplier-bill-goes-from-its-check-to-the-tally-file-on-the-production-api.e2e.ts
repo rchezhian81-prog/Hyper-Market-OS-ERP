@@ -198,8 +198,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('WF-05 — 
       await dn.waitFor({ timeout: 15_000 });
       expect(await dn.innerText()).toMatch(/DN-grn-1-L3 · OIL × 2 · ₹300\.00 — not issued yet/);
       await dn.locator('button.dn-issue').click();
-      await says(s.page, '#dn-status', /^Issued as DN-000001\.$/);
-      await says(s.page, '#dn-list li[data-debit-note="DN-grn-1-L3"]', /Issued as DN-000001/);
+      await says(s.page, '#dn-status', /^Issued as SDN\/\d\d-\d\d\/00001\.$/);
+      await says(s.page, '#dn-list li[data-debit-note="DN-grn-1-L3"]', /Issued as SDN\/\d\d-\d\d\/00001/);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
     const held = (await api('/v1/purchase/invoices/sup-k-KA-7')).body as { invoice: { approvedBy: string; capturedBy: string; governanceFlags: string[] }; match: { blocked: boolean; payableMinor: number } };

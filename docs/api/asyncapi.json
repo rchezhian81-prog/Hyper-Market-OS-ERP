@@ -5779,6 +5779,9 @@
           "via"
         ],
         "properties": {
+          "documentNumber": {
+            "type": "string"
+          },
           "returnedBy": {
             "type": "string"
           },
@@ -5909,6 +5912,9 @@
         ],
         "properties": {
           "grnId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "receivingChecklist": {
@@ -6686,6 +6692,9 @@
         ],
         "properties": {
           "lineId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {

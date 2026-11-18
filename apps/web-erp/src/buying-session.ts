@@ -254,6 +254,8 @@ export interface ProposePurchaseOrderInput {
 export type ProposePurchaseOrderOutcome =
   | {
     readonly proposed: true; readonly requisitionedBy: string; readonly totalMinor: number;
+    /** OB-847: the order's number head office made when it saved it (`PO/26-27/00001`); absent from an older head office. */
+    readonly documentNumber?: string;
     /** WF-03 · OB-63 (round 12): head office's open-to-buy check on the order — over budget, it escalates to the owner. */
     readonly budget?: { readonly overBudget: boolean; readonly overByMinor: number };
   }

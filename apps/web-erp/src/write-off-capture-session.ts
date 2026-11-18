@@ -126,7 +126,8 @@ export function writeOffDetails(writeOffId: string, body: WriteOffBody): Record<
 }
 
 /** What head office said when the loss was sent: recorded, its own refusal (code + words), or no answer at all. */
-export type WriteOffPostResult = { readonly result: 'recorded' } | Refused | LostLink;
+/** OB-850: a recorded write-off answers its format-A number (`WOF1/26-27/00001`) when head office gave one. */
+export type WriteOffPostResult = { readonly result: 'recorded'; readonly documentNumber?: string } | Refused | LostLink;
 
 /** The authenticated POST of a write-off. Injected, so the model never opens a socket itself; the server records the
  *  loss in the caller's own name and enforces the limit, the evidence and the approval it names. The port sends
@@ -207,7 +208,7 @@ export type WriteOffRefusalCode = (typeof WRITE_OFF_REFUSAL_CODES)[number];
 
 /** The outcome of pressing "Record the loss". */
 export type WriteOffRecordOutcome =
-  | { readonly kind: 'recorded'; readonly approvedBy: string | null }
+  | { readonly kind: 'recorded'; readonly approvedBy: string | null; readonly documentNumber?: string }
   | WriteOffLocalRefusal
   | { readonly kind: 'head_office_refused'; readonly code: WriteOffRefusalCode; readonly whatHappened: string }
   | Exclude<ApprovalUseOutcome, { readonly kind: 'done' } | { readonly kind: 'cannot_check' }>;
@@ -451,7 +452,7 @@ export function presentWriteOffRecord(lang: Lang, o: WriteOffRecordOutcome): Sta
   switch (o.kind) {
     case 'recorded':
       return presentStatus({ tone: 'ok', icon: '✓', needsAttention: false,
-        label: o.approvedBy === null ? t('recorded') : say('recordedApproved', { who: o.approvedBy.trim() === '' ? t('someone') : o.approvedBy }) });
+        label: `${o.approvedBy === null ? t('recorded') : say('recordedApproved', { who: o.approvedBy.trim() === '' ? t('someone') : o.approvedBy })}${o.documentNumber === undefined ? '' : ` ${o.documentNumber}`}` });
     case 'not_permitted': return err(say('notPermitted'));
     case 'incomplete': return err(say('incomplete'));
     case 'needs_evidence': return presentStatus({ tone: 'degraded', icon: '📷', label: say('needsEvidence'), needsAttention: true });
@@ -596,7 +597,7 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
   /** Send the loss (naming an approval when it has one) and read head office's answer. */
   const send = async (writeOffId: string, body: WriteOffBody, approval?: { readonly requestId: string; readonly decidedBy: string | null }): Promise<WriteOffRecordOutcome> => {
     const r = await ports.capturePort().post({ writeOffId, body, ...(approval === undefined ? {} : { approvalId: approval.requestId }) });
-    if (r.result === 'recorded') return { kind: 'recorded', approvedBy: approval === undefined ? null : approval.decidedBy ?? '' };
+    if (r.result === 'recorded') return { kind: 'recorded', approvedBy: approval === undefined ? null : approval.decidedBy ?? '', ...(r.documentNumber === undefined ? {} : { documentNumber: r.documentNumber }) };
     if (r.result === 'lost_link') return { kind: 'lost_link' };
     // Head office's limit is the authority: once it calls this loss big, this page asks for approval for it too.
     if (r.code === 'write_off_needs_approval' || r.code === 'write_off_needs_evidence') bigAtHeadOffice.add(writeOffId);

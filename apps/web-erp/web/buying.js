@@ -777,8 +777,10 @@ el('raise-po').addEventListener('click', async () => {
   if (out.proposed) {
     // Only after head office genuinely saved the proposal — never a false "raised" on a dropped link (P-08).
     // WF-03 · OB-63 (round 12): head office's open-to-buy check rides on the order; over budget, it escalates to the owner.
-    if (out.budget?.overBudget) tell(`${t('proposedOver')} ${inr(out.budget.overByMinor)}`, `${poId} · ${inr(out.totalMinor)} — ${t('escalates')}`);
-    else tell(t('orderProposed'), `${poId} · ${inr(out.totalMinor)}`, true);
+    // OB-847: the order's own number (PO/26-27/00001), made by head office — never typed here.
+    const shown = out.documentNumber || poId;
+    if (out.budget?.overBudget) tell(`${t('proposedOver')} ${inr(out.budget.overByMinor)}`, `${shown} · ${inr(out.totalMinor)} — ${t('escalates')}`);
+    else tell(t('orderProposed'), `${shown} · ${inr(out.totalMinor)}`, true);
     poLines = [];
     resetBigPo();
     renderPoLines();
@@ -886,7 +888,7 @@ function renderOtb() {
     const box = document.createElement('div');
     box.className = `escalation${o.escalation ? ' over' : ''}`;
     box.dataset.po = o.poId;
-    box.append(textCell('div', `${o.poId} · ${supplierLabel(o.supplierId)} · ${inr(o.totalMinor)} · ${t('raisedBy')} ${o.requisitionedBy}`, 'what'));
+    box.append(textCell('div', `${o.documentNumber || o.poId} · ${supplierLabel(o.supplierId)} · ${inr(o.totalMinor)} · ${t('raisedBy')} ${o.requisitionedBy}`, 'what'));
     if (o.escalation) box.append(textCell('div', `${t('overBy')} ${inr(o.escalation.overByMinor)} (${o.escalation.overCategories.map((c) => c.categoryId).join(', ')}). ${t('escalates')}`, 'why'));
     else box.append(textCell('div', o.checked ? t('withinBudget') : t('notChecked'), 'why'));
     if (otb.mayIssue) issueControls(o, box);
@@ -958,7 +960,7 @@ function orderBox(order) {
   box.className = 'open-order';
   box.dataset.po = order.poId;
   const scope = lines[0]?.buyingScope ?? 'scope_not_recorded';
-  box.append(textCell('div', `${ot('order')} ${order.number} (${order.poId}) · ${ot('supplier')} ${supplierLabel(order.supplierId)} · ${ot('deliverTo')} ${order.deliverTo === 'store_not_named' ? ot('store_not_named') : order.deliverTo} · ${ot(`sc_${scope}`)}${order.amendmentCount > 0 ? ` · ${order.amendmentCount} ${ot('amendments')}` : ''}`, 'what'));
+  box.append(textCell('div', `${ot('order')} ${order.documentNumber || order.number} (${order.poId}) · ${ot('supplier')} ${supplierLabel(order.supplierId)} · ${ot('deliverTo')} ${order.deliverTo === 'store_not_named' ? ot('store_not_named') : order.deliverTo} · ${ot(`sc_${scope}`)}${order.amendmentCount > 0 ? ` · ${order.amendmentCount} ${ot('amendments')}` : ''}`, 'what'));
   const wrap = document.createElement('div'); wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'open-lines';

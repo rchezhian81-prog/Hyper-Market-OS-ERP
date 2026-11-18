@@ -117,7 +117,13 @@ export interface SupplierMasterDeps extends SupplierAccountDeps {
   readonly bankHolders: (tenantId: string) => Promise<readonly BankAccountHolder[]> | readonly BankAccountHolder[];
   /** The permissions a named user holds; `undefined` for a name head office does not know. */
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
-  readonly recordPayment: (tenantId: string, payment: SupplierPayment) => Promise<void> | void;
+  /** OB-847: answers the payment's format-A number (`SPAY/26-27/00001`), taken in the same save. */
+  readonly recordPayment: (tenantId: string, payment: SupplierPayment) => Promise<void | { readonly documentNumber?: string }> | void | { readonly documentNumber?: string };
+  /**
+   * OB-847: record a debit note's issue WITH its format-A number (`SDN/26-27/00001`), taken in the same save. Absent → the
+   * older series (`allocateNumber` + `recordDebitNoteIssue`), kept for a deployment that has not moved.
+   */
+  readonly recordNumberedDebitNoteIssue?: (tenantId: string, issue: DebitNoteIssue) => Promise<DebitNoteIssue>;
   /** Allocate the next number in the tenant's series for a document type (`debit_note`). */
   readonly allocateNumber: (tenantId: string, docType: string) => Promise<number>;
   readonly recordDebitNoteIssue: (tenantId: string, issue: DebitNoteIssue) => Promise<void> | void;
@@ -476,13 +482,15 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         // Every rule passed: the approval is spent — once — and only then is the payment recorded.
         await opened.spend();
         const now = deps.now();
-        const payment: SupplierPayment = {
+        let payment: SupplierPayment = {
           paymentId, supplierId, amountMinor: b['amountMinor'], currency: 'INR', paidOn: b['paidOn'], method, reference: b['reference'].trim(),
           recordedBy: ctx.userId, recordedAt: now, approvedBy, approvedAt: now,
           ...(settles.length === 0 ? {} : { settles }),
           ...(tds?.outcome === 'deducted' ? { tds: { section: tds.section, rateBps: tds.rateBps, baseMinor: tds.baseMinor, tdsMinor: tds.tdsMinor, netMinor: tds.netMinor } } : {}),
         };
-        await deps.recordPayment(t, payment);
+        // OB-847: the payment's number (SPAY/26-27/00001) is taken in the same save as the payment.
+        const numbered = await deps.recordPayment(t, payment);
+        if (numbered?.documentNumber !== undefined) payment = { ...payment, documentNumber: numbered.documentNumber };
         await audit(t, {
           actorId: ctx.userId, action: 'supplier.payment.record', objectType: 'supplier', objectId: supplierId,
           at: now, origin: { tenantId: t, branchId: ctx.branchId ?? null },
@@ -521,10 +529,15 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         const note = account.debitNotes.find((d) => d.debitNoteRef === debitNoteRef);
         if (note === undefined) throw notFound(`debit note ${debitNoteRef} on supplier ${supplierId}`);
         if (note.number !== null) return { status: 200, body: { debitNoteRef, number: note.number, issuedBy: note.issuedBy, issuedAt: note.issuedAt, valueMinor: note.valueMinor, alreadyIssued: true } };
-        const seq = await deps.allocateNumber(t, 'debit_note');
         const now = deps.now();
-        const issue: DebitNoteIssue = { debitNoteRef, supplierId, number: `DN-${String(seq).padStart(6, '0')}`, seq, valueMinor: note.valueMinor, issuedBy: ctx.userId, issuedAt: now };
-        await deps.recordDebitNoteIssue(t, issue);
+        let issue: DebitNoteIssue;
+        if (deps.recordNumberedDebitNoteIssue !== undefined) {
+          issue = await deps.recordNumberedDebitNoteIssue(t, { debitNoteRef, supplierId, number: '', seq: 0, valueMinor: note.valueMinor, issuedBy: ctx.userId, issuedAt: now });
+        } else {
+          const seq = await deps.allocateNumber(t, 'debit_note');
+          issue = { debitNoteRef, supplierId, number: `DN-${String(seq).padStart(6, '0')}`, seq, valueMinor: note.valueMinor, issuedBy: ctx.userId, issuedAt: now };
+          await deps.recordDebitNoteIssue(t, issue);
+        }
         await audit(t, {
           actorId: ctx.userId, action: 'supplier.debit_note.issue', objectType: 'supplier', objectId: supplierId,
           at: now, origin: { tenantId: t, branchId: ctx.branchId ?? null },

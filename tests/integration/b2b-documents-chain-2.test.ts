@@ -96,7 +96,7 @@ describe('b2b document chain part 2: proforma, challan (what left), invoice-from
     await challan(h, A, 'u-owner', 'CUST1', 'dc1', 'so1', { l1: 6 });
     const inv1 = await invoice(h, A, 'u-owner', 'CUST1', 'inv1', 'so1');
     expect(inv1.status).toBe(201);
-    expect((inv1.body as Doc).number).toBe('INV-000001');
+    expect((inv1.body as Doc).number).toMatch(/^BINV\/\d{2}-\d{2}\/00001$/); // OB-847
     expect((inv1.body as Doc).taxClaimable).toBe(true);
     expect((inv1.body as Doc).grossMinor).toBe(63_000);
 

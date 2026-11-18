@@ -114,7 +114,7 @@ describe.each(backings)('M23-FR-02 · OB-678 — GST notes to a business custome
     // The approval is for exactly this note: a different value is refused.
     expect(code(await call('POST', '/v1/finance/credit-notes', 'u-acct', { ...cn('N-1', 300), approvalId: r1 }))).toBe('approval_does_not_match');
     const n1 = (await ok(call('POST', '/v1/finance/credit-notes', 'u-acct', { ...cn('N-1', 200), approvalId: r1 }), 'issue N-1')).body as { number: string; approvedBy: string; invoiceUnchanged: boolean; posting: { state: string }; note: { issuedOn: string; declareInPeriod: string } };
-    expect(n1).toMatchObject({ number: 'CN-000001', approvedBy: 'u-mgr', invoiceUnchanged: true, posting: { state: 'waiting_for_posting_rule' } });
+    expect(n1).toMatchObject({ number: 'CCN/26-27/00001', approvedBy: 'u-mgr', invoiceUnchanged: true, posting: { state: 'waiting_for_posting_rule' } });
     // The note is dated by the shop's day (01:00 in the shop, the UTC date still yesterday).
     expect(n1.note.issuedOn).toBe(EVENING.shopDate);
     expect(n1.note.declareInPeriod).toBe(EVENING.shopDate.slice(0, 7));
@@ -129,7 +129,7 @@ describe.each(backings)('M23-FR-02 · OB-678 — GST notes to a business custome
     expect(inbox.routedToOwnerAboveYourLimit).toBe(1);
     expect(code(await call('POST', `/v1/approvals/requests/${r2}/decide`, 'u-mgr', { decision: 'approved', reason: 'ok' }))).toBe('exceeds_your_limit');
     await ok(call('POST', `/v1/approvals/requests/${r2}/decide`, 'u-owner', { decision: 'approved', reason: 'agreed with the school' }), 'owner approves ₹6,300');
-    expect(((await ok(call('POST', '/v1/finance/credit-notes', 'u-acct', { ...cn('N-2', 6_000), approvalId: r2 }), 'issue N-2')).body as { number: string }).number).toBe('CN-000002');
+    expect(((await ok(call('POST', '/v1/finance/credit-notes', 'u-acct', { ...cn('N-2', 6_000), approvalId: r2 }), 'issue N-2')).body as { number: string }).number).toBe('CCN/26-27/00002');
 
     // ── OB-679: a ₹7,000 credit note the OWNER raises (₹7,350 with GST) — the accountant approves it at any amount; the owner
     //    never approves his own, and the store manager is still bound by his ₹5,000 limit.
@@ -141,7 +141,7 @@ describe.each(backings)('M23-FR-02 · OB-678 — GST notes to a business custome
     const accountantInbox = (await call('GET', '/v1/approvals/requests', 'u-acct')).body as { waitingForMe: { requestId: string }[] };
     expect(accountantInbox.waitingForMe.map((r) => r.requestId)).toContain(r3);
     await ok(call('POST', `/v1/approvals/requests/${r3}/decide`, 'u-acct', { decision: 'approved', reason: 'checked against the returned delivery' }), 'accountant approves the owner\'s ₹7,350');
-    expect(((await ok(call('POST', '/v1/finance/credit-notes', 'u-owner', { ...cn('N-3', 7_000), approvalId: r3 }), 'issue N-3')).body as { number: string; approvedBy: string })).toMatchObject({ number: 'CN-000003', approvedBy: 'u-acct' });
+    expect(((await ok(call('POST', '/v1/finance/credit-notes', 'u-owner', { ...cn('N-3', 7_000), approvalId: r3 }), 'issue N-3')).body as { number: string; approvedBy: string })).toMatchObject({ number: 'CCN/26-27/00003', approvedBy: 'u-acct' });
     // The accountant still has no limit for anybody else's credit note (r1 above: refused).
 
     // ── What is left on the line is ₹6,800: ₹6,801 is refused, before any approval is asked.
@@ -157,7 +157,7 @@ describe.each(backings)('M23-FR-02 · OB-678 — GST notes to a business custome
     expect((await call('POST', `/v1/approvals/requests/${rd}/decide`, 'u-acct', { decision: 'approved', reason: 'mine' })).status).toBe(403); // the maker never approves
     await ok(call('POST', `/v1/approvals/requests/${rd}/decide`, 'u-mgr', { decision: 'approved', reason: 'the price list was wrong' }), 'manager approves the ₹6,300 debit note');
     const d1 = (await ok(call('POST', '/v1/finance/credit-notes', 'u-acct', { ...debit, approvalId: rd }), 'debit')).body as { number: string; approvedBy: string };
-    expect(d1).toMatchObject({ number: 'CDN-000001', approvedBy: 'u-mgr' });
+    expect(d1).toMatchObject({ number: 'CDN/26-27/00001', approvedBy: 'u-mgr' });
     expect(code(await call('POST', '/v1/finance/credit-notes', 'u-acct', { ...debit, noteId: 'D-2', approvalId: rd }))).toBe('approval_already_used'); // one approval, one note
 
     // ── The invoice is unchanged; the customer's balance moved by each note's whole value.
@@ -168,18 +168,18 @@ describe.each(backings)('M23-FR-02 · OB-678 — GST notes to a business custome
     const desk = (await call('GET', '/v1/finance/credit-notes/customers/CUST1', 'u-acct')).body as { invoices: { number: string; lines: { chargedMinor: number; creditedMinor: number; leftMinor: number }[] }[]; notes: NoteRow[] };
     expect(desk.invoices).toEqual([expect.objectContaining({ number: inv.number, recipientGstin: GSTIN_BUYER, hasGstSplit: true, lines: [expect.objectContaining({ chargedMinor: 2_000_000, creditedMinor: 1_320_000, leftMinor: 680_000 })] })]);
     expect(desk.notes.map((n) => [n.number, n.kind, n.grossMinor, n.approvedBy ?? null, n.posting.state])).toEqual([
-      ['CDN-000001', 'debit_note', 630_000, 'u-mgr', 'waiting_for_posting_rule'],
-      ['CN-000001', 'credit_note', 21_000, 'u-mgr', 'waiting_for_posting_rule'],
-      ['CN-000002', 'credit_note', 630_000, 'u-owner', 'waiting_for_posting_rule'],
-      ['CN-000003', 'credit_note', 735_000, 'u-acct', 'waiting_for_posting_rule'],
+      ['CCN/26-27/00001', 'credit_note', 21_000, 'u-mgr', 'waiting_for_posting_rule'],
+      ['CCN/26-27/00002', 'credit_note', 630_000, 'u-owner', 'waiting_for_posting_rule'],
+      ['CCN/26-27/00003', 'credit_note', 735_000, 'u-acct', 'waiting_for_posting_rule'],
+      ['CDN/26-27/00001', 'debit_note', 630_000, 'u-mgr', 'waiting_for_posting_rule'],
     ]);
 
     // ── GSTR-1: the credit/debit-note section of the shop's month, under the buyer's GSTIN.
     const month = EVENING.shopDate.slice(0, 7);
     const ret = (await call('GET', '/v1/finance/gstr1/return', 'u-acct', undefined, { from: `${month}-01`, to: `${month}-31` })).body as { creditDebitNotes: { registered: { noteNumber: string; noteType: string; recipientGstin: string; againstInvoiceNumber: string; noteValueMinor: number }[]; creditTaxMinor: number; debitTaxMinor: number; inGstnFile: boolean } };
     expect(ret.creditDebitNotes.registered.map((r) => [r.noteNumber, r.noteType, r.recipientGstin, r.againstInvoiceNumber, r.noteValueMinor])).toEqual([
-      ['CDN-000001', 'D', GSTIN_BUYER, inv.number, 630_000], ['CN-000001', 'C', GSTIN_BUYER, inv.number, 21_000], ['CN-000002', 'C', GSTIN_BUYER, inv.number, 630_000],
-      ['CN-000003', 'C', GSTIN_BUYER, inv.number, 735_000],
+      ['CCN/26-27/00001', 'C', GSTIN_BUYER, inv.number, 21_000], ['CCN/26-27/00002', 'C', GSTIN_BUYER, inv.number, 630_000],
+      ['CCN/26-27/00003', 'C', GSTIN_BUYER, inv.number, 735_000], ['CDN/26-27/00001', 'D', GSTIN_BUYER, inv.number, 630_000],
     ]);
     expect(ret.creditDebitNotes).toMatchObject({ creditTaxMinor: 1_000 + 30_000 + 35_000, debitTaxMinor: 30_000, inGstnFile: false });
 
@@ -198,7 +198,7 @@ describe.each(backings)('M23-FR-02 · OB-678 — GST notes to a business custome
     ]);
     expect(run2.exceptions.map((e) => e.sourceId)).toEqual(['debit_note:CUST1:D-1']); // still waiting — said, never silent
     const after = ((await call('GET', '/v1/finance/credit-notes/customers/CUST1', 'u-acct')).body as { notes: NoteRow[] }).notes;
-    expect(after.map((n) => [n.number, n.posting.state])).toEqual([['CDN-000001', 'waiting_for_posting_rule'], ['CN-000001', 'posted'], ['CN-000002', 'posted'], ['CN-000003', 'posted']]);
+    expect(after.map((n) => [n.number, n.posting.state])).toEqual([['CCN/26-27/00001', 'posted'], ['CCN/26-27/00002', 'posted'], ['CCN/26-27/00003', 'posted'], ['CDN/26-27/00001', 'waiting_for_posting_rule']]);
     // ── W4 · M23-FR-02: the period reconciliation reads what the posting run just put on the ledger — no figure typed.
     // The three credit notes (₹2,10,000 + ₹6,30,000 + ₹7,35,000 by value with GST) against their journals: exact; the debit
     // note is not credit and is not in it. A request still carrying typed ledger figures is refused by name.
@@ -216,7 +216,7 @@ describe.each(backings)('M23-FR-02 · OB-678 — GST notes to a business custome
       .map((e) => e.event.payload as { action: string; actorId: string; approvalId?: string; after: Record<string, string> | null })
       .filter((a) => a.action.startsWith('finance.') && a.action.endsWith('_note.issue'));
     expect(trail.map((a) => [a.action, a.actorId, a.after?.['number'], a.approvalId ?? null])).toEqual([
-      ['finance.credit_note.issue', 'u-acct', 'CN-000001', r1], ['finance.credit_note.issue', 'u-acct', 'CN-000002', r2], ['finance.credit_note.issue', 'u-owner', 'CN-000003', r3], ['finance.debit_note.issue', 'u-acct', 'CDN-000001', rd],
+      ['finance.credit_note.issue', 'u-acct', 'CCN/26-27/00001', r1], ['finance.credit_note.issue', 'u-acct', 'CCN/26-27/00002', r2], ['finance.credit_note.issue', 'u-owner', 'CCN/26-27/00003', r3], ['finance.debit_note.issue', 'u-acct', 'CDN/26-27/00001', rd],
     ]);
   }, 120_000);
 });

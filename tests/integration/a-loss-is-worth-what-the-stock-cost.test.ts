@@ -54,9 +54,11 @@ describe('SF-05 — a loss is valued from the stock\'s own cost', () => {
     const ok = await post('wo-3', body);
     expect(ok.status).toBe(201);
     expect(ok.body).toMatchObject({ valueMinor: 500_000, valueSource: 'stock_cost', requiredApproval: true });
+    // OB-847: three refusals above took no number — the first write-off saved is WOF1/…/00001, and the list carries it.
+    expect(ok.body).toMatchObject({ documentNumber: expect.stringMatching(/^WOF1\/\d{2}-\d{2}\/00001$/) });
     expect(await onHand('OIL-5L')).toBe(0);
     const listed = (await h.request({ method: 'GET', path: '/v1/inventory/write-offs', userId: 'u-owner', tenantId: A })).body as { writeOffs: Record<string, unknown>[]; totalLossMinor: number };
-    expect(listed.writeOffs[0]).toMatchObject({ valueMinor: 500_000, valueSource: 'stock_cost', unitCostMinor: 5_000, approvedBy: 'u-owner', raisedBy: 'u-mgr' });
+    expect(listed.writeOffs[0]).toMatchObject({ valueMinor: 500_000, valueSource: 'stock_cost', unitCostMinor: 5_000, approvedBy: 'u-owner', raisedBy: 'u-mgr', documentNumber: (ok.body as { documentNumber: string }).documentNumber });
     expect(listed.totalLossMinor).toBe(500_000);
   });
 

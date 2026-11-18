@@ -115,7 +115,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
         try {
           indent = { ...requestIndent({ indentId, fromLocationId: b['fromLocationId'], toLocationId: b['toLocationId'], lines, requestedBy: b['requestedBy'], at: b['at'], reason: isStr(b['reason']) ? b['reason'].trim() : null }), governanceFlags: flags, relayed };
         } catch (e) { return refusedBy(e); }
-        await deps.recordIndent(ctx.tenantId, indent, 'FloorIndentRequested');
+        indent = (await deps.recordIndent(ctx.tenantId, indent, 'FloorIndentRequested')) ?? indent; // OB-850: with its number
         await audit(ctx.tenantId, {
           actorId: b['requestedBy'], action: 'floor_indent.request', objectType: 'floor_indent', objectId: indentId, at: b['at'], origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: null,

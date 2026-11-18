@@ -208,7 +208,7 @@ describe('verifier r17 — a new or replaced box never repeats a bill number; a 
   const tenant = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0r17';
   let cloud: Cloud;
   beforeAll(async () => {
-    const h = apiHarness();
+    const h = apiHarness({ tillFormatA: false /* OB-847: proves the older numbering */ });
     await h.seedOwner(tenant, OWNER);
     cloud = {
       tenant, url: 'https://cloud.example.test',
@@ -244,7 +244,7 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r17 — the same on real P
   let real: RealCloud;
   let cloud: Cloud;
   beforeAll(async () => {
-    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: TEST_PACK_KEY });
+    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: TEST_PACK_KEY, providers: { tillFormatA: false } });
     const send = async (method: HttpRequest['method'], path: string, token: string, body?: unknown, key?: string, query?: Record<string, string>): Promise<Reply> => {
       const qs = query === undefined ? '' : `?${new URLSearchParams(query).toString()}`;
       const res = await fetch(`${real.baseUrl}${path}${qs}`, {
@@ -277,7 +277,7 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r17 — the same on real P
   it('after an API restart head office still holds each raced till\'s one kept issue (PostgreSQL)', async () => {
     const tenantId = real.tenantId;
     await real.stop();
-    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId, owner: OWNER, packSigningKey: TEST_PACK_KEY });
+    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId, owner: OWNER, packSigningKey: TEST_PACK_KEY, providers: { tillFormatA: false } });
     const tills = ((await cloud.call('GET', '/v1/receipt-prefixes', OWNER)).body as { tills: { tillId: string; history: unknown[] }[] }).tills;
     expect(tills.filter((t) => t.tillId.startsWith('lane-p')).length).toBe(12);
   }, 120_000);

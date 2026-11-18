@@ -128,7 +128,8 @@ function indentNode(r) {
   head.className = 'head';
   const headline = document.createElement('span');
   headline.className = 'headline';
-  headline.textContent = r.indentId;
+  // OB-850: the indent's own number (IND1/26-27/00001) when it has one; an indent from before keeps its id.
+  headline.textContent = r.documentNumber || r.indentId;
   const st = document.createElement('span'); st.className = 'st'; st.textContent = r.stateLabel; headline.append(st);
   head.append(headline);
   // U5 · G13: the state as the one chip (the tone's shape and the word), never a bare character

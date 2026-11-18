@@ -349,7 +349,14 @@ else {
     say('rec-status', out);
     if (out.result === 'ok') { $('rec-day').value = ''; $('rec-sp').value = ''; await loadRecurring(); }
   });
-  $('pay-save').addEventListener('click', async () => { const out = await session.recordPayment(customerId ?? '', $('pay-amount').value); say('pay-status', out); if (out.result === 'ok') await openCustomer(customerId); });
+  $('pay-save').addEventListener('click', async () => {
+    const out = await session.recordPayment(customerId ?? '', $('pay-amount').value);
+    say('pay-status', out);
+    // OB-850: the money received has its own number (RCT1/26-27/00001), made by head office in the same save.
+    const number = out.result === 'ok' && out.value && typeof out.value.documentNumber === 'string' ? out.value.documentNumber : '';
+    if (number !== '') $('pay-status').append(document.createTextNode(` ${number}`));
+    if (out.result === 'ok') await openCustomer(customerId);
+  });
 }
 
 if (api !== null) { shopDate('k-from', { en: api.words('en', 'validFrom'), ta: api.words('ta', 'validFrom') }); shopDate('k-to', { en: api.words('en', 'validTo'), ta: api.words('ta', 'validTo') }); shopDate('rec-start', { en: api.words('en', 'startsOnL'), ta: api.words('ta', 'startsOnL') }); }

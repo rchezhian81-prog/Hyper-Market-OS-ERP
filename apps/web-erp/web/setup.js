@@ -530,12 +530,57 @@ if (prefixes && prefixes.canEdit) {
   wirePrefix(el('pn-prefix'), el('pn-save'), el('pn-msg'), () => ({ storeId: el('pn-store').value.trim(), tillId: el('pn-till').value.trim(), financialYear: el('pn-year').value }));
 }
 
+// ── Document numbers (OB-847 · OB-844 A) ─────────────────────────────────────────────────────────────────────
+// Read-only: every number is made automatically. Shows each till's code, each range's last number and what is left this
+// financial year — and, from 90,000, the warning (P-03: only a range running out is flagged).
+const DOCNO_WORDS = {
+  en: {
+    title: 'Document numbers', lead: 'Every bill, return and document gets its number automatically, in the form PREFIX/YY-YY/NNNNN (at most 16 characters). The count starts again on 1 April. Nobody types a number.',
+    tills: 'Tills', till: 'Till', code: 'Code', ranges: 'Ranges this year', range: 'Range', last: 'Last number', left: 'Left this year', none: 'No document has been numbered yet.',
+  },
+  ta: {
+    title: 'ஆவண எண்கள்', lead: 'ஒவ்வொரு பில், திருப்பம், ஆவணத்துக்கும் எண் தானாக வழங்கப்படுகிறது — PREFIX/YY-YY/NNNNN (அதிகபட்சம் 16 எழுத்துகள்). ஏப்ரல் 1 அன்று எண்ணிக்கை மீண்டும் தொடங்கும். யாரும் எண்ணைத் தட்டச்சு செய்வதில்லை.',
+    tills: 'கவுண்டர்கள்', till: 'கவுண்டர்', code: 'குறியீடு', ranges: 'இந்த ஆண்டின் வரிசைகள்', range: 'வரிசை', last: 'கடைசி எண்', left: 'இந்த ஆண்டு மீதம்', none: 'இன்னும் எந்த ஆவணத்துக்கும் எண் வழங்கப்படவில்லை.',
+  },
+};
+function renderDocumentNumbers() {
+  const read = window.setupData?.documentNumbers;
+  if (!read) { el('docnumbers').hidden = true; return; }
+  const w = DOCNO_WORDS[lang === 'ta' ? 'ta' : 'en'];
+  el('docnumbers').hidden = false;
+  el('docnumbers-title').textContent = w.title;
+  el('docnumbers-lead').textContent = w.lead;
+  el('docnumbers-warnings').replaceChildren(...read.warnings.map((x) => { const li = document.createElement('li'); li.className = 'bad'; li.textContent = x; return li; }));
+  const table = (head, rows) => {
+    const t = document.createElement('table'); t.className = 'docnumbers';
+    const tr = document.createElement('tr');
+    for (const h of head) { const th = document.createElement('th'); th.scope = 'col'; th.textContent = h; tr.append(th); }
+    const thead = document.createElement('thead'); thead.append(tr);
+    const body = document.createElement('tbody');
+    for (const r of rows) {
+      const row = document.createElement('tr'); if (r.warn) row.className = 'warn';
+      for (const c of r.cells) { const td = document.createElement('td'); td.textContent = c; row.append(td); }
+      body.append(row);
+    }
+    t.append(thead, body);
+    return t;
+  };
+  const lanes = read.tills.flatMap((s) => s.lanes.map((l) => ({ cells: [l.laneId, l.code], warn: false })));
+  el('docnumbers-tills').replaceChildren(...(lanes.length === 0 ? [] : [table([w.till, w.code], lanes)]));
+  const rows = [
+    ...read.tills.flatMap((s) => s.ranges.map((r) => ({ cells: [r.head.slice(0, -1), r.lastNumber, r.remaining.toLocaleString('en-IN')], warn: r.warn }))),
+    ...read.ranges.map((r) => ({ cells: [`${r.words} — ${r.prefix}/${r.yearLabel}`, r.lastNumber, r.remaining.toLocaleString('en-IN')], warn: r.warn })),
+  ];
+  el('docnumbers-ranges').replaceChildren(rows.length === 0 ? emptyLine(w.none) : table([w.range, w.last, w.left], rows));
+}
+
 function paintChrome() {
   el('who').firstChild.textContent = `${t('title')} `;
   el('whoami').textContent = window.setupData?.userId ?? '';
   el('sample').textContent = t('sampleData');
   render();
   renderPrefixes();
+  renderDocumentNumbers();
 }
 
 el('lang').addEventListener('click', () => {

@@ -61,6 +61,8 @@ export interface Escalation {
 
 export interface WaitingOrder {
   readonly poId: string;
+  /** OB-847: the order's format-A number (`PO/26-27/00001`); absent on an order from before. */
+  readonly documentNumber?: string;
   readonly supplierId: string;
   readonly requisitionedBy: string;
   readonly totalMinor: number;
@@ -110,6 +112,7 @@ export function waitingOrders(raw: unknown, period: string): readonly WaitingOrd
       } : null;
       return {
         poId: String(o['poId']), supplierId: String(o['supplierId']), requisitionedBy: String(o['requisitionedBy']), totalMinor: Number(o['totalMinor'] ?? 0),
+        ...(typeof o['documentNumber'] === 'string' ? { documentNumber: o['documentNumber'] } : {}),
         deliverTo: String(o['deliverTo'] ?? o['deliverToLocationId'] ?? ''), escalation, checked: check !== undefined,
       };
     })

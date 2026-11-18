@@ -64,6 +64,8 @@ export const openOrdersWords = (lang: Lang, key: string): string =>
 
 export interface OrderLine { readonly productId: string; readonly orderedQty: number; readonly uom?: string; readonly unitCost: { readonly minor: number; readonly currency: string; readonly per?: number } }
 export interface IssuedOrder {
+  /** OB-847: the order's format-A number (`PO/26-27/00001`); absent on an order from before. */
+  readonly documentNumber?: string;
   readonly poId: string; readonly number: string; readonly supplierId: string; readonly deliverTo: string; readonly status: 'proposed' | 'issued';
   readonly currency: string; readonly lines: readonly OrderLine[]; readonly buyingScope?: string; readonly amendmentCount: number;
   readonly receivedByProduct: Readonly<Record<string, number>>; readonly cancelledByProduct: Readonly<Record<string, number>>; readonly totalMinor: number;

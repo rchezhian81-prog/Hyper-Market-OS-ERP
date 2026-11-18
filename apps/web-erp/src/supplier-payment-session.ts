@@ -187,7 +187,8 @@ export interface SupplierPaymentSession {
   ask(f: PaymentForm): Done<{ readonly requestId: string; readonly paymentId: string }>;
   myAsks(): Done<readonly PaymentAsk[]>;
   /** OB-807 A: the approved payment, recorded with the day it was paid and its reference (typed now, after paying). */
-  record(ask: PaymentAsk, paid?: PaidDetails): Done<{ readonly alreadyRecorded: boolean; readonly owedMinor?: number }>;
+  /** OB-847: the answer carries the payment as saved, with its format-A number (`payment.documentNumber`). */
+  record(ask: PaymentAsk, paid?: PaidDetails): Done<{ readonly alreadyRecorded: boolean; readonly owedMinor?: number; readonly payment?: { readonly documentNumber?: string } }>;
   /** D-047: the supplier's matched bills not yet paid (`openBillsOf`); a supplier head office has no record of has none. */
   openBills(supplierId: string): Done<readonly OpenBill[]>;
 }

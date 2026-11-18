@@ -50,6 +50,8 @@ export type CountPlanState = 'planned' | 'counting' | 'approved' | 'cancelled';
 
 export interface CountPlan {
   readonly planId: string;
+  /** OB-850 (document numbers, format A): the stock count's `CNT1/26-27/00001`, made when it is planned. Absent before. */
+  readonly documentNumber?: string;
   readonly locationId: string;
   readonly productIds: readonly string[];
   /** The movement kinds that must not happen at this place, for these products, while the count is open. */
@@ -96,7 +98,8 @@ export interface CountPlanDeps extends CountsDeps {
   readonly plan: (tenantId: string, planId: string) => Promise<CountPlan | undefined> | CountPlan | undefined;
   readonly plans: (tenantId: string) => Promise<readonly CountPlan[]> | readonly CountPlan[];
   /** Append the plan's new state (created / opened / approved / cancelled) — a new event each time, never an edit. */
-  readonly recordPlan: (tenantId: string, plan: CountPlan, step: 'created' | 'opened' | 'approved' | 'cancelled') => Promise<void> | void;
+  /** OB-850: a CREATED plan answers as saved, with its format-A number (`CNT1/26-27/00001`) taken in the same save. */
+  readonly recordPlan: (tenantId: string, plan: CountPlan, step: 'created' | 'opened' | 'approved' | 'cancelled') => Promise<void | CountPlan> | void | CountPlan;
   /**
    * WF-08 (hard rule #10): the plan's ONE terminal decision — approved OR cancelled — appended under a single key, so two
    * people closing the same plan at once cannot both land. Answers the decision that STANDS (this one when it landed, the
@@ -380,12 +383,12 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         await assertLocationInScope(ctx, b['locationId'], deps.locationBranches);
         const existing = await deps.plan(ctx.tenantId, planId);
         if (existing !== undefined) throw refuse(409, 'count_plan_exists', `Count plan ${planId} is already on file (${existing.state}); a new count is a new plan id.`);
-        const plan: CountPlan = {
+        let plan: CountPlan = {
           planId, locationId: b['locationId'].trim(), productIds: [...new Set((products as string[]).map((p) => p.trim()))],
           frozenKinds: [...new Set(kinds as FreezableKind[])], ...(frozenByDefault ? { frozenByDefault: true } : {}), recountThresholdMinor: b['recountThresholdMinor'],
           note: isStr(b['note']) ? b['note'].trim() : null, plannedBy: ctx.userId, plannedAt: deps.now(), state: 'planned',
         };
-        await deps.recordPlan(ctx.tenantId, plan, 'created');
+        plan = (await deps.recordPlan(ctx.tenantId, plan, 'created')) ?? plan; // OB-850: with its number
         await audit(ctx, 'count.plan.create', { ...plan, state: 'planned' }, { state: 'planned', locationId: plan.locationId, products: String(plan.productIds.length), frozenKinds: plan.frozenKinds.join(','), recountThresholdMinor: String(plan.recountThresholdMinor) }, plan.note ?? 'count planned');
         return { status: 201, body: { plan, freezesNothing: plan.frozenKinds.length === 0 } };
       },

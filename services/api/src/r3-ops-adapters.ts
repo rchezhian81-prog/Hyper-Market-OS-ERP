@@ -2,6 +2,8 @@
 // register append-only on its own stream (hard rules #2, #6). Reads fold the streams; nothing here edits or deletes a
 // record. One entry point, `r3OpsRoutes`, is registered from main.ts.
 
+import { appendWithDocumentNumber } from '../../platform/src/document-number-issue';
+import { readDocumentNumber } from '../../../packages/numbering/src/document-numbers';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
@@ -189,6 +191,18 @@ export function dsdCheckInAdapter(input: { readonly store: EventStore; readonly 
     appendMovement: async (t, m) => { await inventoryAdapter({ store, now }).appendMovement(t, m); },
     permissionsOfUser: (t, u) => permissionsHeldBy(store, t, u),
     allocateDebitNoteNumber: (t) => series.allocate(t, 'debit_note'),
+    // OB-847: a door debit note's number (SDN/26-27/00001 — the one supplier debit-note range) in the SAME save as the record.
+    recordNumberedCheckIn: async (t, r) => {
+      const build = (n: string): DsdCheckInRecord => (n === '' || r.debitNote === null ? r : { ...r, debitNote: { ...r.debitNote, number: n, seq: readDocumentNumber(n)?.count ?? null } });
+      const saved = await appendWithDocumentNumber(store, t, {
+        range: { kind: 'supplier_debit_note' }, documentRef: `${r.supplierId}/${r.debitNote?.debitNoteRef ?? r.checkInId}`, at: r.recordedAt,
+        entries: (n) => {
+          const b = build(n);
+          return [{ stream: DSD, event: makeEvent({ id: `dsd-checkin-${b.checkInId}-v${b.version}`, type: 'DsdCheckInRecorded', occurredAt: b.recordedAt, idempotencyKey: `dsd-checkin-${t}-${b.checkInId}-v${b.version}`, source: 'api/inventory', payload: b }) }];
+        },
+      });
+      return build(saved?.number ?? '');
+    },
     ...(input.locationBranches === undefined ? {} : { locationBranches: input.locationBranches }),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };

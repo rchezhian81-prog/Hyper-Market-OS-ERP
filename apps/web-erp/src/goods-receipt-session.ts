@@ -94,7 +94,10 @@ export interface GrnItemView {
 /** A committed goods receipt, with its checked outcome — one row on the review list. */
 export interface GrnRecordView {
   readonly grnId: string;
+  /** OB-847: the receipt's format-A number (`GRN1/26-27/00001`) when it has one; else its older number. */
   readonly number: string;
+  /** OB-847: the delivery's own reference, shown under the new number (absent on a receipt from before). */
+  readonly reference?: string;
   /** The purchase order it was received against, or `null` for an unmatched (no-PO) delivery. */
   readonly poId: string | null;
   readonly warehouseId: string;
@@ -164,6 +167,8 @@ export interface GrnBillMatchPort {
 /** Batch 2 — one quarantined line disposed of as a return: waiting to go back to the supplier, or gone. */
 export interface GrnReturnLineView {
   readonly lineId: string;
+  /** OB-850: the return to the supplier's format-A number (`RTS1/26-27/00001`), once it has gone back. */
+  readonly documentNumber?: string;
   readonly productId: string;
   /** In the line's smallest steps (OB-31: grams for kg). */
   readonly quantityMinor: number;
@@ -893,7 +898,7 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
             ownerLabel: ownerWords(lang, d.owner), valueNotKnown: d.valueNotKnown === true,
           }));
         return {
-          status, grnId: g.grnId, number: g.number, poId: g.poId, warehouseId: g.warehouseId,
+          status, grnId: g.grnId, number: g.number, ...(g.reference === undefined ? {} : { reference: g.reference }), poId: g.poId, warehouseId: g.warehouseId,
           receivedBy: g.receivedBy, receivedAt: g.receivedAt, needsApproval: g.requiresApproval,
           discrepancyValueMinor: g.discrepancyValueMinor, currency: g.currency,
           sellableMinor: g.sellableMinor, quarantinedMinor: g.quarantinedMinor, rejectedMinor: g.rejectedMinor,

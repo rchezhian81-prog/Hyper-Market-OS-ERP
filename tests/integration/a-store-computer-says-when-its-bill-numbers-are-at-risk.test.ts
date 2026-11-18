@@ -435,7 +435,7 @@ async function billsWaitingAndGivenUpThroughTheBox(cloud: Cloud): Promise<void> 
 }
 
 function memoryCloud(tenant: string): { cloud: Cloud; ready: Promise<void> } {
-  const h = apiHarness();
+  const h = apiHarness({ tillFormatA: false /* OB-847: proves the older numbering */ });
   const cloud: Cloud = {
     tenant, url: 'https://cloud.example.test',
     call: (method, path, user, body, key, branchId) => h.raw({
@@ -491,7 +491,7 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r19: a store computer says
   let real: RealCloud;
   let cloud: Cloud;
   beforeAll(async () => {
-    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: TEST_PACK_KEY });
+    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: TEST_PACK_KEY, providers: { tillFormatA: false } });
     const send = async (method: HttpRequest['method'], path: string, token: string, body?: unknown, key?: string): Promise<Reply> => {
       const res = await fetch(`${real.baseUrl}${path}`, {
         method, headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(key === undefined ? {} : { 'idempotency-key': key }) },

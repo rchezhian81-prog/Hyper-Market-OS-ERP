@@ -74,7 +74,7 @@ describe("the owner's takings count today's refunds", () => {
     const bill = (await till.lookupRefund('MS-000001'))!;
     const approval = await managerApprovesOn(till, 'u-mgr', { kind: 'refund', billRef: 'S-1', valueMinor: 3_500 });
     expect(await bill.submit({
-      returnId: 'RT-1', number: await till.nextReceipt(), reasonCode: 'damaged', refundMinor: 3_500, refundTender: 'cash',
+      returnId: 'RT-1', number: await till.nextReceipt('return'), reasonCode: 'damaged', refundMinor: 3_500, refundTender: 'cash',
       lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'damaged' }], approval,
     })).toMatchObject({ kind: 'settled' });
 

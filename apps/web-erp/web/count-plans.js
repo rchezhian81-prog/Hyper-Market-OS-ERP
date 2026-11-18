@@ -85,7 +85,8 @@ function ensureRegister() {
     rowKey: (p) => p.planId, rowData: (p) => ({ plan: p.planId, state: p.state }),
     empty: { title: both('empty'), detail: both('registerLede') },
     columns: [
-      { key: 'plan', label: both('colPlan'), value: (p) => p.planId },
+      // OB-850: the stock count's own number (CNT1/26-27/00001) when it has one; a plan from before keeps its id.
+      { key: 'plan', label: both('colPlan'), value: (p) => p.documentNumber || p.planId },
       { key: 'place', label: both('colPlace'), value: (p) => o.nameOf('place', p.locationId) || p.locationId },
       { key: 'products', label: both('colProducts'), sort: false, value: (p) => p.productIds.map((id) => o.nameOf('product', id) || id).join(', ') },
       { key: 'state', label: both('colState'), filter: true, value: (p) => t(p.state), render: (p) => o.recordChip(p.state, t(p.state)) },

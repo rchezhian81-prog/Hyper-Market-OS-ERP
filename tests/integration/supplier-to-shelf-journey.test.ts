@@ -137,6 +137,8 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
   expect(selfPo.status).toBeGreaterThanOrEqual(400);
   const issued = await ok(call('POST', `/v1/purchase/orders/${PO}/approval`, OWNER, { reason: 'within the month budget' }, 'po-approve'), 200);
   expect(issued['order']).toMatchObject({ status: 'issued', approvedBy: OWNER, requisitionedBy: BUYER });
+  // OB-847: the order carries its format-A number, made when it was saved and kept on approval.
+  expect(issued['order']).toMatchObject({ documentNumber: expect.stringMatching(/^PO\/\d{2}-\d{2}\/00001$/) });
   expect(await ok(call('GET', '/v1/purchase/commitments', OWNER), 200)).toMatchObject({ known: true, valueMinor: ORDERED * COST });
   row('2 order raised / issued', 'POST /v1/purchase/orders/:poId · …/approval', 'buyer proposes 100; buyer cannot issue; owner issues; commitment ₹3,000.00',
     `buyer self-issue ${selfPo.status}; issued by ${OWNER}; commitment ${ORDERED * COST}`);
@@ -161,6 +163,8 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
     poReceipt?: { receivedByProduct: Record<string, number> } | null;
   };
   expect(grn).toMatchObject({ availableMinor: GOOD, heldMinor: 0, receivedBy: RECEIVER });
+  // OB-847: the receipt's number is the store's own range (store 1), taken in the same save.
+  expect(grnBody['grn']).toMatchObject({ documentNumber: expect.stringMatching(/^GRN1\/\d{2}-\d{2}\/00001$/) });
   expect(grn.orderPosition?.[PRODUCT]).toMatchObject({ ordered: ORDERED, receivedBefore: 0, remaining: ORDERED });
   expect(grn.captured.lines.map((l) => [l.lineId, l.disposition, l.sellableMinor, l.quarantinedMinor]))
     .toEqual([['L1', 'sellable', GOOD, 0], ['L2', 'quarantine', 0, WARM], ['L3', 'quarantine', 0, UNREAD]]);
@@ -204,8 +208,11 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
   // ── 6. The floor asks for 30; a floor manager approves; the back store issues 30 FROM THE BIN. ─────────────────────────
   const asked = await ok(call('POST', `/v1/floor/indents/${INDENT}`, FLOOR_ASK, { fromLocationId: BACK, toLocationId: FLOOR, lines: [{ productId: PRODUCT, quantityMinor: ASKED, uom: 'ea' }], reason: 'dairy chiller low' }, INDENT), 201);
   expect(asked['indent']).toMatchObject({ state: 'requested', requestedBy: FLOOR_ASK });
+  // OB-850: the indent's own number (store 1's range), made in the same save — and it stays on the indent once approved.
+  expect(asked['indent']).toMatchObject({ documentNumber: expect.stringMatching(/^IND1\/\d{2}-\d{2}\/00001$/) });
   expect(codeOf(await call('POST', `/v1/floor/indents/${INDENT}/approval`, FLOOR_ASK, {}, 'ind-self'))).toBe('forbidden');
   const approved = await ok(call('POST', `/v1/floor/indents/${INDENT}/approval`, FLOOR_MGR, {}, 'ind-approve'), 200);
+  expect(approved['indent']).toMatchObject({ documentNumber: (asked['indent'] as { documentNumber: string }).documentNumber });
   expect(approved['indent']).toMatchObject({ state: 'approved', approvedBy: FLOOR_MGR, totals: expect.objectContaining({ allocatedMinor: ASKED }) });
   const issue = await ok(call('POST', `/v1/floor/indents/${INDENT}/issues/is-1`, BACKSTORE, { lines: [{ productId: PRODUCT, batchId: BATCH, quantityMinor: ASKED, binId: BIN }] }, 'ind-issue-1'), 201);
   expect(issue).toMatchObject({ transferId: `${INDENT}:is-1`, lineCostsMinor: [COST] });

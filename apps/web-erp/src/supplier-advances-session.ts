@@ -75,6 +75,8 @@ export const advancesWords = (lang: Lang, key: string): string =>
 export interface AdvancePosition {
   readonly advanceId: string; readonly supplierId: string; readonly poId: string | null; readonly paidMinor: number; readonly appliedMinor: number; readonly leftMinor: number;
   readonly paidOn: string; readonly approvedBy: string | null;
+  /** OB-847: the advance's format-A number (`SADV/26-27/00001`); absent on an advance from before. */
+  readonly documentNumber?: string;
   readonly applications: readonly { readonly applicationId: string; readonly invoiceId: string | null; readonly amountMinor: number; readonly on: string; readonly reverses: string | null }[];
 }
 export interface AdvancesRegister { readonly advances: readonly AdvancePosition[]; readonly registerLeftMinor: number; readonly advancesAccount: string | null; readonly ledgerMinor: number | null; readonly agrees: boolean; readonly asAt: string }

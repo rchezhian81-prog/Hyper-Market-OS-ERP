@@ -131,6 +131,8 @@ export function apiHarness(opts: {
   invoiceExtractor?: InvoiceExtractor;
   /** The clock the session-channel guard reads (PA-10) — injected to drive a support session past its time box. */
   now?: () => string;
+  /** OB-847: false to prove the OLDER till numbering (packs with no format-A section). Absent → format A. */
+  tillFormatA?: boolean;
   /** D-021: the catalogue's clock only (pack building and the price sends) — moved past a price's start day. */
   catalogueNow?: () => string;
   /** A notification transport for the send path (PA-08) — the recording test adapter; production has none. */
@@ -179,6 +181,7 @@ export function apiHarness(opts: {
     ...(opts.identityDirectory === undefined ? {} : { identityDirectory: opts.identityDirectory }),
     ...(opts.settings === undefined ? {} : { settings: opts.settings }),
     ...(opts.numberSeries === undefined ? {} : { numberSeries: opts.numberSeries }),
+    ...(opts.tillFormatA === false ? { tillFormatA: false } : {}),
     ...(opts.privilegeSealSecret === undefined ? {} : { privilegeSealSecret: opts.privilegeSealSecret }),
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);

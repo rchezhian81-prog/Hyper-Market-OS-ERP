@@ -19,6 +19,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Document numbers (OB-844–847) · 18 November 2026 · format A
+- **Owner decided (in writing):** "Document numbers, format A"; "OB-844 A, OB-845 A, OB-846 A". Small choices: OB-848 (decided under OB-801); the till's temporary range after a restore: OB-849 (CA to confirm).
+- **Done (on its branch `claude/document-numbers`):**
+  - Every number is `PREFIX/YY-YY/NNNNN`, at most 16 characters, made automatically, restarting each 1 April by the shop's date.
+  - **Till bills `1L01/26-27/00001`** and **till returns `1R01/26-27/00001`** — numbered on the store computer, offline; two tills never clash; at 99,999 a till moves to `1L51` by itself; a warning from 90,000; a restored store computer uses a fresh temporary range `1T01`. The number is on the till's screen and the printed bill.
+  - **Numbered in the same save as the document** (no gap, no duplicate; a cancelled one keeps its number): goods receipts `GRN1`, purchase orders `PO`, supplier payments `SPAY`, supplier advances `SADV`, supplier debit notes `SDN`, customer credit/debit notes `CCN`/`CDN`, business customer invoices `BINV`, write-offs from the write-off page `WOF1`.
+  - Store setup shows **Document numbers**: each till's code, each range's last number, what is left this year, and the 90,000 warning.
+  - Old documents keep their old numbers.
+- **Also numbered now (OB-850, branch `claude/document-numbers-2`):** stock counts `CNT1`, transfers out `TRF1`, returns to supplier `RTS1`, floor indents `IND1`, money received `RCT1`, and each write-off of a batch its own `WOF1` (a count's held write-off, damage found when the floor receives, a returned item written off). Shown on Transfers, Count plans, Floor indents, Goods receipts (a return gone back), Business customers (a payment) and the write-off page.
+- **Answered (tax, 18 Nov):** OB-853 A (the temporary `1T01` range after a restore, as built) and OB-854 A (a number taken at payment and never used is shown as a Cancelled bill number). The CA confirms both in writing (owner action).
+- **Owner, in the store:** the CA confirms in writing that the new series start on the install day for the rest of 2026-27 (OB-845 A), and the temporary till range after a restore (OB-849).
 ## Batch 15 (18 November 2026) · Today's last gaps, the town, supplier names (D-061–D-066 · OB-834, OB-835, OB-836)
 - **Owner asked:** fix the remaining gaps from the gap audit (items 1–6 of batch 15).
 - **Done (on branch `claude/batch-15`):**

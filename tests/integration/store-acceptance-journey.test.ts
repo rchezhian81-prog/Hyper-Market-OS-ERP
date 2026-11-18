@@ -566,7 +566,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     const approval = await managerApprovesOn(till, MANAGER, { kind: 'refund', billRef: 'S-2', valueMinor: moneyBack, reason: 'bag torn' });
     expect(approval.by).toBe(MANAGER);
     const refunded = await bill.submit({
-      returnId: 'RT-1', number: await till.nextReceipt(), reasonCode: 'damaged',
+      returnId: 'RT-1', number: await till.nextReceipt('return'), reasonCode: 'damaged',
       lines: [{ productId: RICE.productId, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
       refundMinor: moneyBack, refundTender: 'cash', approval,
     });

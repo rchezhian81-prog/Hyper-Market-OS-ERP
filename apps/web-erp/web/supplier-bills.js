@@ -660,7 +660,7 @@ function renderAdvances() {
   if (r.advances.length === 0) { $('adv-list').append(advNode('li', 'bill', at('none'))); return; }
   for (const a of r.advances) {
     const li = advNode('li', 'bill'); li.dataset.advance = a.advanceId;
-    li.append(advNode('span', 'what', `${at('advance')} ${a.advanceId} · ${at('supplier')} ${a.supplierId}${a.poId === null ? '' : ` · ${at('order')} ${a.poId}`}`));
+    li.append(advNode('span', 'what', `${at('advance')} ${a.documentNumber || a.advanceId} · ${at('supplier')} ${a.supplierId}${a.poId === null ? '' : ` · ${at('order')} ${a.poId}`}`));
     li.append(advNode('span', 'facts', `${at('paid')} ${adv.rupees(a.paidMinor)} · ${at('used')} ${adv.rupees(a.appliedMinor)} · ${at('left')} ${adv.rupees(a.leftMinor)} · ${at('paidOn')} ${a.paidOn}${a.approvedBy === null ? '' : ` · ${at('approvedBy')} ${a.approvedBy}`}`));
     const undone = new Set(a.applications.filter((x) => x.reverses !== null).map((x) => x.reverses));
     if (a.applications.length === 0) li.append(advNode('span', 'facts', at('noUses')));

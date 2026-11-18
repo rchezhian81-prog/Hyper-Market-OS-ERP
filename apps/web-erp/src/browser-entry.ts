@@ -1132,7 +1132,11 @@ function openWriteOffCapturePort(): WriteOffCapturePort {
           credentials: 'same-origin',
           body: JSON.stringify(writeOffRequestBody(body, approvalId)),
         });
-        if (res.status >= 200 && res.status < 300) return { result: 'recorded' };
+        if (res.status >= 200 && res.status < 300) {
+          // OB-850: the write-off's own number (WOF1/26-27/00001), made by head office in the same save.
+          const body = (await res.json().catch(() => ({}))) as { documentNumber?: unknown };
+          return { result: 'recorded', ...(typeof body.documentNumber === 'string' ? { documentNumber: body.documentNumber } : {}) };
+        }
         return { result: 'refused', ...(await refusalOf(res)) };
       } catch {
         return { result: 'lost_link' };
@@ -3196,7 +3200,7 @@ export async function fetchIndents(): Promise<IndentsData | null> {
       lostValueMinor: i['shortfallResolution'] === undefined ? null : ((i['shortfallResolution'] as Record<string, unknown>)['lines'] as Record<string, unknown>[] | undefined ?? []).reduce((s, l) => s + num(l['lostValueMinor']), 0),
     }));
     return {
-      indentId: String(r['indentId'] ?? ''), state: String(r['state'] ?? 'requested'), requestedBy: String(r['requestedBy'] ?? ''), requestedAt: String(r['requestedAt'] ?? ''),
+      indentId: String(r['indentId'] ?? ''), ...(typeof r['documentNumber'] === 'string' ? { documentNumber: r['documentNumber'] } : {}) /* OB-850 */, state: String(r['state'] ?? 'requested'), requestedBy: String(r['requestedBy'] ?? ''), requestedAt: String(r['requestedAt'] ?? ''),
       approvedBy: str(r['approvedBy']), fromLocationId: String(r['fromLocationId'] ?? ''), toLocationId: String(r['toLocationId'] ?? ''), reason: str(r['reason']),
       flags: strs(r['flags']), attention: strs(r['attention']), needsAttention: r['needsAttention'] === true, lines, issues,
     };
@@ -3412,6 +3416,7 @@ function returnLinesOf(g: Record<string, unknown>, lines: readonly Record<string
       valueMinor: num(gone?.['valueMinor'] ?? d['valueMinor']), currency: String(gone?.['currency'] ?? money(line['unitCost']).currency ?? 'INR'),
       decidedBy: String(d['decidedBy'] ?? ''), state: gone === undefined ? 'awaiting_return' : 'returned',
       returnedBy: gone === undefined ? null : String(gone['returnedBy'] ?? ''), needsCount: gone === undefined && needsCount,
+      ...(typeof gone?.['documentNumber'] === 'string' ? { documentNumber: gone['documentNumber'] } : {}), // OB-850: RTS1/…
       ...(d['valueNotKnown'] === true || gone?.['valueNotKnown'] === true ? { valueNotKnown: true } : {}), // OB-509
       ...((): { dispatch?: GrnReturnDispatchView } => { const dispatch = dispatchOf(g, lineId); return dispatch === undefined ? {} : { dispatch }; })(),
     }];
@@ -3522,7 +3527,8 @@ export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): P
       .filter((c) => !billed.has(String(c['lineId'] ?? '')))
       .map((c) => ({ lineId: String(c['lineId'] ?? ''), productId: String(c['productId'] ?? ''), because: c['because'] === 'not_on_order' ? 'not_on_order' as const : 'no_issued_order' as const }));
     return {
-      grnId: String(g['grnId'] ?? ''), number: String(g['number'] ?? ''),
+      grnId: String(g['grnId'] ?? ''), number: String(g['documentNumber'] ?? g['number'] ?? '') /* OB-847: its format-A number when it has one */,
+      ...(typeof g['documentNumber'] === 'string' ? { reference: String(g['number'] ?? g['grnId'] ?? '') } : {}),
       poId: typeof g['poId'] === 'string' ? g['poId'] : null,
       warehouseId: String(g['warehouseId'] ?? ''), receivedBy: String(g['receivedBy'] ?? ''),
       receivedAt: String(g['receivedAt'] ?? ''),
@@ -5046,6 +5052,15 @@ export interface SetupData {
   readonly permissions?: readonly string[];
   /** OB-81: head office's `GET /v1/receipt-prefixes` for this viewer. Absent → refused or not told: no panel. */
   readonly receiptPrefixes?: ReceiptPrefixesRead;
+  /** OB-847: head office's `GET /v1/document-numbers` — every range, its last number, the 90,000 warning; each till's code. */
+  readonly documentNumbers?: DocumentNumbersRead;
+}
+
+/** OB-847: what `GET /v1/document-numbers` answers, as the setup page draws it. */
+export interface DocumentNumbersRead {
+  readonly ranges: readonly { readonly prefix: string; readonly yearLabel: string; readonly words: string; readonly issued: number; readonly lastNumber: string; readonly remaining: number; readonly warn: boolean }[];
+  readonly tills: readonly { readonly storeId: string; readonly storeNumber: number; readonly lanes: readonly { readonly laneId: string; readonly code: string }[]; readonly ranges: readonly { readonly head: string; readonly lastNumber: string; readonly remaining: number; readonly warn: boolean }[] }[];
+  readonly warnings: readonly string[];
 }
 
 /**
@@ -5131,7 +5146,14 @@ export async function loadSetupLive(raw: unknown, fetchFn: typeof fetch = (...a)
     const body = res.ok ? (await res.json().catch(() => null)) as ReceiptPrefixesRead | null : null;
     if (body !== null && Array.isArray(body.tills)) receiptPrefixes = body;
   } catch { /* the prefix panel is simply not drawn — never an empty "no tills" */ }
-  const data: SetupData = { userId: viewer.userId, permissions: viewer.permissions, status, ...(receiptPrefixes === undefined ? {} : { receiptPrefixes }) };
+  // OB-847: the document-number ranges — read in the person's own session; refused or unreachable → the panel is not drawn.
+  let documentNumbers: DocumentNumbersRead | undefined;
+  try {
+    const res = await fetchFn('/v1/document-numbers', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    const body = res.ok ? (await res.json().catch(() => null)) as DocumentNumbersRead | null : null;
+    if (body !== null && Array.isArray(body.ranges) && Array.isArray(body.tills)) documentNumbers = body;
+  } catch { /* not drawn */ }
+  const data: SetupData = { userId: viewer.userId, permissions: viewer.permissions, status, ...(receiptPrefixes === undefined ? {} : { receiptPrefixes }), ...(documentNumbers === undefined ? {} : { documentNumbers }) };
   return { ok: true, data, session: bootSetup(data)!, editing: makeSetupEditing(data), prefixes: bootReceiptPrefixes(data) };
 }
 
@@ -6230,7 +6252,7 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
           body: JSON.stringify({ supplierId, deliverToLocationId, lines }),
         });
         const body = (await res.json().catch(() => ({}))) as {
-          order?: { requisitionedBy?: string; totalMinor?: number; budgetCheck?: { overBudget?: boolean; overByMinor?: number } };
+          order?: { requisitionedBy?: string; totalMinor?: number; documentNumber?: string; budgetCheck?: { overBudget?: boolean; overByMinor?: number } };
           whatHappened?: string;
           error?: { whatHappened?: string };
         };
@@ -6245,6 +6267,8 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
           const check = body.order.budgetCheck;
           return {
             proposed: true, requisitionedBy: body.order.requisitionedBy, totalMinor: body.order.totalMinor,
+            // OB-847: the order's number, made by head office in the same save (PO/26-27/00001).
+            ...(typeof body.order.documentNumber === 'string' ? { documentNumber: body.order.documentNumber } : {}),
             ...(check === undefined ? {} : { budget: { overBudget: check.overBudget === true, overByMinor: typeof check.overByMinor === 'number' ? check.overByMinor : 0 } }),
           };
         }

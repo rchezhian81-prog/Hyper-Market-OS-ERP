@@ -20,6 +20,7 @@
 // (`STORE_STAMP_FIELD`), and only that store's own computer may report it. A report that names another store is refused
 // at the door and kept as a refusal. Append-only: every report is kept; the latest per store is read.
 
+import { receiptNumberFor, isFormatAHead } from '../../../packages/contracts/src/receipt-number';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError, assertBranchInScope, concurrentChange, scopeOf } from '../../kernel/src/index';
@@ -308,7 +309,7 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
     if (!Array.isArray(rawIssued) || rawIssued.length > 200) problems.push('receiptNumbersIssued must be a list (at most 200) of { prefix, through }');
     else {
       rawIssued.forEach((x: unknown, i) => {
-        if (!isObj(x) || typeof x['prefix'] !== 'string' || x['prefix'] === '' || x['prefix'].length > 10 || x['prefix'] !== x['prefix'].trim()
+        if (!isObj(x) || typeof x['prefix'] !== 'string' || x['prefix'] === '' || (x['prefix'].length > 10 && !isFormatAHead(x['prefix'])) || x['prefix'] !== x['prefix'].trim()
           || !isCount(x['through']) || (x['through'] as number) < 1 || (x['through'] as number) > 999_999) {
           problems.push(`receiptNumbersIssued[${i}] needs a prefix (1–10 characters) and a whole count from 1 to 999999`); return;
         }
@@ -2802,9 +2803,10 @@ export function countRanges(numbers: readonly number[]): [number, number][] {
   return out;
 }
 
-const pad6 = (n: number): string => String(n).padStart(6, '0');
+/** OB-847: a bill number under a prefix — 6 digits, or 5 under a format-A head (`1L01/26-27/00042`). */
+const numberUnder = (prefix: string, n: number): string => receiptNumberFor(prefix, n);
 const rangeWords = (prefix: string, ranges: readonly (readonly [number, number])[]): string =>
-  ranges.map(([a, z]) => (a === z ? `${prefix}${pad6(a)}` : `${prefix}${pad6(a)} to ${prefix}${pad6(z)}`)).join(', ');
+  ranges.map(([a, z]) => (a === z ? numberUnder(prefix, a) : `${numberUnder(prefix, a)} to ${numberUnder(prefix, z)}`)).join(', ');
 
 /** Verifier r22 D3/D5: never-received numbers for one prefix, after the ledger check, with what the box still claims. */
 export interface UnreceivedNumbers {
@@ -2907,7 +2909,7 @@ export function billNumberFindingsFor(input: {
     const below = checked[0]![0];
     out.push({
       kind: 'at_risk_not_checked', prefix, count: unchecked, ranges: atRiskNotChecked(x.atRisk), since: receivedAt,
-      detail: `not checked: store ${input.storeId}'s computer says it cannot vouch for ${unchecked + checked.reduce((n, [a, z]) => n + z - a + 1, 0)} bill number(s) under ${prefix} (given after the backup it was restored from); head office checks the newest ${UNRECEIVED_CHECK_CAP} of them one by one on each report, so ${unchecked} older one(s), below ${prefix}${pad6(below)}, were NOT checked. Ask support to compare that store computer's restore record with head office's bills; any of them head office does not hold may be a sale lost by the restore. Do NOT re-enter bills from paper until support has checked. ${NOT_CHECKED_STAYS_WORDS}`,
+      detail: `not checked: store ${input.storeId}'s computer says it cannot vouch for ${unchecked + checked.reduce((n, [a, z]) => n + z - a + 1, 0)} bill number(s) under ${prefix} (given after the backup it was restored from); head office checks the newest ${UNRECEIVED_CHECK_CAP} of them one by one on each report, so ${unchecked} older one(s), below ${numberUnder(prefix, below)}, were NOT checked. Ask support to compare that store computer's restore record with head office's bills; any of them head office does not hold may be a sale lost by the restore. Do NOT re-enter bills from paper until support has checked. ${NOT_CHECKED_STAYS_WORDS}`,
     });
   }
   // Verifier r21 UNSENT-CEILING (a): the latest report's per-prefix lists do not fit its own queue — said, and not believed.
@@ -2940,7 +2942,7 @@ export function billNumberFindingsFor(input: {
       : ` (${tillClock === sorted.length ? '' : `for ${tillClock} of them, `}the bill's time is the TILL's own clock — this store computer did not stamp when it took the bill, so a till clock that is slow can make an honest number look like this: check the till's clock first)`;
     out.push({
       kind: 'unused_number_received', prefix, ranges, count: sorted.length, since: first.heldAt,
-      detail: `does not fit: store ${input.storeId}'s computer said (last at ${said}) that it gave ${rangeWords(prefix, ranges)} and never put ${one ? 'it' : 'them'} on a bill, but head office holds ${sales === sorted.length ? (one ? 'a sale' : 'sales') : sales === 0 ? (one ? 'a return' : 'returns') : 'sales and returns'} under ${one ? 'that number' : 'those numbers'}, made before that (the first at ${first.heldAt}, ${prefix}${pad6(first.number)})${clockWords}. A number put on a bill is never "unused" afterwards. Nothing is missing — head office has ${one ? 'the bill' : 'the bills'}, so do NOT look for paper bills — but the store computer's list of unused numbers under ${prefix} cannot be relied on: call support to check that store computer (the store computer or head office lost track; no blame is placed, as owner decision OB-92).${cappedWords(input.unusedCapped?.find((c) => c.prefix === prefix))} ${UNUSED_RECEIVED_STAYS_WORDS}`,
+      detail: `does not fit: store ${input.storeId}'s computer said (last at ${said}) that it gave ${rangeWords(prefix, ranges)} and never put ${one ? 'it' : 'them'} on a bill, but head office holds ${sales === sorted.length ? (one ? 'a sale' : 'sales') : sales === 0 ? (one ? 'a return' : 'returns') : 'sales and returns'} under ${one ? 'that number' : 'those numbers'}, made before that (the first at ${first.heldAt}, ${numberUnder(prefix, first.number)})${clockWords}. A number put on a bill is never "unused" afterwards. Nothing is missing — head office has ${one ? 'the bill' : 'the bills'}, so do NOT look for paper bills — but the store computer's list of unused numbers under ${prefix} cannot be relied on: call support to check that store computer (the store computer or head office lost track; no blame is placed, as owner decision OB-92).${cappedWords(input.unusedCapped?.find((c) => c.prefix === prefix))} ${UNUSED_RECEIVED_STAYS_WORDS}`,
     });
   }
   out.push(...refusedFindingsFrom(input.storeId, facts.refusedOpen));
@@ -2950,7 +2952,7 @@ export function billNumberFindingsFor(input: {
     if (n.prefix !== undefined) {
       out.push({
         kind: 'report_refused_not_kept', prefix: n.prefix, count: n.count, since: n.first,
-        detail: `${n.count} more refused bill count(s) under ${n.prefix} not kept: store ${input.storeId}'s computer ${n.computer} reported more NEW bill counts under ${n.prefix} that head office refused (a count too far ahead of what head office has received, or a till that belongs to another store computer) than head office keeps — at most ${REFUSED_OWN_NEW_PER_DAY_MAX} new ones a day per store computer per till — between ${n.first} and ${n.last}; the highest of them was ${n.prefix}${pad6(n.highest ?? 0)}. The ones above that are counted here, never kept, so they are not listed one by one (the refused counts that were kept are listed above). A store computer that keeps reporting impossible counts for its own till is faulty or has been altered: call support the same day, and ask them to block that store computer's sign-in if it goes on. This line stays for ${REFUSED_NOT_KEPT_SHOWN_DAYS} days after the last one`,
+        detail: `${n.count} more refused bill count(s) under ${n.prefix} not kept: store ${input.storeId}'s computer ${n.computer} reported more NEW bill counts under ${n.prefix} that head office refused (a count too far ahead of what head office has received, or a till that belongs to another store computer) than head office keeps — at most ${REFUSED_OWN_NEW_PER_DAY_MAX} new ones a day per store computer per till — between ${n.first} and ${n.last}; the highest of them was ${numberUnder(n.prefix, n.highest ?? 0)}. The ones above that are counted here, never kept, so they are not listed one by one (the refused counts that were kept are listed above). A store computer that keeps reporting impossible counts for its own till is faulty or has been altered: call support the same day, and ask them to block that store computer's sign-in if it goes on. This line stays for ${REFUSED_NOT_KEPT_SHOWN_DAYS} days after the last one`,
       });
       continue;
     }

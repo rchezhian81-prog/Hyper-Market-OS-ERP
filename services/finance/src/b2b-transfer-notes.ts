@@ -74,7 +74,7 @@ export interface B2BTransferNotesDeps {
   /** What the customer owes on the AR ledger the credit check reads. */
   readonly outstandingMinor: (tenantId: string, customerId: string) => Promise<number> | number;
   /** The money received, on the SAME path the desk's collection uses (AR ledger + allocation + the books' postable). */
-  readonly recordPaymentWithMoney: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string) => Promise<void>;
+  readonly recordPaymentWithMoney: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string, storeId?: string | null) => Promise<void | { readonly documentNumber?: string }>; // OB-850: answers its RCT number
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }

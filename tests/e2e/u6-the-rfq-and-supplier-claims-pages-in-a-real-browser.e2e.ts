@@ -157,7 +157,7 @@ describe.skipIf(!HAVE_BROWSER)('U6: the Requests for quotation and Supplier clai
       }, /₹20\.00 will be taken off what the shop owes Aavin Dairy/, sent);
       expect(title).toMatch(/Aavin Dairy/);
       await says(page, '#shop-table tbody tr[data-kind="debit_note"]', /Issued/);
-      await says(page, '#shop-table tbody tr[data-kind="debit_note"]', /DN-\d{6}/);
+      await says(page, '#shop-table tbody tr[data-kind="debit_note"]', /SDN\/\d{2}-\d{2}\/\d{5}/ /* OB-847 */);
       expect(a.writes).toHaveLength(1);
       expect(a.writes[0]).toMatch(/^POST \/v1\/purchase\/suppliers\/sup-a\/debit-notes\/.+\/issue$/);
       await page.click('#lang');

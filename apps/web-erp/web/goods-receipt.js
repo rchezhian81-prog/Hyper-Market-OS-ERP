@@ -151,7 +151,8 @@ function receiptNode(r) {
   headline.className = 'headline';
   headline.textContent = r.number;
   id.append(headline);
-  for (const line of [r.poId ?? t('noPo'), r.receivedAt ? shopWhen(r.receivedAt) : '']) {
+  // OB-847: under the new number, the delivery's own reference it was booked as.
+  for (const line of [r.reference ?? '', r.poId ?? t('noPo'), r.receivedAt ? shopWhen(r.receivedAt) : '']) {
     if (line === '') continue;
     const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = line; id.append(sub);
   }
@@ -220,7 +221,8 @@ function receiptNode(r) {
       const item = document.createElement('li');
       item.dataset.lineId = l.lineId;
       item.dataset.state = l.state;
-      const word = document.createElement('span'); word.className = 'r-word'; word.textContent = l.stateLabel;
+      // OB-850: once gone back, the return's own number (RTS1/26-27/00001) beside its state.
+      const word = document.createElement('span'); word.className = 'r-word'; word.textContent = l.documentNumber ? `${l.stateLabel} · ${l.documentNumber}` : l.stateLabel;
       const what = document.createElement('span'); what.textContent = `${l.productId} × ${l.quantityLabel} · ${l.valueNotKnown ? t('valueNotKnown') : money(l.valueMinor, l.currency)}`;
       const who = document.createElement('span'); who.className = 'd-detail';
       who.textContent = `${t('decidedByLabel')} ${l.decidedBy}` + (l.returnedBy ? ` · ${t('returnedByLabel')} ${l.returnedBy}` : '');

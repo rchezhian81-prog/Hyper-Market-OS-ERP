@@ -276,13 +276,13 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
     expect(codeOf(await post(h, '/v1/purchase/suppliers/s-1/debit-notes/DN-nope/issue', 'u-checker', {}, 'dn-nope'))).toBe('not_found');
     const issued = await post(h, '/v1/purchase/suppliers/s-1/debit-notes/DN-grn-1-L3/issue', 'u-checker', {}, 'dn-1');
     expect(issued.status).toBe(201);
-    expect(issued.body).toMatchObject({ debitNoteRef: 'DN-grn-1-L3', number: 'DN-000001', issuedBy: 'u-checker', valueMinor: 2000, alreadyIssued: false });
-    expect((await post(h, '/v1/purchase/suppliers/s-1/debit-notes/DN-grn-1-L3/issue', 'u-acct', {}, 'dn-1-again')).body).toMatchObject({ number: 'DN-000001', alreadyIssued: true });
-    expect((await one(h, 's-1')).body.account.debitNotes[0]).toMatchObject({ number: 'DN-000001', issuedBy: 'u-checker' });
+    expect(issued.body).toMatchObject({ debitNoteRef: 'DN-grn-1-L3', number: 'SDN/26-27/00001', issuedBy: 'u-checker', valueMinor: 2000, alreadyIssued: false });
+    expect((await post(h, '/v1/purchase/suppliers/s-1/debit-notes/DN-grn-1-L3/issue', 'u-acct', {}, 'dn-1-again')).body).toMatchObject({ number: 'SDN/26-27/00001', alreadyIssued: true });
+    expect((await one(h, 's-1')).body.account.debitNotes[0]).toMatchObject({ number: 'SDN/26-27/00001', issuedBy: 'u-checker' });
     // A second note (the sound p2 line returned too) takes the next number — gap-free.
     expect((await post(h, '/v1/inventory/goods-receipt/grn-2', 'u-recv', { warehouseId: 'store-1', receivedOnDate: '2026-09-30', currency: 'INR', poId: 'po-1', lines: [rl('L1', 'p1', 0, 3, 500, { condition: 'damaged' })] }, 'grn-2')).status).toBe(201);
     expect((await post(h, '/v1/inventory/goods-receipt/grn-2/lines/L1/disposition', 'u-boss', { disposition: 'claim', reason: 'crushed' }, 'd-g2')).status).toBe(200);
-    expect((await post(h, '/v1/purchase/suppliers/s-1/debit-notes/DN-grn-2-L1/issue', 'u-checker', {}, 'dn-2')).body).toMatchObject({ number: 'DN-000002', valueMinor: 1500 });
+    expect((await post(h, '/v1/purchase/suppliers/s-1/debit-notes/DN-grn-2-L1/issue', 'u-checker', {}, 'dn-2')).body).toMatchObject({ number: 'SDN/26-27/00002', valueMinor: 1500 });
   });
 
   it('the supplier\'s OWN portal statement reads the same account (P-02): invoiced, our debit note as their credit, the payment, the withheld figure disputed — and it reconciles', async () => {

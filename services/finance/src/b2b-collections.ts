@@ -38,6 +38,8 @@ const strArray = (v: unknown): readonly string[] | undefined =>
 /** A recorded payment and the allocations it was split into — enough to project each invoice's settled. */
 export interface RecordedPayment {
   readonly receiptId: string;
+  /** OB-850 (document numbers, format A): the money receipt's `RCT1/26-27/00001`, made when it is saved. Absent before. */
+  readonly documentNumber?: string;
   readonly receivedMinor: number;
   readonly allocations: readonly PaymentAllocation[];
 }
@@ -70,7 +72,8 @@ export interface B2BCollectionsDeps {
   readonly recordPayment: (tenantId: string, customerId: string, payment: RecordedPayment) => Promise<void> | void;
   /** FUL-09: the money received moves the customer's AR ledger and reaches the books — in ONE write with the allocation.
    *  When present it records the payment itself (instead of `recordPayment`). */
-  readonly recordPaymentWithMoney?: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string) => Promise<void>;
+  /** OB-850: answers the receipt's format-A number (`RCT<store>/26-27/00001` — the store it was taken at), taken in the same save. */
+  readonly recordPaymentWithMoney?: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string, storeId?: string | null) => Promise<void | { readonly documentNumber?: string }>;
   readonly now: () => string;
 }
 
@@ -133,9 +136,10 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
           invoices: await deps.invoices(ctx.tenantId, customerId), against,
         });
         const payment: RecordedPayment = { receiptId, receivedMinor: result.receivedMinor, allocations: result.allocations };
-        if (deps.recordPaymentWithMoney !== undefined) await deps.recordPaymentWithMoney(ctx.tenantId, customerId, payment, await shopToday(deps, ctx.tenantId));
+        let numbered: void | { readonly documentNumber?: string } = undefined;
+        if (deps.recordPaymentWithMoney !== undefined) numbered = await deps.recordPaymentWithMoney(ctx.tenantId, customerId, payment, await shopToday(deps, ctx.tenantId), ctx.branchId ?? null);
         else await deps.recordPayment(ctx.tenantId, customerId, payment);
-        return { status: 201, body: { receiptId, allocatedMinor: result.allocatedMinor, unappliedMinor: result.unappliedMinor, allocations: result.allocations } };
+        return { status: 201, body: { receiptId, ...(numbered?.documentNumber === undefined ? {} : { documentNumber: numbered.documentNumber }), allocatedMinor: result.allocatedMinor, unappliedMinor: result.unappliedMinor, allocations: result.allocations } };
       },
     },
     {

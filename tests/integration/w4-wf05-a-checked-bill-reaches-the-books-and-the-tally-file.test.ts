@@ -93,8 +93,8 @@ describe('WF-05 — a typed bill is checked by a second person, matched, its deb
     if (acct.result !== 'ok') throw new Error(JSON.stringify(acct));
     expect(acct.value.debitNotes.map((d) => [d.debitNoteRef, d.valueMinor, d.number])).toEqual([['DN-grn-1-L3', 30_000, null]]);
     const issued = await checker.issueDebitNote('sup-k', 'DN-grn-1-L3');
-    expect(issued).toMatchObject({ result: 'ok', value: { number: 'DN-000001', alreadyIssued: false } });
-    expect(await checker.issueDebitNote('sup-k', 'DN-grn-1-L3')).toMatchObject({ result: 'ok', value: { number: 'DN-000001', alreadyIssued: true } });
+    expect(issued).toMatchObject({ result: 'ok', value: { number: 'SDN/26-27/00001', alreadyIssued: false } });
+    expect(await checker.issueDebitNote('sup-k', 'DN-grn-1-L3')).toMatchObject({ result: 'ok', value: { number: 'SDN/26-27/00001', alreadyIssued: true } });
 
     // ── The books: the accountant's rules, the posting (nothing sent), register and books agree ─────────────────────
     const books = createPayablesBooksSession({ viewer: { userId: P3.MATCHER, permissions: ['finance.period.read', 'finance.journal.post'] }, fetch: sessionFetch(h, T, P3.MATCHER) });

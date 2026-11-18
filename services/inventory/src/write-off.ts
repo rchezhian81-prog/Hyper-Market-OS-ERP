@@ -36,6 +36,8 @@ const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as numbe
 /** A committed write-off as it is stored on the append-only stream and read back. */
 export interface StoredWriteOff {
   readonly id: string;
+  /** OB-847 (document numbers, format A): `WOF1/26-27/00001`, made when the write-off is saved. Absent before. */
+  readonly documentNumber?: string;
   readonly productId: string;
   readonly locationId: string;
   readonly lossType: LossType;
@@ -99,7 +101,8 @@ export interface WriteOffDeps {
   readonly writeOffs: (tenantId: string) => Promise<readonly StoredWriteOff[]> | readonly StoredWriteOff[];
   /** Record the committed write-off AND its compensating stock movement (one truth — a loss reduces
    *  on-hand, not just the finance record). Append-only, idempotent on the write-off id. */
-  readonly recordWriteOff: (tenantId: string, rec: StoredWriteOff) => Promise<void> | void;
+  /** OB-847: answers the write-off's format-A number (`WOF1/26-27/00001`), taken in the same save as its record. */
+  readonly recordWriteOff: (tenantId: string, rec: StoredWriteOff) => Promise<void | { readonly documentNumber?: string }> | void | { readonly documentNumber?: string };
   /** The tenant's material-loss threshold (M28-FR-01) — `undefined` means none set, so the default
    *  applies. Sourced SERVER-SIDE: the caller can no longer declare their own threshold in the body. */
   readonly writeOffThreshold: (tenantId: string) => Promise<number | undefined> | number | undefined;
@@ -197,7 +200,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           // with what was recorded, never written off twice and never told it failed.
           const replay = await alreadyWrittenOffByItsApproval(deps, ctx.tenantId, ctx.userId, writeOffId, ctx.body);
           if (replay !== undefined) {
-            return { status: 201, body: { id: writeOffId, lossType: replay.lossType, qtyRemoved: replay.qtyRemoved, valueMinor: replay.valueMinor, valueSource: replay.valueSource, requiredApproval: replay.requiredApproval, evidenceRef: replay.evidenceRef, alreadyRecorded: true } };
+            return { status: 201, body: { id: writeOffId, ...(replay.documentNumber === undefined ? {} : { documentNumber: replay.documentNumber }), lossType: replay.lossType, qtyRemoved: replay.qtyRemoved, valueMinor: replay.valueMinor, valueSource: replay.valueSource, requiredApproval: replay.requiredApproval, evidenceRef: replay.evidenceRef, alreadyRecorded: true } };
           }
           throw apiError(409, {
             code: 'write_off_already_recorded',
@@ -318,7 +321,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           ...(priced.known ? { unitCostMinor: priced.unitCostMinor } : {}),
           ...(isStr(b['batchId']) ? { batchId: (b['batchId'] as string).trim() } : {}),
         };
-        await deps.recordWriteOff(ctx.tenantId, rec);
+        const numbered = await deps.recordWriteOff(ctx.tenantId, rec);
         // Seal the stock loss — what left, how much, why, its value and (for a material loss) the §28
         // approver — attributed to the raiser. A stock write-off carries no card/tender data (hard rule #3).
         await deps.recordAudit?.(ctx.tenantId, {
@@ -331,7 +334,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           },
           correlationId: rec.id,
         });
-        return { status: 201, body: { id: writeOffId, lossType: rec.lossType, qtyRemoved: rec.qtyRemoved, valueMinor: rec.valueMinor, valueSource: rec.valueSource, requiredApproval: rec.requiredApproval, evidenceRef: rec.evidenceRef } };
+        return { status: 201, body: { id: writeOffId, ...(numbered?.documentNumber === undefined ? {} : { documentNumber: numbered.documentNumber }), lossType: rec.lossType, qtyRemoved: rec.qtyRemoved, valueMinor: rec.valueMinor, valueSource: rec.valueSource, requiredApproval: rec.requiredApproval, evidenceRef: rec.evidenceRef } };
       },
     },
     {

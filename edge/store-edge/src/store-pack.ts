@@ -34,6 +34,8 @@ export interface PackReceiptNumbering {
   readonly storesInBusiness: number;
   /** OB-85 · verifier r17: per lane, the highest `R-<lane>-` count head office banked for this store (one-store business only). */
   readonly boxSeriesBankedThrough?: Readonly<Record<string, number>>;
+  /** OB-847: format A — this store's number, each till's lane code and the banked format-A ranges (unchecked, as sent). */
+  readonly formatA?: unknown;
 }
 import type { SuspensionPolicy } from '../../../packages/suspended-sales/src/suspended-bill';
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
