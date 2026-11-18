@@ -12,12 +12,31 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile --prod=false || pnpm install
 
+# The shipped image carries only what the running service loads: `pg` (the one npm dependency the bundle keeps
+# external, `packages: 'external'` in scripts/build-service.mjs), installed from the lockfile with --prod. The
+# build tooling and test runners (esbuild, eslint, vite, vitest and their dependencies) stay in the deps stage and
+# never reach the image — the QG-03 image scan of 18 Nov 2026 flagged a HIGH in picomatch that came in only through
+# them (CVE-2026-112366, no fix released). Not running a tool beats silencing its findings, as with npm below.
+FROM node:22-alpine AS prod-deps
+WORKDIR /app
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile --prod || pnpm install --prod
+
+# The bundle is built here, with the build tooling, and only its output is copied into the runtime image below.
+FROM deps AS build
+COPY package.json pnpm-workspace.yaml tsconfig.json ./
+COPY packages ./packages
+COPY services ./services
+COPY db ./db
+COPY scripts ./scripts
+RUN node scripts/build-service.mjs api
+
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
 # QG-03 container-image scan (OB-288 gates lane): the base image ships the npm, corepack and yarn package managers.
-# Nothing in this image runs them — the service starts with `node`, and the build below uses node_modules copied from
+# Nothing in this image runs them — the service starts with `node`, and the build stage uses node_modules from
 # the deps stage — yet the npm CLI's own bundled dependencies carry HIGH vulnerabilities the image scan reports
 # (brace-expansion, ip-address, pacote, picomatch, sigstore, http-cache-semantics). A tool that is never run is
 # attack surface, not function, so it is removed rather than its findings silenced.
@@ -28,7 +47,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 # A named, unprivileged user. Root in a container is root on the host if anything escapes.
 RUN addgroup -S sre && adduser -S -G sre sre
 
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY package.json pnpm-workspace.yaml tsconfig.json ./
 COPY packages ./packages
 COPY services ./services
@@ -41,7 +60,7 @@ COPY scripts ./scripts
 # on the first import before `main()` can refuse a bad configuration cleanly (exit 78). esbuild
 # bundles the workspace TypeScript into one file with the types stripped and extensions resolved,
 # exactly as the app shells are already built.
-RUN node scripts/build-service.mjs api
+COPY --from=build /app/services/api/dist ./services/api/dist
 
 USER sre
 EXPOSE 8081

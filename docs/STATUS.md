@@ -29,6 +29,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **Supplier names, not codes**, on Receive, the handheld's door check-in (and its items by name) and twelve office pages; the code only when no name exists.
 - **Decided under OB-801 (evening list):** OB-834 (town on Store setup), OB-835 (what "yesterday" means), OB-836 (what Recent activity lists).
 - **Owner, in the store:** Store setup → type the town → it shows under SRE HYPER MARKET in the menu after the next store pack. Buying → Reorder → set reorder levels for the fast movers, so Low stock shows a number.
+- **Batch 16 (18 Nov 2026):** the sign-in page now draws Plus Jakarta Sans and Anek Tamil from the store PC itself (`/fonts/`, only the seven allow-listed files, before sign-in), with the internet cut off; the hosted demo sign-in does the same from its own files. Closes batch 13's open sign-in-font item. The Keycloak theme stays on the system fonts until the owner asks. Small choices recorded as OB-837 – OB-839 (decided under OB-801).
 
 ## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)
 - **Owner asked:** do the emerald and gold brief and deploy it. It is the same brief as OB-728, already built on 2 Nov.

@@ -26,7 +26,8 @@
 import { randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { LocalIdp } from '../../../tests/support/local-idp';
 import { verifyToken } from '../../../services/identity/src/token';
-import { LOGIN_COPY, LOGIN_CSS, LOGIN_CSS_PATH, LOGIN_JS, LOGIN_JS_PATH, renderAccount, renderPlain, renderSignIn } from './ui';
+import { LOGIN_COPY, LOGIN_CSS_PATH, LOGIN_PAGE_CSS, LOGIN_FONTS_PATH, LOGIN_JS, LOGIN_JS_PATH, renderAccount, renderPlain, renderSignIn } from './ui';
+import { signInFontFile, SIGN_IN_FONT_HEADERS } from '../../../packages/ui/src/sign-in-style';
 import { PILOT_DEMO_TENANT, PILOT_MACHINE_USERS } from '../../../db/seed/pilot/dataset';
 
 /** The synthetic demo tenant — the SAME id the seed lays down (a UUID; see db/seed/pilot/dataset.ts). */
@@ -184,6 +185,8 @@ export interface LoginResponse {
   readonly status: number;
   readonly headers: Record<string, string | string[]>;
   readonly body: string;
+  /** Batch 16: when present, the bytes to send instead of `body` (a font file). */
+  readonly bytes?: Buffer;
 }
 
 export interface DemoLoginDeps {
@@ -193,6 +196,11 @@ export interface DemoLoginDeps {
   readonly now: () => number;
   /** Where each sign-in / failure / sign-out is recorded (never a password). */
   readonly audit: (line: Record<string, unknown>) => void;
+  /**
+   * Batch 16: read one of the sign-in page's own font files by its allow-listed name (main.ts: the folder shipped beside the
+   * bundle). Absent, or a file it cannot read: the font is not served and the page keeps the system fonts.
+   */
+  readonly font?: (name: string) => Buffer | undefined;
 }
 
 const SHELLS: ReadonlyArray<readonly [string, string]> = [
@@ -237,8 +245,8 @@ const SECURITY_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
   'cache-control': 'no-store',
   // Nothing inline: the page's stylesheet and script are served by this same service (below) under a content hash, so the
-  // policy names no 'unsafe-inline' anywhere. Nothing is fetched from anywhere else (icons are inline SVG, fonts the system's).
-  'content-security-policy': "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+  // policy names no 'unsafe-inline' anywhere. Nothing is fetched from anywhere else (icons are inline SVG; the fonts are this service's own files, batch 16).
+  'content-security-policy': "default-src 'none'; style-src 'self'; font-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   'x-content-type-options': 'nosniff',
   // NOT 'no-referrer': under it Chrome sends `Origin: null` on the sign-in form's POST, which the
   // cross-site check (rightly) refuses — every real browser sign-in failed 403 on the demo box, 28 Sep
@@ -248,7 +256,7 @@ const SECURITY_HEADERS = {
 
 /** The page's own two assets. Their address carries a content hash (`?v=`), so a release moves the address and the copy a browser keeps can be long-lived. */
 const ASSETS: Readonly<Record<string, { readonly type: string; readonly body: string }>> = {
-  [LOGIN_CSS_PATH]: { type: 'text/css; charset=utf-8', body: LOGIN_CSS },
+  [LOGIN_CSS_PATH]: { type: 'text/css; charset=utf-8', body: LOGIN_PAGE_CSS },
   [LOGIN_JS_PATH]: { type: 'text/javascript; charset=utf-8', body: LOGIN_JS },
 };
 const ASSET_HEADERS = {
@@ -292,6 +300,14 @@ export function createDemoLoginHandler(deps: DemoLoginDeps): (req: LoginRequest)
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
 
     const asset = req.method === 'GET' ? ASSETS[path] : undefined;
+
+    // Batch 16 · P-01: the page's own fonts — only the exact allow-listed names, from this service's own files.
+    if (path.startsWith(LOGIN_FONTS_PATH)) {
+      const name = signInFontFile(path.slice(LOGIN_FONTS_PATH.length));
+      const bytes = name === null || req.method !== 'GET' ? undefined : deps.font?.(name);
+      if (bytes === undefined) return { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }, body: 'not found' };
+      return { status: 200, headers: { ...SIGN_IN_FONT_HEADERS, 'referrer-policy': 'same-origin' }, body: '', bytes };
+    }
     if (asset !== undefined) return { status: 200, headers: { ...ASSET_HEADERS, 'content-type': asset.type }, body: asset.body };
 
     if (req.method === 'GET' && (path === '/login/' || path === '/login')) {

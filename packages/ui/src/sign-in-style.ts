@@ -2,7 +2,47 @@
 // a cream canvas, the SRE mark, a hero on the left, a white "Staff access" card on the right. ONE source for both sign-ins —
 // the hosted demo's (the pilot's hosted sign-in, also the Keycloak theme) and the store computer's own front door
 // (`edge/store-edge/src/office-sign-in.ts`, batch 12: the owner asked the store PC's sign-in to look like the demo's).
-// System fonts only, no url() and no @font-face: a store PC's page fetches nothing.
+//
+// Batch 16 (owner, Nov 2026): the page's own faces — Plus Jakarta Sans and Anek Tamil — come from the SAME box that serves
+// the page, never the internet (P-01). SIGN_IN_CSS itself holds no url(); each server puts `signInFontFaces(base)` in front
+// of it, naming the same-origin folder it serves the allow-listed files from (the store PC: `/fonts/`; the hosted demo:
+// `/login/fonts/`). If a file cannot be fetched the page keeps the system fonts named in the stack (font-display: swap).
+
+/**
+ * The only font files a sign-in page needs — and the only files a server hands out before anyone has signed in. The page
+ * uses weights 400–800; 550 draws with 600, 650 with 700 and 750 with 800 (CSS weight matching), so these seven suffice.
+ */
+export const SIGN_IN_FONT_FILES: readonly string[] = Object.freeze([
+  'plus-jakarta-sans-400.woff2', 'plus-jakarta-sans-600.woff2', 'plus-jakarta-sans-700.woff2', 'plus-jakarta-sans-800.woff2',
+  'anek-tamil-400.woff2', 'anek-tamil-600.woff2', 'anek-tamil-700.woff2',
+]);
+
+/** `name` if it is exactly one of SIGN_IN_FONT_FILES, else null — no folders, no escapes, no listing, no other file. */
+export function signInFontFile(name: string): string | null {
+  return SIGN_IN_FONT_FILES.includes(name) ? name : null;
+}
+
+/** How a server sends one of those files: the font type, kept a year (the faces never change under the same name). */
+export const SIGN_IN_FONT_HEADERS: Readonly<Record<string, string>> = Object.freeze({
+  'content-type': 'font/woff2',
+  'cache-control': 'public, max-age=31536000, immutable',
+  'x-content-type-options': 'nosniff',
+});
+
+// The same unicode-ranges as packages/ui/web/sre-foundation.css, so a Tamil letter is drawn by Anek Tamil and nothing else.
+const LATIN_RANGE = 'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD';
+const TAMIL_RANGE = 'U+0964-0965, U+0B82-0BFA, U+200C-200D, U+20B9, U+25CC';
+
+/** The `@font-face` rules for the sign-in page, each pointing at `<base><file>` on the page's own server. */
+export function signInFontFaces(base: string): string {
+  return SIGN_IN_FONT_FILES.map((file) => {
+    const jakarta = file.startsWith('plus-jakarta-sans-');
+    const weight = file.slice(file.lastIndexOf('-') + 1, -'.woff2'.length);
+    return `@font-face{font-family:"${jakarta ? 'Plus Jakarta Sans' : 'Anek Tamil'}";font-style:normal;font-weight:${weight};font-display:swap;`
+      + `src:url("${base}${file}") format("woff2");unicode-range:${jakarta ? LATIN_RANGE : TAMIL_RANGE}}`;
+  }).join('\n') + '\n';
+}
+
 export const SIGN_IN_CSS = `
 html,body{margin:0;min-height:100%}
 body{background:#fbf8f1}
