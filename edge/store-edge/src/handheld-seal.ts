@@ -23,6 +23,7 @@
 
 import { X509Certificate } from 'node:crypto';
 import { encodeQr, qrSvg, type QrSymbol } from '../../../packages/receipt/src/qr-code';
+import { withOneLanguage } from './system-page-language';
 
 /** Where the panel and its download live — on the screens server (the PC's loopback) ONLY. */
 export const HANDHELD_SEAL_PATHS = Object.freeze({
@@ -137,7 +138,7 @@ const STYLE = [
   'ol{margin:0;padding-left:22px;display:grid;gap:6px}',
 ].join('');
 
-/** The page: the panel, in English and Tamil. Public material only. */
+/** The page: the panel, one language at a time (OB-855). Public material only. */
 export function handheldSealPage(panel: HandheldSealPanel): string {
   const head = [
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -145,26 +146,26 @@ export function handheldSealPage(panel: HandheldSealPanel): string {
     '<h1 id="seal-heading"><span lang="en">Handheld seal</span><span lang="ta" class="ta">கைக்கருவி முத்திரை</span></h1>',
   ].join('');
   if (!panel.ok) {
-    return [
+    return withOneLanguage([
       head,
       '<section class="not-ready" id="handheld-seal" data-seal="not-ready" data-reason="', esc(panel.reason), '">',
       '<div class="problem" role="alert" id="seal-problem">',
       `<p lang="en">${esc(panel.en)}</p><p lang="ta" class="ta">${esc(panel.ta)}</p>`,
       panel.detail === undefined ? '' : `<p lang="en" id="seal-problem-detail">${esc(panel.detail)}</p>`,
       '</div></section></main></body></html>',
-    ].join('');
+    ].join(''));
   }
-  return [
+  return withOneLanguage([
     head,
     '<section id="handheld-seal" data-seal="ready">',
     '<p lang="en">A new handheld trusts this store computer once, at setup. Scan the QR code, or copy the file by cable. Then compare the code below with the one the handheld shows.</p>',
     '<p lang="ta" class="ta">புதிய கைக்கருவி அமைக்கும்போது ஒருமுறை இந்தக் கடை கணினியை நம்புகிறது. இந்தக் குறியீட்டைக் கைக்கருவியால் ஸ்கேன் செய்யுங்கள், அல்லது கோப்பைக் கேபிள் மூலம் நகலெடுங்கள். பிறகு கீழே உள்ள குறியீட்டைக் கைக்கருவி காட்டுவதுடன் ஒப்பிடுங்கள்.</p>',
     `<figure id="seal-qr" data-carries="${panel.qr.carries}" data-version="${panel.qr.version}">${panel.qr.svg}</figure>`,
-    '<div><p lang="en">The code to compare on the handheld <span lang="ta" class="ta">கைக்கருவியில் ஒப்பிட வேண்டிய குறியீடு</span></p>',
+    '<div><p lang="en">The code to compare on the handheld</p><p lang="ta" class="ta">கைக்கருவியில் ஒப்பிட வேண்டிய குறியீடு</p>',
     `<p class="code" id="seal-code">${esc(panel.code)}</p>`,
-    `<p class="fingerprint" id="seal-fingerprint"><span lang="en">Full SHA-256 fingerprint:</span> ${esc(panel.fingerprint)}</p>`,
-    `<p class="fingerprint" id="seal-until"><span lang="en">The seal lasts until</span> <span lang="ta">· முத்திரை செல்லுபடியாகும் நாள்</span> ${esc(panel.notAfter.slice(0, 10))}</p></div>`,
-    `<a class="download" id="seal-download" href="${esc(panel.download.path)}" download="${panel.download.fileName}">Download authority.crt <span lang="ta">&nbsp;· பதிவிறக்கு</span></a>`,
+    `<p class="fingerprint" id="seal-fingerprint"><span lang="en">Full SHA-256 fingerprint:</span><span lang="ta">முழு SHA-256 கைரேகை:</span> ${esc(panel.fingerprint)}</p>`,
+    `<p class="fingerprint" id="seal-until"><span lang="en">The seal lasts until</span><span lang="ta">முத்திரை செல்லுபடியாகும் நாள்</span> ${esc(panel.notAfter.slice(0, 10))}</p></div>`,
+    `<a class="download" id="seal-download" href="${esc(panel.download.path)}" download="${panel.download.fileName}"><span lang="en">Download authority.crt</span><span lang="ta">authority.crt பதிவிறக்கு</span></a>`,
     '<ol lang="en" id="seal-steps">',
     '<li>Get authority.crt onto the handheld: scan the QR code with a QR app that saves what it reads as a file named authority.crt (the code holds the whole certificate — no wifi is needed), or copy the downloaded file by cable.</li>',
     '<li>On the handheld: Settings → Security → Encryption &amp; credentials → Install a certificate → CA certificate, and choose authority.crt.</li>',
@@ -178,5 +179,5 @@ export function handheldSealPage(panel: HandheldSealPanel): string {
     '<li>அதன் பிறகே தலைமை அலுவலகம் தந்த ஒருமுறைக் குறியீட்டுடன் கைக்கருவியைப் பதிவு செய்யுங்கள்.</li>',
     '</ol>',
     '</section></main></body></html>',
-  ].join('');
+  ].join(''));
 }

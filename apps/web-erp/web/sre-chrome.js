@@ -85,6 +85,8 @@
   const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
   const t = (key) => WORDS[lang()][key] ?? WORDS.en[key];
   const byId = (id) => document.getElementById(id);
+  /** Batch 18a: the box's Sign out bar once it has been moved into the menu (the menu is redrawn on a language switch). */
+  let keptOfficeBar = null;
 
   // ── The badge's place in the header: reuse what a page already has, create what it lacks ──────────
   function badgeElements() {
@@ -626,6 +628,21 @@
     if (more) scroller.append(more.section); // after the daily list, which the box always sends first
     if (branch) panel.append(branch);
     panel.append(personCard(nav));
+    // Batch 18a: the box's Sign out bar moves into the menu, under the person — part of the menu, never floating over the
+    // page (it used to sit fixed at the bottom right and covered the page's own boxes). On a phone the menu is a drawer and
+    // the avatar at the top right offers the same Sign out (it presses this button).
+    const boxBar = byId('sre-office-bar') ?? keptOfficeBar; // kept: the menu is redrawn (a language switch) and takes it along
+    if (boxBar) {
+      keptOfficeBar = boxBar;
+      boxBar.removeAttribute('style');
+      boxBar.classList.add('sre-office-bar-in-menu');
+      boxBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 0;padding:0 8px;color:var(--on-rail);font-size:14px';
+      const name = boxBar.querySelector('span');
+      if (name) name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
+      const press = boxBar.querySelector('button');
+      if (press) { press.removeAttribute('style'); press.className = 'sre-sign-out'; press.style.cssText = 'color:var(--on-rail);border-color:var(--rail-line);flex:none'; }
+      panel.append(boxBar);
+    }
     // Round 4c: "Sign out" inside the product's own menu, under the person — where the box drew no Sign out bar of its
     // own (the hosted copy: the front signed the person in, and its door ends the session). A plain same-origin POST.
     const out = window.sreSignOut && typeof window.sreSignOut.action === 'string' && window.sreSignOut.action.startsWith('/') ? window.sreSignOut.action : null;
@@ -2962,6 +2979,77 @@
     return 'error';
   }
 
+  // ── Batch 18a · B3 (roadmap §27.1 "no-result" state): a search box on a page whose list is not the shared register ─────
+  // The same box, words and "No rows match" state as the register's own search (above), for a page that draws its own rows
+  // (Goods receipt review, Suppliers, Waste & write-off, Approvals). It filters the rows already on the page by their words
+  // — every word typed must be in the row — and follows the list when the page redraws it. It reads nothing and saves nothing.
+  function officeListSearch(opts) {
+    const lists = (opts.lists ?? []).filter((l) => l instanceof Element);
+    if (lists.length === 0 || !(opts.before instanceof Element) || byId(`${opts.id}-search`)) return null;
+    const label = document.createElement('label');
+    label.className = 'sre-datatable-search sre-list-search';
+    label.id = `${opts.id}-search-label`;
+    const word = document.createElement('span');
+    word.className = 'sre-datatable-search-word';
+    const boxEl = document.createElement('span');
+    boxEl.className = 'sre-datatable-search-box';
+    const lens = icon('search', 18);
+    if (lens) boxEl.append(lens);
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.id = `${opts.id}-search`;
+    input.className = 'sre-input';
+    input.autocomplete = 'off';
+    boxEl.append(input);
+    label.append(word, boxEl);
+    const none = document.createElement('div');
+    none.id = `${opts.id}-search-none`;
+    none.hidden = true;
+    opts.before.before(label);
+    lists[lists.length - 1].after(none);
+    const words = () => {
+      word.textContent = ow('search');
+      input.placeholder = typeof opts.placeholder === 'function' ? opts.placeholder() : ow('search');
+      input.setAttribute('aria-label', input.placeholder);
+    };
+    let applying = false;
+    const apply = () => {
+      if (applying) return;
+      applying = true;
+      const want = input.value.trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+      let rows = 0; let shownRows = 0;
+      for (const list of lists) {
+        for (const row of Array.from(list.children)) {
+          rows += 1;
+          const hit = want.length === 0 || want.every((w) => (row.textContent ?? '').toLowerCase().includes(w));
+          row.toggleAttribute('data-search-hidden', !hit);
+          row.style.display = hit ? '' : 'none';
+          if (hit) shownRows += 1;
+        }
+      }
+      none.hidden = !(want.length > 0 && rows > 0 && shownRows === 0);
+      if (!none.hidden) officeState(none, 'noMatch', { detail: fill(ow('noMatchDetail'), { n: rows }), action: () => { input.value = ''; apply(); input.focus(); }, actionLabel: ow('clear') });
+      applying = false;
+    };
+    input.addEventListener('input', apply);
+    const watch = new MutationObserver(() => { if (input.value.trim() !== '') apply(); });
+    for (const list of lists) watch.observe(list, { childList: true });
+    words();
+    new MutationObserver(() => { words(); apply(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+    return { input, apply };
+  }
+  /** Batch 18a · B3: the four pages whose lists had no search — wired here, by the page's address, once its rows exist. */
+  const LIST_SEARCHES = Object.freeze({
+    'goods-receipt': { before: 'register', lists: ['rows'] },
+    suppliers: { before: 'register', lists: ['rows'] },
+    waste: { before: 'rows', lists: ['rows'] },
+    approvals: { before: 'waiting-heading', lists: ['waiting', 'orders', 'mine'] },
+  });
+  {
+    const pageKey = (window.location.pathname.split('/').filter((p) => p !== '')[0] ?? '').replace(/\.html$/, '');
+    const spec = LIST_SEARCHES[pageKey];
+    if (spec !== undefined) officeListSearch({ id: `${pageKey}-list`, before: byId(spec.before), lists: spec.lists.map((l) => byId(l)) });
+  }
   // Batch 18b · B1: a download recorded while head office could not be reached is sent once it answers (P-08; never dropped).
   setTimeout(() => {
     try {
@@ -2971,6 +3059,7 @@
   }, 1500);
 
   window.sreOffice = Object.freeze({
+    listSearch: officeListSearch,
     table: officeTable, state: officeState, cards: officeCards, chip: officeChip, field: officeField, check: officeCheck,
     drawer: officeDrawer, closeDrawer, facts: officeFacts, stateOf: officeStateOf, words: (key) => ow(key),
     // U2: pick a thing by its name, a date a shop person reads, a name for an id, who is looking, the three-part refusal

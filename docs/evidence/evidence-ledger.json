@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2523,
+  "testFiles": 2535,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -656,16 +656,17 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 16,
-        "integration": 35,
-        "realDb": 12,
-        "browser": 12,
-        "connected": 4,
+        "unit": 18,
+        "integration": 37,
+        "realDb": 14,
+        "browser": 14,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/b18a-receive-takes-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/unit/d017-a-delivery-is-booked-where-the-order-says.test.ts",
           "tests/unit/d029-receive-against-an-order-with-batch-expiry-and-damaged.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -675,6 +676,7 @@
           "tests/unit/goods-receipt-assembly.test.ts",
           "tests/unit/goods-receipt-order-fold.test.ts",
           "tests/unit/landed-cost.test.ts",
+          "tests/unit/ob866-a-supplier-bills-round-off.test.ts",
           "tests/unit/purchase-match-lines.test.ts",
           "tests/unit/receiving-asn.test.ts",
           "tests/unit/supplier-account-fold.test.ts",
@@ -690,6 +692,7 @@
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/b18a-receive-carries-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/integration/b18c-r2-a-saved-goods-receipt-is-corrected-by-a-compensating-entry.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
@@ -701,6 +704,7 @@
           "tests/integration/inventory-asn-dock.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
@@ -725,7 +729,9 @@
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/b18a-receive-carries-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
+          "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
@@ -736,9 +742,11 @@
         ],
         "browser": [
           "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts",
+          "tests/e2e/b18a-receive-mrp-and-failed-check-and-list-search.e2e.ts",
           "tests/e2e/b18c-r2-a-saved-receipt-is-corrected-on-goods-receipt-review.e2e.ts",
           "tests/e2e/fix-batch5-the-back-store-and-receiving-work-by-name.e2e.ts",
           "tests/e2e/goods-receipt-delivery.e2e.ts",
+          "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-handhelds-meet-the-spec.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
@@ -751,6 +759,7 @@
         "connected": [
           "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts",
           "tests/e2e/b18c-r2-a-saved-receipt-is-corrected-on-goods-receipt-review.e2e.ts",
+          "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
           "tests/e2e/u6-the-stock-ledger-quarantine-and-adjustment-pages.e2e.ts",
           "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],
@@ -5047,16 +5056,17 @@
       "id": "WF-05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 3,
-        "integration": 10,
-        "realDb": 4,
-        "browser": 3,
-        "connected": 2,
+        "unit": 4,
+        "integration": 11,
+        "realDb": 5,
+        "browser": 4,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/ob866-a-supplier-bills-round-off.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
           "tests/unit/tally-export.test.ts",
           "tests/unit/w4-wf05-the-after-match-sessions-call-only-head-offices-own-routes.test.ts"
@@ -5065,6 +5075,7 @@
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/connector-delivery.test.ts",
+          "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
@@ -5075,16 +5086,19 @@
         ],
         "realDb": [
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
+          "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/purchase-to-payment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts"
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
           "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
           "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
           "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
           "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],

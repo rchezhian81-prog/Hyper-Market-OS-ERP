@@ -66,6 +66,8 @@ export interface BoxHealthReport {
    * not only on the box's own screens. Facts and ids only; no person's data.
    */
   readonly clockCheck?: BoxClockReport;
+  /** OB-862 A: the tills this box serves (its own lane and each lane that reported to it) — head office gives each its lane code. */
+  readonly lanes?: readonly string[];
 }
 
 /** §31.1 · OB-403: the box's clock check and its hold as they ride the health report (its sentences stay on the box). */
@@ -154,6 +156,8 @@ export interface BoxHealthSources {
   /** Each queue's own count — read in the one synchronous step. */
   readonly queues: () => readonly { readonly unsentCount: number; readonly deadLetterCount: number }[];
   readonly tills: () => BoxHealthReport['tills'];
+  /** OB-862 A: the tills this box serves, by lane id (at most 50 are sent). */
+  readonly lanes?: () => readonly string[];
   /** The bill-number register's prefixes, and the queued and given-up events whose numbers are listed per prefix. */
   readonly issued?: () => readonly IssuedPrefix[];
   readonly pending?: () => Iterable<{ readonly payload: unknown; readonly occurredAt?: string }>;
@@ -181,7 +185,15 @@ export async function boxHealthReportOf(s: BoxHealthSources): Promise<BoxHealthR
     ...(billNumbering === undefined ? {} : { billNumbering }),
     ...(s.zone === undefined ? {} : { zoneCheck: zoneReport(s.zone()) }),
     ...(s.clock === undefined ? {} : { clockCheck: clockReport(s.clock()) }),
+    ...lanesOf(s.lanes),
   };
+}
+
+/** OB-862 A: the lanes said once each, at most 50, only well-formed ids (head office refuses anything else by name). */
+function lanesOf(lanes: (() => readonly string[]) | undefined): { readonly lanes?: readonly string[] } {
+  if (lanes === undefined) return {};
+  const ok = [...new Set(lanes())].filter((l) => /^(device:)?[A-Za-z0-9._-]{1,40}$/.test(l)).slice(0, 50);
+  return ok.length === 0 ? {} : { lanes: ok };
 }
 
 /** What the box's clock guard and hold say (`ClockCheck`, `ActivationHoldReport`), before they are cut to the report. */

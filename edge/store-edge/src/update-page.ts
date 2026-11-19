@@ -16,6 +16,7 @@
 //     started (and why), put back, or NOT put back — and answers the updater's one question, which tills are open
 //     (/update/open-shifts, this PC only), from the same till-cash log.
 
+import { withOneLanguage } from './system-page-language';
 export const UPDATE_PATHS = Object.freeze({ page: '/update/', request: '/update/request', openShifts: '/update/open-shifts' });
 export const UPDATE_AUTHORITY = 'platform.setup.write';
 export const OWNER_ROLE = 'owner';
@@ -189,7 +190,7 @@ const PROGRESS_WORDS: Readonly<Record<UpdateProgressView['state'], { readonly en
   'rollback-failed': { en: 'THE UPDATE FAILED AND THE OLD VERSION COULD NOT BE PUT BACK — call for help now', ta: 'புதுப்பிப்பு தோல்வி; பழைய பதிப்பைத் திரும்ப வைக்க முடியவில்லை — உடனே உதவி அழைக்கவும்', tone: 'red' },
 });
 
-/** The page, English and Tamil. Server-rendered; one small script posts the request as JSON from this page only. */
+/** The page, one language at a time (OB-855). Server-rendered; one small script posts the request as JSON from this page only. */
 export function updatePage(v: UpdatePageView): string {
   const c = v.check;
   const headline = c === undefined
@@ -200,41 +201,41 @@ export function updatePage(v: UpdatePageView): string {
           : { en: 'Could not check for a new version', ta: 'புதிய பதிப்பைச் சரிபார்க்க முடியவில்லை', tone: 'amber' };
   const facts = c === undefined ? '' : [
     '<table>',
-    `<tr><th>This PC runs <span lang="ta">இயங்கும் பதிப்பு</span></th><td><code>${esc(c.running ?? 'unknown')}</code></td></tr>`,
-    `<tr><th>Newest found <span lang="ta">கிடைத்த புதிய பதிப்பு</span></th><td><code>${esc(c.latest ?? '—')}</code></td></tr>`,
-    `<tr><th>Checked at <span lang="ta">சரிபார்த்த நேரம்</span></th><td>${esc(c.checkedAt)}</td></tr>`,
-    `<tr><th>What the check said <span lang="ta">சரிபார்ப்பு கூறியது</span></th><td>${esc(c.said)}</td></tr>`,
+    `<tr><th><span lang="en">This PC runs</span><span lang="ta">இயங்கும் பதிப்பு</span></th><td><code>${esc(c.running ?? 'unknown')}</code></td></tr>`,
+    `<tr><th><span lang="en">Newest found</span><span lang="ta">கிடைத்த புதிய பதிப்பு</span></th><td><code>${esc(c.latest ?? '—')}</code></td></tr>`,
+    `<tr><th><span lang="en">Checked at</span><span lang="ta">சரிபார்த்த நேரம்</span></th><td>${esc(c.checkedAt)}</td></tr>`,
+    `<tr><th><span lang="en">What the check said</span><span lang="ta">சரிபார்ப்பு கூறியது</span></th><td>${esc(c.said)}</td></tr>`,
     '</table>',
   ].join('');
   const pr = v.progress;
   const progress = [
-    v.waitingSince === undefined ? '' : `<p class="note" id="waiting">An update was asked for at ${esc(v.waitingSince)}; the store computer starts it within 5 minutes. <span lang="ta">கோரிக்கை பெறப்பட்டது; 5 நிமிடங்களுக்குள் தொடங்கும்.</span></p>`,
-    pr === undefined ? '' : `<h2 class="${PROGRESS_WORDS[pr.state].tone}" id="progress">${esc(PROGRESS_WORDS[pr.state].en)}: ${esc(pr.version)} <span lang="ta">· ${esc(PROGRESS_WORDS[pr.state].ta)}</span></h2><p id="progress-said">${esc(pr.said)} <span class="note">(${esc(pr.at)})</span></p>`,
+    v.waitingSince === undefined ? '' : `<p class="note" id="waiting"><span lang="en">An update was asked for at ${esc(v.waitingSince)}; the store computer starts it within 5 minutes.</span><span lang="ta">கோரிக்கை பெறப்பட்டது; 5 நிமிடங்களுக்குள் தொடங்கும்.</span></p>`,
+    pr === undefined ? '' : `<h2 class="${PROGRESS_WORDS[pr.state].tone}" id="progress"><span lang="en">${esc(PROGRESS_WORDS[pr.state].en)}: ${esc(pr.version)}</span><span lang="ta">${esc(PROGRESS_WORDS[pr.state].ta)}</span></h2><p id="progress-said">${esc(pr.said)} <span class="note">(${esc(pr.at)})</span></p>`,
   ].join('');
-  const shifts = v.openShifts.length === 0 ? '' : `<p class="warn" id="shifts">${esc(REFUSAL_WORDS.shift_open.en)} <span lang="ta">${esc(REFUSAL_WORDS.shift_open.ta)}</span><br>${v.openShifts.map((s) => `${esc(s.tillId)} — ${esc(s.custodian)}`).join('<br>')}</p>`;
+  const shifts = v.openShifts.length === 0 ? '' : `<p class="warn" id="shifts"><span lang="en">${esc(REFUSAL_WORDS.shift_open.en)}</span><span lang="ta">${esc(REFUSAL_WORDS.shift_open.ta)}</span><br>${v.openShifts.map((s) => `${esc(s.tillId)} — ${esc(s.custodian)}`).join('<br>')}</p>`;
   // While a request waits or an update runs, there is nothing to press.
   const busy = v.waitingSince !== undefined || v.progress?.state === 'working';
   const action = busy || c?.state !== 'available' ? '' : !v.isOwner
-    ? `<p class="note" id="owner-only">${esc(REFUSAL_WORDS.not_the_owner.en)} <span lang="ta">${esc(REFUSAL_WORDS.not_the_owner.ta)}</span></p>`
+    ? `<p class="note" id="owner-only"><span lang="en">${esc(REFUSAL_WORDS.not_the_owner.en)}</span><span lang="ta">${esc(REFUSAL_WORDS.not_the_owner.ta)}</span></p>`
     : [
       '<form id="update-form" autocomplete="off">',
-      `<label for="pin">${esc(v.displayName)}, type your own till PIN to confirm <span lang="ta">உறுதிசெய்ய உங்கள் PIN-ஐ உள்ளிடவும்</span></label>`,
+      `<label for="pin"><span lang="en">${esc(v.displayName)}, type your own till PIN to confirm</span><span lang="ta">உறுதிசெய்ய உங்கள் PIN-ஐ உள்ளிடவும்</span></label>`,
       '<input id="pin" name="pin" type="password" inputmode="numeric" maxlength="12" required>',
-      `<button type="submit" id="update-button"${v.openShifts.length > 0 ? ' disabled' : ''}>Update to ${esc(c.latest ?? '')} <span lang="ta">· புதுப்பிக்கவும்</span></button>`,
+      `<button type="submit" id="update-button"${v.openShifts.length > 0 ? ' disabled' : ''}><span lang="en">Update to ${esc(c.latest ?? '')}</span><span lang="ta">புதுப்பிக்கவும்</span></button>`,
       v.updaterPending
-        ? '<p class="warn" id="updater-pending">The updater is not set up on this PC, so a request would wait and nothing would be installed. Run SRE-Setup.exe once more as administrator. <span lang="ta">இந்தக் கணினியில் புதுப்பிப்பான் அமைக்கப்படவில்லை; SRE-Setup.exe-ஐ மீண்டும் இயக்கவும்.</span></p>'
-        : '<p class="note" id="updater-note">After you press Update, the store computer starts within 5 minutes: it backs up, installs, checks, and puts the old version back by itself if anything fails. The till pauses for a few minutes. <span lang="ta">5 நிமிடங்களுக்குள் தொடங்கும்; ஏதேனும் தோல்வியடைந்தால் பழைய பதிப்பு தானாகத் திரும்பும்.</span></p>',
+        ? '<p class="warn" id="updater-pending"><span lang="en">The updater is not set up on this PC, so a request would wait and nothing would be installed. Run SRE-Setup.exe once more as administrator.</span><span lang="ta">இந்தக் கணினியில் புதுப்பிப்பான் அமைக்கப்படவில்லை; SRE-Setup.exe-ஐ மீண்டும் இயக்கவும்.</span></p>'
+        : '<p class="note" id="updater-note"><span lang="en">After you press Update, the store computer starts within 5 minutes: it backs up, installs, checks, and puts the old version back by itself if anything fails. The till pauses for a few minutes.</span><span lang="ta">5 நிமிடங்களுக்குள் தொடங்கும்; ஏதேனும் தோல்வியடைந்தால் பழைய பதிப்பு தானாகத் திரும்பும்.</span></p>',
       '<p id="answer" role="status" aria-live="polite"></p>',
       '</form>',
       '<script>',
       "document.getElementById('update-form').addEventListener('submit',async function(e){e.preventDefault();",
       "var a=document.getElementById('answer'),b=document.getElementById('update-button'),p=document.getElementById('pin');b.disabled=true;a.textContent='…';",
       `try{var r=await fetch('${UPDATE_PATHS.request}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pin:p.value})});`,
-      "var o=await r.json();a.textContent=o.en+(o.detail?' '+o.detail:'')+' — '+o.ta;a.className=o.ok?'ok':'warn';}catch(x){a.textContent='The store computer did not answer. Nothing was requested.';a.className='warn';}",
+      "var o=await r.json();var ta=document.documentElement.lang==='ta';a.textContent=ta?o.ta:o.en+(o.detail?' '+o.detail:'');a.className=o.ok?'ok':'warn';}catch(x){a.textContent=document.documentElement.lang==='ta'?'கடைக் கணினி பதிலளிக்கவில்லை. எதுவும் கோரப்படவில்லை.':'The store computer did not answer. Nothing was requested.';a.className='warn';}",
       "p.value='';b.disabled=false;});",
       '</script>',
     ].join('');
-  return [
+  return withOneLanguage([
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
     '<title>Software update</title>',
     '<style>body{font:16px/1.5 system-ui,"Segoe UI","Nirmala UI",sans-serif;margin:0;background:#f5f6f8;color:#1b1f24}main{max-width:720px;margin:24px auto;padding:0 16px}',
@@ -243,10 +244,10 @@ export function updatePage(v: UpdatePageView): string {
     'label{display:block;margin-top:16px;font-weight:600}input{font-size:20px;padding:8px;width:12em;margin:8px 0}button{font-size:18px;padding:12px 20px;min-height:48px;border:0;border-radius:8px;background:#1d6b3a;color:#fff;cursor:pointer}button[disabled]{opacity:.5;cursor:default}',
     '.red{color:#8a1f11}.warn{color:#8a1f11;font-weight:600}.ok{color:#1d6b3a;font-weight:600}.note{color:#5b6470}</style>',
     '</head><body><main>',
-    '<h1>Software update <span lang="ta">· மென்பொருள் புதுப்பிப்பு</span></h1>',
-    `<h2 class="${headline.tone}" id="headline">${esc(headline.en)} <span lang="ta">· ${esc(headline.ta)}</span></h2>`,
+    '<h1><span lang="en">Software update</span><span lang="ta">மென்பொருள் புதுப்பிப்பு</span></h1>',
+    `<h2 class="${headline.tone}" id="headline"><span lang="en">${esc(headline.en)}</span><span lang="ta">${esc(headline.ta)}</span></h2>`,
     progress, facts, shifts, action,
-    '<p class="note">Only the owner may update, with his own PIN, and never while a till shift is open. Every request is written down on this PC. <span lang="ta">உரிமையாளர் மட்டுமே, தன் PIN-உடன், எந்த ஷிஃப்டும் திறந்திருக்காத போது புதுப்பிக்கலாம்.</span></p>',
+    '<p class="note"><span lang="en">Only the owner may update, with his own PIN, and never while a till shift is open. Every request is written down on this PC.</span><span lang="ta">உரிமையாளர் மட்டுமே, தன் PIN-உடன், எந்த ஷிஃப்டும் திறந்திருக்காத போது புதுப்பிக்கலாம்.</span></p>',
     '</main></body></html>',
-  ].join('');
+  ].join(''));
 }

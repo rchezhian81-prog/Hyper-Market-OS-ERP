@@ -16323,7 +16323,12 @@ function storeComputerTimeOf(v: unknown): string | undefined {
  * another lane (OB-848, decided under OB-801). At most 49 of each: 51…99 are kept for the +50 overflow ranges (OB-844 A).
  */
 export async function tillLaneCodes(store: EventStore, tenantId: string, storeId: string): Promise<Readonly<Record<string, string>>> {
-  const seen: { lane: string; at: string; queue: boolean }[] = [];
+  const seen: { lane: string; at: string; queue: boolean; code?: string }[] = [];
+  // OB-862 A: a code head office GAVE a till its store computer reported carries the code itself (it was the next free one
+  // when it was given) — it is honoured as given, never worked out again.
+  for (const a of await allOf<TillLaneCodeAssignment>(store, tenantId, TILL_LANE_CODE_STREAM, 'TillLaneCodeAssigned')) {
+    if (a.storeId === storeId) seen.push({ lane: a.laneId, at: a.at, queue: a.code.startsWith('Q'), code: a.code });
+  }
   for (const d of await allOf<DeviceRegistryEvent>(store, tenantId, streamName(STREAM.platform, 'devices'), 'DeviceRegistryEvent')) {
     if (d.kind !== 'registered' || d.branchId !== storeId) continue;
     if (d.deviceKind === 'pos_lane') seen.push({ lane: d.deviceId, at: d.at, queue: false });
@@ -16341,13 +16346,88 @@ export async function tillLaneCodes(store: EventStore, tenantId: string, storeId
   }
   seen.sort((a, b) => (a.at === b.at ? (a.lane < b.lane ? -1 : a.lane > b.lane ? 1 : 0) : a.at < b.at ? -1 : 1));
   const out: Record<string, string> = {};
+  const used = new Set<string>();
   let tills = 0; let queues = 0;
   for (const s of seen) {
     if (out[s.lane] !== undefined) continue;
-    if (s.queue) { if (queues < TILL_LANE_MAX) { queues += 1; out[s.lane] = `Q${String(queues).padStart(2, '0')}`; } }
-    else if (tills < TILL_LANE_MAX) { tills += 1; out[s.lane] = `L${String(tills).padStart(2, '0')}`; }
+    if (s.code !== undefined) {
+      // A given code is the lane's for good; a code already used (it cannot be, but never twice) is skipped, said nowhere.
+      if (used.has(s.code)) continue;
+      out[s.lane] = s.code; used.add(s.code);
+      const n = Number(s.code.slice(1));
+      if (s.queue) queues = Math.max(queues, n); else tills = Math.max(tills, n);
+      continue;
+    }
+    if (s.queue) { if (queues < TILL_LANE_MAX) { queues += 1; out[s.lane] = `Q${String(queues).padStart(2, '0')}`; used.add(out[s.lane]!); } }
+    else if (tills < TILL_LANE_MAX) { tills += 1; out[s.lane] = `L${String(tills).padStart(2, '0')}`; used.add(out[s.lane]!); }
   }
   return out;
+}
+
+/** OB-862 A: one lane code head office gave a till its store computer reported (append-only; one per store and lane). */
+export interface TillLaneCodeAssignment {
+  readonly storeId: string;
+  readonly laneId: string;
+  readonly code: string;
+  readonly at: string;
+  /** The store computer whose report named the till. */
+  readonly by: string;
+  readonly via: 'store_computer_reported';
+}
+const TILL_LANE_CODE_STREAM = streamName(STREAM.platform, 'till-lane-codes');
+
+/**
+ * OB-862 A (owner, 19 Nov 2026, in writing; the CA confirms) — head office gives the store computer's tills their lane codes
+ * BY ITSELF, the first time the store computer reports each one: the next free code at that store (`L01`, then `L02`, …; a
+ * handheld queue till `Q01`, …), so a fresh install numbers its first bill `1L01/26-27/00001` with no person's step.
+ *   • a till that already has a code (registered on Tills & devices, a prefix issued, a lane registered, or given here
+ *     before) keeps it — nothing is written;
+ *   • a code is never reused: the next one is above every code ever given at the store (a retired till keeps its own);
+ *   • one write guard per store, so two reports at the same moment can never give one code to two tills; the same till
+ *     twice is one fact (keyed by store and lane);
+ *   • each code given is on the audit trail (who reported it, which till, the code).
+ * Past 49 tills no code is given (51…99 are the overflow ranges): that till stays on its temporary `1T…` range, as before.
+ */
+export async function assignReportedLaneCodes(
+  store: EventStore, tenantId: string,
+  a: { readonly storeId: string; readonly lanes: readonly string[]; readonly by: string; readonly at: string },
+  recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void,
+): Promise<Readonly<Record<string, string>>> {
+  const guardKey = `till-lane-codes:${a.storeId}`;
+  for (let attempt = 0; ; attempt += 1) {
+    const expectedVersion = await store.guardVersion(tenantId, guardKey);
+    const codes = await tillLaneCodes(store, tenantId, a.storeId);
+    const missing = [...new Set(a.lanes)].filter((l) => codes[l] === undefined).sort();
+    if (missing.length === 0) return {};
+    const top = (letter: 'L' | 'Q'): number => Math.max(0, ...Object.values(codes).filter((c) => c.startsWith(letter)).map((c) => Number(c.slice(1))));
+    let tills = top('L'); let queues = top('Q');
+    const given: TillLaneCodeAssignment[] = [];
+    for (const laneId of missing) {
+      const queue = laneId.startsWith('device:');
+      const n = queue ? queues + 1 : tills + 1;
+      if (n > TILL_LANE_MAX) continue;
+      if (queue) queues = n; else tills = n;
+      given.push({ storeId: a.storeId, laneId, code: `${queue ? 'Q' : 'L'}${String(n).padStart(2, '0')}`, at: a.at, by: a.by, via: 'store_computer_reported' });
+    }
+    if (given.length === 0) return {};
+    try {
+      await store.appendBatch(tenantId, given.map((g) => {
+        const key = `till-lane-code-${tenantId}-${g.storeId}-${g.laneId}`;
+        return { stream: TILL_LANE_CODE_STREAM, event: makeEvent({ id: keyedEventId('till-lane-code', key), type: 'TillLaneCodeAssigned', occurredAt: g.at, idempotencyKey: key, source: 'api/platform', payload: g }) };
+      }), { guard: { key: guardKey, expectedVersion } });
+    } catch (e) {
+      if (!(e instanceof ConcurrencyConflictError) || e.key !== guardKey || attempt >= 8) throw e;
+      continue; // another report gave codes at the same moment: read again and give the next free ones
+    }
+    for (const g of given) {
+      await recordAudit?.(tenantId, {
+        actorId: g.by, action: 'till.lane_code.assign', objectType: 'till', objectId: `${g.storeId}/${g.laneId}`, at: g.at,
+        origin: { tenantId, branchId: g.storeId }, before: null, after: { laneCode: g.code, via: g.via },
+        reason: 'OB-862 A: head office gives a till its lane code the first time its store computer reports it', correlationId: `${g.storeId}/${g.laneId}`,
+      });
+    }
+    return Object.fromEntries(given.map((g) => [g.laneId, g.code]));
+  }
 }
 
 /** OB-847: the store pack's `receiptNumbering.formatA` for one store — its number, its lanes' codes, its banked ranges. */

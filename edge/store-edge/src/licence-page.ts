@@ -15,6 +15,7 @@
 //   • Whatever the licence says, the till sells (a sale never reads the licence — hard rule 1) and the shop can view and
 //     export every record (P-06). In reduced mode (OB-750) only what LICENCE_POLICY.reduced names waits.
 
+import { both, withOneLanguage } from './system-page-language';
 import type { LicenceStanding, LicenceRead } from '../../../scripts/lib/licence.mjs';
 import type { LoadOutcome } from '../../../scripts/lib/store-licence.mjs';
 
@@ -104,17 +105,17 @@ export function withLicenceNotice(html: string, notice: string | null): string {
   return m === null ? `${notice}${html}` : `${html.slice(0, m.index + m[0].length)}${notice}${html.slice(m.index + m[0].length)}`;
 }
 
-/** The screen, English and Tamil. Server-rendered; one small script reads the chosen file and posts it from this page. */
+/** The screen, one language at a time (OB-855). Server-rendered; one small script reads the chosen file and posts it from this page. */
 export function licencePage(v: LicenceView & { readonly isOwner: boolean; readonly displayName: string }): string {
   const s = v.standing;
   const w = STATE_WORDS[s.state];
   const l = s.licence;
-  const row = (en: string, ta: string, value: string): string => `<tr><th>${en}<br><span lang="ta">${ta}</span></th><td>${value}</td></tr>`;
-  const code = (x: string | number | undefined | null): string => (x === undefined || x === null || x === '' ? '<em>not known / தெரியவில்லை</em>' : `<code>${esc(String(x))}</code>`);
+  const row = (en: string, ta: string, value: string): string => `<tr><th>${both(en, ta)}</th><td>${value}</td></tr>`;
+  const code = (x: string | number | undefined | null): string => (x === undefined || x === null || x === '' ? `<em>${both('not known', 'தெரியவில்லை')}</em>` : `<code>${esc(String(x))}</code>`);
   const terms = l === null ? '' : [
-    '<h2>The licence <span lang="ta">· உரிமம்</span></h2><table>',
+    `<h2>${both('The licence', 'உரிமம்')}</h2><table>`,
     row('Licence number', 'உரிம எண்', code(l.licenceId)),
-    row('Kind', 'வகை', l.kind === 'owner' ? 'Owner\'s own shop <span lang="ta">· உரிமையாளரின் கடை</span>' : 'Shop licence <span lang="ta">· கடை உரிமம்</span>'),
+    row('Kind', 'வகை', l.kind === 'owner' ? both('Owner\'s own shop', 'உரிமையாளரின் கடை') : both('Shop licence', 'கடை உரிமம்')),
     row('Shop', 'கடை', code(l.shopName)),
     row('GSTIN', 'GSTIN', code(l.gstin)),
     row("Shop's tenant id", 'கடையின் டெனன்ட் எண்', code(l.tenantId)),
@@ -122,41 +123,41 @@ export function licencePage(v: LicenceView & { readonly isOwner: boolean; readon
     row('Stores', 'கடைகள்', code(l.stores)),
     row('Modules', 'தொகுதிகள்', code(l.modules.join(', ') === 'all' ? 'all (M01–M36)' : l.modules.join(', '))),
     row('Issued on', 'வழங்கிய தேதி', code(l.issuedOn)),
-    row('Ends', 'முடியும் தேதி', l.expiresOn === null ? 'No end date <span lang="ta">· முடிவுத் தேதி இல்லை</span>' : code(l.expiresOn)),
+    row('Ends', 'முடியும் தேதி', l.expiresOn === null ? both('No end date', 'முடிவுத் தேதி இல்லை') : code(l.expiresOn)),
     '</table>',
   ].join('');
-  const problem = v.problem === undefined || v.problem.ok ? '' : `<p class="warn" id="licence-problem">The licence file on this PC is NOT in force: ${esc(v.problem.en)}${v.problem.detail === undefined ? '' : ` (${esc(v.problem.detail)})`} <span lang="ta">${esc(v.problem.ta)}</span></p>`;
-  const always = '<p class="ok" id="always">Whatever the licence says, the till keeps selling, and every record can be viewed and exported. <span lang="ta">உரிமம் எதுவாயினும், பணப்பெட்டி தொடர்ந்து விற்கும்; எல்லாப் பதிவுகளையும் பார்க்கவும் ஏற்றுமதி செய்யவும் முடியும்.</span></p>';
-  const request = v.tenantId === undefined ? '' : `<p id="request">To ask the seller for a licence or a renewal, send the licence request (it holds names only: the tenant id <code>${esc(v.tenantId)}</code>, the shop's name and GSTIN): <a href="${LICENCE_PATHS.request}" download="licence-request.json">Download the licence request</a> <span lang="ta">· உரிமக் கோரிக்கையைப் பதிவிறக்கவும்</span></p>`;
+  const problem = v.problem === undefined || v.problem.ok ? '' : `<p class="warn" id="licence-problem">${both(`The licence file on this PC is NOT in force: ${esc(v.problem.en)}${v.problem.detail === undefined ? '' : ` (${esc(v.problem.detail)})`}`, esc(v.problem.ta))}</p>`;
+  const always = `<p class="ok" id="always">${both('Whatever the licence says, the till keeps selling, and every record can be viewed and exported.', 'உரிமம் எதுவாயினும், பணப்பெட்டி தொடர்ந்து விற்கும்; எல்லாப் பதிவுகளையும் பார்க்கவும் ஏற்றுமதி செய்யவும் முடியும்.')}</p>`;
+  const request = v.tenantId === undefined ? '' : `<p id="request">${both(`To ask the seller for a licence or a renewal, send the licence request (it holds names only: the tenant id <code>${esc(v.tenantId)}</code>, the shop's name and GSTIN):`, `உரிமம் அல்லது புதுப்பித்தல் கேட்க, உரிமக் கோரிக்கையை விற்பனையாளருக்கு அனுப்பவும் (பெயர்கள் மட்டும்: டெனன்ட் எண் <code>${esc(v.tenantId)}</code>, கடையின் பெயர், GSTIN):`)} <a href="${LICENCE_PATHS.request}" download="licence-request.json">${both('Download the licence request', 'உரிமக் கோரிக்கையைப் பதிவிறக்கவும்')}</a></p>`;
   const form = !v.keyBuiltIn
-    ? '<p class="note" id="no-key">This program version carries no seller key, so there is nothing to load yet. <span lang="ta">இந்தப் பதிப்பில் விற்பனையாளர் சாவி இல்லை.</span></p>'
+    ? `<p class="note" id="no-key">${both('This program version carries no seller key, so there is nothing to load yet.', 'இந்தப் பதிப்பில் விற்பனையாளர் சாவி இல்லை; ஏற்ற எதுவும் இல்லை.')}</p>`
     : !v.isOwner
-      ? `<p class="note" id="owner-only">${esc(WORDS.not_the_owner.en)} <span lang="ta">${esc(WORDS.not_the_owner.ta)}</span></p>`
+      ? `<p class="note" id="owner-only">${both(esc(WORDS.not_the_owner.en), esc(WORDS.not_the_owner.ta))}</p>`
       : [
-        '<h2>Load a licence (or a renewal) <span lang="ta">· உரிமத்தை ஏற்றவும் (அல்லது புதுப்பித்தல்)</span></h2>',
+        `<h2>${both('Load a licence (or a renewal)', 'உரிமத்தை ஏற்றவும் (அல்லது புதுப்பித்தல்)')}</h2>`,
         '<form id="licence-form" autocomplete="off">',
-        '<label for="file">The licence file the seller sent <span lang="ta">விற்பனையாளர் அனுப்பிய உரிமக் கோப்பு</span></label>',
+        `<label for="file">${both('The licence file the seller sent', 'விற்பனையாளர் அனுப்பிய உரிமக் கோப்பு')}</label>`,
         '<input id="file" name="file" type="file" accept=".json,application/json" required>',
-        `<label for="pin">${esc(v.displayName)}, type your own till PIN to confirm <span lang="ta">உறுதிசெய்ய உங்கள் PIN-ஐ உள்ளிடவும்</span></label>`,
+        `<label for="pin">${both(`${esc(v.displayName)}, type your own till PIN to confirm`, `${esc(v.displayName)}, உறுதிசெய்ய உங்கள் PIN-ஐ உள்ளிடவும்`)}</label>`,
         '<input id="pin" name="pin" type="password" inputmode="numeric" maxlength="12" required>',
-        '<button type="submit" id="load-button">Load the licence <span lang="ta">· உரிமத்தை ஏற்றவும்</span></button>',
+        `<button type="submit" id="load-button">${both('Load the licence', 'உரிமத்தை ஏற்றவும்')}</button>`,
         '<p id="answer" role="status" aria-live="polite"></p>',
         '</form>',
         '<script>',
         "document.getElementById('licence-form').addEventListener('submit',async function(e){e.preventDefault();",
         "var a=document.getElementById('answer'),b=document.getElementById('load-button'),p=document.getElementById('pin'),f=document.getElementById('file').files[0];if(!f){return;}b.disabled=true;a.textContent='…';",
         `try{var t=await f.text();var r=await fetch('${LICENCE_PATHS.load}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pin:p.value,licence:t})});`,
-        "var o=await r.json();a.textContent=o.en+(o.detail?' ('+o.detail+')':'')+' — '+o.ta;a.className=o.ok?'ok':'warn';if(o.ok){setTimeout(function(){location.reload();},1500);}}catch(x){a.textContent='The store computer did not answer. Nothing was loaded.';a.className='warn';}",
+        "var o=await r.json();var ta=document.documentElement.lang==='ta';a.textContent=ta?o.ta:o.en+(o.detail?' ('+o.detail+')':'');a.className=o.ok?'ok':'warn';if(o.ok){setTimeout(function(){location.reload();},1500);}}catch(x){a.textContent=document.documentElement.lang==='ta'?'கடைக் கணினி பதிலளிக்கவில்லை. எதுவும் ஏற்றப்படவில்லை.':'The store computer did not answer. Nothing was loaded.';a.className='warn';}",
         "p.value='';b.disabled=false;});",
         '</script>',
       ].join('');
   const hist = v.history.slice(-10).reverse();
   const history = hist.length === 0 ? '' : [
-    '<h2>History <span lang="ta">· வரலாறு</span></h2><table id="history">',
+    `<h2>${both('History', 'வரலாறு')}</h2><table id="history">`,
     ...hist.map((h) => `<tr><td>${esc(String(h['at'] ?? ''))}</td><td>${esc(String(h['outcome'] ?? ''))}</td><td>${esc(String(h['licenceId'] ?? ''))}</td><td>${esc(String(h['by'] ?? ''))}</td></tr>`),
     '</table>',
   ].join('');
-  return [
+  return withOneLanguage([
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
     '<title>Licence</title>',
     '<style>body{font:16px/1.5 system-ui,"Segoe UI","Nirmala UI",sans-serif;margin:0;background:#f5f6f8;color:#1b1f24}main{max-width:760px;margin:24px auto;padding:0 16px}',
@@ -165,11 +166,11 @@ export function licencePage(v: LicenceView & { readonly isOwner: boolean; readon
     'label{display:block;margin-top:16px;font-weight:600}input{font-size:18px;padding:8px;margin:8px 0}button{font-size:18px;padding:12px 20px;min-height:48px;border:0;border-radius:24px;background:#1d6b3a;color:#fff;cursor:pointer}button[disabled]{opacity:.5}',
     '.warn{color:#8a1f11;font-weight:600}.ok{color:#1d6b3a;font-weight:600}.note{color:#5b6470}em{color:#5b6470}</style>',
     '</head><body><main>',
-    '<h1>Licence <span lang="ta">· உரிமம்</span></h1>',
-    `<h2 class="${w.tone}" id="standing" data-state="${s.state}">${esc(w.en)} <span lang="ta">· ${esc(w.ta)}</span></h2>`,
-    `<p id="standing-said">${esc(s.en)} <span lang="ta">${esc(s.ta)}</span></p>`,
+    `<h1>${both('Licence', 'உரிமம்')}</h1>`,
+    `<h2 class="${w.tone}" id="standing" data-state="${s.state}">${both(esc(w.en), esc(w.ta))}</h2>`,
+    `<p id="standing-said">${both(esc(s.en), esc(s.ta))}</p>`,
     problem, always, terms, request, form, history,
-    '<p><a href="/about/">About this store computer</a> <span lang="ta">· இந்தக் கடைக் கணினி பற்றி</span></p>',
+    `<p><a href="/about/">${both('About this store computer', 'இந்தக் கடைக் கணினி பற்றி')}</a></p>`,
     '</main></body></html>',
-  ].join('');
+  ].join(''));
 }

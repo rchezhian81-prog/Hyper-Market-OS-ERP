@@ -42,7 +42,7 @@ describe('the link\'s settings', () => {
     const page = headOfficeSignInPage({ problem: 'unreachable', next: '/finance-close/' });
     expect(page).toContain(HEAD_OFFICE_SIGN_IN_WORDS.unreachable.en);
     expect(page).toContain('href="/manager/"');
-    expect(headOfficeSignInPage({ problem: 'not_confirmed', next: '/x"><script>' })).not.toContain('<script>');
+    expect(headOfficeSignInPage({ problem: 'not_confirmed', next: '/x"><script>' })).not.toContain('"><script>'); // the page's own language switch is its only script (OB-855)
   });
 });
 

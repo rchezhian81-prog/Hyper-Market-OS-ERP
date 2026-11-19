@@ -126,14 +126,14 @@ describe('the last check, as step 3b kept it', () => {
   });
 });
 
-describe('the page says what is known, in English and Tamil', () => {
+describe('the page says what is known, one language at a time (OB-855), both in the page', () => {
   const view = { check: READY, isOwner: true, displayName: 'Owner', openShifts: [], updaterPending: true };
   it('ready, for the owner: the version, the PIN box, the button — and, with no updater set up on this PC, that it is not (step 3d)', () => {
     const html = updatePage(view);
-    expect(html).toContain('<h1>Software update');
+    expect(html).toContain('<h1><span lang="en">Software update</span><span lang="ta">');
     expect(html).toContain('A new version is ready: 1.0.2012');
     expect(html).toContain('id="pin"');
-    expect(html).toMatch(/<button type="submit" id="update-button">Update to 1\.0\.2012/);
+    expect(html).toMatch(/<button type="submit" id="update-button"><span lang="en">Update to 1\.0\.2012/);
     expect(html).toContain('id="updater-pending"');
     expect(html).toContain('lang="ta"');
   });

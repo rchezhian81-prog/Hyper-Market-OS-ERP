@@ -26,7 +26,7 @@ import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import type { StorePack } from './store-pack';
 import { assignmentsFrom, peopleFrom } from './screen-navigation';
-import { SIGN_IN_CSS, signInFontFaces } from '../../../packages/ui/src/sign-in-style';
+import { SIGN_IN_CSS, SIGN_IN_LANGUAGE_MEMORY_SCRIPT, signInFontFaces } from '../../../packages/ui/src/sign-in-style';
 
 /** CR-01 batch 16: the path the screen server serves the sign-in page's own fonts from, before anyone signs in. */
 export const SIGN_IN_FONTS_PATH = '/fonts/';
@@ -384,7 +384,8 @@ function signInShell(title: string, storeName: string, card: string): string {
     '</section>',
     `<section class="sl-login-area" aria-labelledby="office-heading"><div class="sl-login-card">${card}</div>`,
     `<div class="sl-status"><span class="sl-dot" aria-hidden="true"></span><span>${both('Sign-in works on this computer, even without internet.', 'இணையம் இல்லாவிட்டாலும் இங்கே உள்நுழையலாம்.')}</span></div>`,
-    '</section></main></div></div></body></html>',
+    // Batch 18a · OB-855: the language last chosen on this device opens the page, and each press is remembered.
+    '</section></main></div></div>', SIGN_IN_LANGUAGE_MEMORY_SCRIPT, '</body></html>',
   ].join('');
 }
 
@@ -462,14 +463,16 @@ export function signedInGlobals(session: { readonly userId: string; readonly dis
 export const SIGN_OUT_BAR = [
   '<script>(function(){var s=window.sreOfficeSession;if(!s)return;function draw(){if(document.getElementById("sre-office-bar"))return;',
   'var f=document.createElement("form");f.method="post";f.action="/office/sign-out";f.id="sre-office-bar";',
-  'f.setAttribute("style","position:fixed;right:12px;bottom:12px;z-index:2147483000;background:#14202b;color:#fff;padding:6px 10px;border-radius:6px;font:14px system-ui,sans-serif;display:flex;gap:8px;align-items:center");',
+  // Batch 18a: the bar is part of the page, never floating over it — a strip at the very top of the page (it covers nothing
+  // at any width). An office page with the product's menu moves it into the menu, under the person (sre-chrome.js).
+  'f.setAttribute("style","position:static;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;align-items:center;margin:0;background:#14202b;color:#fff;padding:6px 12px;font:14px system-ui,sans-serif");',
   'var n=document.createElement("span");n.textContent=s.displayName;f.appendChild(n);',
   // Batch 17 · OB-855: the button says "Sign out" OR "வெளியேறு" — the page's one language, following its switch.
   'var b=document.createElement("button");b.type="submit";b.id="sre-office-sign-out";',
   'var say=function(){b.textContent=document.documentElement.lang==="ta"?"\\u0bb5\\u0bc6\\u0bb3\\u0bbf\\u0baf\\u0bc7\\u0bb1\\u0bc1":"Sign out";};say();',
   'new MutationObserver(say).observe(document.documentElement,{attributes:true,attributeFilter:["lang"]});',
   'b.setAttribute("style","font:inherit;min-height:44px;min-width:44px;padding:4px 10px;border:0;border-radius:4px;background:#fff;color:#14202b;cursor:pointer");f.appendChild(b);',
-  'document.body.appendChild(f);}if(document.body)draw();else document.addEventListener("DOMContentLoaded",draw);})();</script>',
+  'document.body.insertBefore(f,document.body.firstChild);}if(document.body)draw();else document.addEventListener("DOMContentLoaded",draw);})();</script>',
 ].join('');
 
 /** Read a small form body (staff ID, PIN, where next). Anything over 4 KB, or not a form, reads as nothing. */

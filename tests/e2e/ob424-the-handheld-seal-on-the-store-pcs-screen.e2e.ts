@@ -52,7 +52,13 @@ describe.skipIf(!HAVE_BROWSER)('OB-424: the handheld seal on the store PC\'s own
     await page.goto(`http://127.0.0.1:${edge.screens!.port}${HANDHELD_SEAL_PATHS.page}`);
 
     await expect.poll(() => page.locator('#seal-heading').innerText()).toContain('Handheld seal');
-    expect(await page.locator('#seal-heading').innerText()).toContain('கைக்கருவி முத்திரை');
+    // OB-855: one language at a time — English first, Tamil only after the switch, with no English beside it.
+    expect(await page.locator('#seal-heading').innerText()).not.toContain('கைக்கருவி முத்திரை');
+    await page.click('#sre-lang-switch');
+    await expect.poll(() => page.locator('#seal-heading').innerText()).toContain('கைக்கருவி முத்திரை');
+    expect(await page.locator('#seal-heading').innerText()).not.toContain('Handheld seal');
+    await page.click('#sre-lang-switch');
+    await expect.poll(() => page.locator('#seal-heading').innerText()).toContain('Handheld seal');
     // The QR is on screen, at a size a phone can read off it.
     const qr = page.locator('#seal-qr svg');
     expect(await qr.isVisible()).toBe(true);
@@ -89,9 +95,12 @@ describe.skipIf(!HAVE_BROWSER)('OB-424: the handheld seal on the store PC\'s own
     const problem = page.locator('#seal-problem');
     expect(await problem.isVisible()).toBe(true);
     expect(await problem.getAttribute('role')).toBe('alert');
-    const text = await problem.innerText();
-    expect(text).toContain(SEAL_NOT_READY_WORDS.no_door.en);
-    expect(text).toContain(SEAL_NOT_READY_WORDS.no_door.ta);
+    // OB-855: the reason in English, then in Tamil only after the switch.
+    expect(await problem.innerText()).toContain(SEAL_NOT_READY_WORDS.no_door.en);
+    await page.click('#sre-lang-switch');
+    await expect.poll(() => problem.innerText()).toContain(SEAL_NOT_READY_WORDS.no_door.ta);
+    expect(await problem.innerText()).not.toContain(SEAL_NOT_READY_WORDS.no_door.en);
+    await page.click('#sre-lang-switch');
     expect(await page.locator('#seal-qr').count()).toBe(0);
     expect(await page.locator('#seal-code').count()).toBe(0);
     expect(await page.locator('#seal-download').count()).toBe(0);
