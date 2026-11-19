@@ -454,7 +454,7 @@ function sameOrigin(req: IncomingMessage): boolean {
   try { return new URL(origin).host === req.headers['host']; } catch { return false; }
 }
 
-/** Batch 17 (D-071): the store computer's own status on the screens' socket (same origin as every office page). */
+/** Batch 17 (D-069): the store computer's own status on the screens' socket (same origin as every office page). */
 export const BOX_STATUS_PATH = '/sre-box/sync-status';
 
 export async function startScreenServer(input: {
@@ -473,7 +473,7 @@ export async function startScreenServer(input: {
    */
   readonly laneWriteBase?: string;
   /**
-   * Batch 17 (D-071): the box's own sync status, answered on THIS socket too (`GET /sre-box/sync-status`, same origin) so an
+   * Batch 17 (D-069): the box's own sync status, answered on THIS socket too (`GET /sre-box/sync-status`, same origin) so an
    * office page's badge hears the store computer even where the browser cannot reach the till's socket on its other port —
    * and then says plainly that the till's socket is what did not answer. Counts and times only, as on the lane socket; never
    * through the remote door and never behind the hosted front. Absent: the route is not served.
@@ -952,7 +952,7 @@ export async function startScreenServer(input: {
         res.end(req.method === 'HEAD' ? undefined : font);
         return;
       }
-      // Batch 17 (D-071): the store computer's own status, same origin — only on the shop PC's own loopback socket.
+      // Batch 17 (D-069): the store computer's own status, same origin — only on the shop PC's own loopback socket.
       if (doorPath === BOX_STATUS_PATH) {
         req.resume();
         if (input.syncStatus === undefined || remote !== undefined || input.trustForwardedUser === true) { send(res, 404, 'text/plain; charset=utf-8', 'not served here'); return; }
@@ -1289,7 +1289,7 @@ export async function startScreenServer(input: {
           // (a local preview) when it is absent.
           // Never through the remote door: the day close is done in the shop (and the phone could not reach it anyway).
           ...(input.laneWriteBase === undefined || remote !== undefined ? {} : { laneWriteBase: input.laneWriteBase }),
-          // Batch 17 (D-071): where the page asks the store computer itself how it is (same origin), beside the till's socket.
+          // Batch 17 (D-069): where the page asks the store computer itself how it is (same origin), beside the till's socket.
           ...(input.syncStatus === undefined || remote !== undefined || input.trustForwardedUser === true ? {} : { sreBoxStatusPath: BOX_STATUS_PATH }),
         },
       );

@@ -33,6 +33,7 @@
       connected: 'Connected', boxNotAnswering: 'Store computer not answering',
       tillNotRunning: 'Till service not running on this computer', tillLinkDown: 'Store computer on, but its till service did not answer this page',
       boxSlow: 'Store computer slow to answer — checking again', boxRefused: 'Store computer refused the check ({n})',
+      figuresNotKnown: 'Store computer connected — some figures on this page are not known',
       noCloud: 'Head office cannot be reached — working from the store computer',
       cloudLoginRefused: 'This store computer\'s head office login needs renewing', cloudNotSetUp: 'No head office link on this store computer', cloudUnknown: 'Head office not checked yet',
       lastContact: 'last contact', switchLanguage: 'Switch language', otherLanguage: 'தமிழ்',
@@ -59,6 +60,7 @@
       connected: 'இணைப்பில்', boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை',
       tillNotRunning: 'இந்தக் கணினியில் விற்பனை முனையச் சேவை இயங்கவில்லை', tillLinkDown: 'கடைக் கணினி இயங்குகிறது, ஆனால் அதன் விற்பனை முனையச் சேவை இந்தப் பக்கத்துக்குப் பதிலளிக்கவில்லை',
       boxSlow: 'கடைக் கணினி பதில் தர தாமதமாகிறது — மீண்டும் சரிபார்க்கிறது', boxRefused: 'கடைக் கணினி சரிபார்ப்பை மறுத்தது ({n})',
+      figuresNotKnown: 'கடைக் கணினி இணைப்பில் உள்ளது — இந்தப் பக்கத்தின் சில எண்கள் தெரியவில்லை',
       noCloud: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — கடை கணினியிலிருந்து வேலை',
       cloudLoginRefused: 'இந்தக் கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'இந்தக் கடை கணினியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
       lastContact: 'கடைசித் தொடர்பு', switchLanguage: 'மொழியை மாற்று', otherLanguage: 'English',
@@ -144,11 +146,13 @@
     if (badge.dataset.tone !== tone) badge.dataset.tone = tone;
   }
   function paintBadgeWords(dot, text) {
-    // A page that could not read its own registers says so first — the link to the store is one fact.
-    if (window.sreBlind === true) { dot.classList.add('unknown'); text.textContent = t('notConnected'); return; }
+    // A page that could not read its own registers says so first — the link to the store is one fact. Batch 17 (D-069): but
+    // when the store computer itself answers, the link is not what is missing — it says the figures are not known instead.
+    if (window.sreBlind === true && !(box.asked && box.reachable)) { dot.classList.add('unknown'); text.textContent = t('notConnected'); return; }
+    if (window.sreBlind === true) { dot.classList.add('degraded'); text.textContent = t('figuresNotKnown'); return; }
     if (laneBase() === null) { dot.classList.add('idle'); text.textContent = t('notConnected'); return; }
     if (!box.asked) { dot.classList.add('idle'); text.textContent = t('checkingBox'); return; }
-    // Batch 17 (D-071): what did not answer, in plain words — the till service not running at all, the till's socket not
+    // Batch 17 (D-069): what did not answer, in plain words — the till service not running at all, the till's socket not
     // answering while the store computer is on, a refusal with its code, or only a slow answer (amber, asked again).
     if (!box.reachable) {
       if (box.why === 'slow') { dot.classList.add('degraded'); text.textContent = t('boxSlow'); return; }
@@ -182,7 +186,7 @@
   async function refreshBadge() {
     const base = laneBase();
     if (base === null) { paintBadge(); return; }
-    // Batch 17 (D-071): the till's socket (another port on this computer) AND, where the store computer serves it, its own
+    // Batch 17 (D-069): the till's socket (another port on this computer) AND, where the store computer serves it, its own
     // answer on this page's address — so "not answering" is said only when it is true, and says which part did not answer.
     const own = typeof window.sreBoxStatusPath === 'string' && window.sreBoxStatusPath.startsWith('/') ? window.sreBoxStatusPath : null;
     const [lane, mine] = await Promise.all([askStatus(`${base}/lane/sync-status`), own === null ? Promise.resolve(null) : askStatus(own)]);
@@ -538,7 +542,7 @@
     if (menuMark) button.replaceChildren(menuMark, document.createTextNode(t('screens')));
     else button.textContent = `☰ ${t('screens')}`;
     panel.setAttribute('aria-label', t('screens'));
-    // Batch 17 (D-070): where the person had scrolled the list to — this drawing's, or the last page's on this device.
+    // Batch 17 (D-068): where the person had scrolled the list to — this drawing's, or the last page's on this device.
     const keptScroll = panel.querySelector('.groups')?.scrollTop ?? railScroll();
     panel.replaceChildren(brand());
     const groups = Array.isArray(nav.groups) ? nav.groups : [];
@@ -572,7 +576,7 @@
     // D-027 / D-007: a person with a daily list sees THAT list open and every other screen they may open under one
     // closed "More" — nothing removed, no permission changed (the box still sends every screen the role opens). "More"
     // opens itself when the page being shown lives in it, or while a search finds something in it.
-    // Batch 17 (D-070, owner 19 Nov 2026: "left side panel automatically closed and comes to the top"): once the person
+    // Batch 17 (D-068, owner 19 Nov 2026: "left side panel automatically closed and comes to the top"): once the person
     // opens "More" it STAYS open on every page they go to, on this device, until they close it — as each workspace does.
     const more = groups.some((g) => g.key === 'Daily') && groups.length > 1 ? moreSection() : null;
     if (more) {
@@ -635,7 +639,7 @@
     }
     filterMenu(byId('sre-find')?.value ?? '');
     layout();
-    // Batch 17 (D-070): the list stays where the person left it, and the page being shown is in view — moved only as far as
+    // Batch 17 (D-068): the list stays where the person left it, and the page being shown is in view — moved only as far as
     // it takes to show it, never back to the top.
     scroller.scrollTop = keptScroll;
     scroller.addEventListener('scroll', () => { rememberRailScroll(scroller.scrollTop); }, { passive: true });
@@ -649,7 +653,7 @@
     }
     if (scroller.offsetParent !== null) rememberRailScroll(scroller.scrollTop); // a closed drawer (a phone) keeps the last place
   }
-  // Batch 17 (D-070): the rail's scroll position, per person on this device (a convenience: none kept means the top).
+  // Batch 17 (D-068): the rail's scroll position, per person on this device (a convenience: none kept means the top).
   function railScroll() {
     try { const v = Number(window.localStorage.getItem(storeKey('scroll'))); return Number.isFinite(v) && v > 0 ? v : 0; } catch { return 0; }
   }
@@ -713,7 +717,7 @@
     body.className = 'sre-more-body';
     toggle.addEventListener('click', () => {
       const nowOpen = toggle.getAttribute('aria-expanded') !== 'true';
-      // Batch 17 (D-070): remembered, like a workspace heading — it stays as the person left it on the next page.
+      // Batch 17 (D-068): remembered, like a workspace heading — it stays as the person left it on the next page.
       const all = rememberedObject('open');
       all.More = nowOpen;
       remember('open', all);
@@ -2870,7 +2874,8 @@
   // Only a person's own press is remembered (the chrome's own press below is not), after the page has switched.
   document.addEventListener('click', (e) => {
     if (!e.isTrusted || !(e.target instanceof Element) || e.target.closest('#lang') === null) return;
-    setTimeout(() => rememberLanguage(lang()), 0);
+    rememberLanguage(lang()); // the page's own switch ran first (it is on the button; this listens on the document)
+    setTimeout(() => rememberLanguage(lang()), 0); // and once more, for a page that switches a moment later
   });
   function applyChosenLanguage(again) {
     const want = chosenLanguage();

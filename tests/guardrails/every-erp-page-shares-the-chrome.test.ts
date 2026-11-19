@@ -74,8 +74,12 @@ describe('the chrome itself', () => {
   it('asks the store computer at the address the page was served from — never a guessed one — read-only and bounded', () => {
     expect(CHROME).toMatch(/typeof window\.laneWriteBase === 'string' \? window\.laneWriteBase : null/);
     expect(CHROME).not.toMatch(/127\.0\.0\.1|localhost|:8090/);
-    expect(CHROME).toMatch(/fetch\(`\$\{base\}\/lane\/sync-status`, \{ cache: 'no-store', signal: ctl\.signal \}\)/);
-    expect(CHROME).toMatch(/setTimeout\(\(\) => ctl\.abort\(\), 3000\)/);
+    // Batch 17 (D-069 · OB-858): the till's socket AND the store computer's own answer on the page's address, each a
+    // bounded read-only GET (8 s); one slow answer is not "not answering"
+    expect(CHROME).toMatch(/askStatus\(`\$\{base\}\/lane\/sync-status`\)/);
+    expect(CHROME).toMatch(/window\.sreBoxStatusPath\.startsWith\('\/'\)/);
+    expect(CHROME).toMatch(/fetch\(url, \{ cache: 'no-store', signal: ctl\.signal \}\)/);
+    expect(CHROME).toMatch(/setTimeout\(\(\) => ctl\.abort\(\), 8000\)/);
     expect(CHROME).not.toMatch(/method: 'POST'/);
   });
 
@@ -401,5 +405,36 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     const [b] = bilingualBlocks("const W = { en: { a: 'x', b: 'y' }, ta: { a: 'எ' } };");
     expect(b!.en).toEqual(['a', 'b']);
     expect(b!.ta).toEqual(['a']);
+  });
+});
+
+// Batch 17 · OB-855 (owner, 19 Nov 2026): ONE language at a time. Batch 12 drew every menu row's name in the other language
+// under it (`data-twin`), and Today wrote "English / தமிழ்" titles, card names, headings and status words. This keeps it gone,
+// and keeps the switch remembered — the browser test (batch17-…e2e.ts) proves that pressing தமிழ் shows Tamil only.
+describe('one language at a time (OB-855 · D-067)', () => {
+  const APP = read('app.js');
+  const CSS = readFileSync('packages/ui/web/sre-foundation.css', 'utf8');
+  it('the menu draws no second line in the other language', () => {
+    expect(CHROME).not.toMatch(/dataset\.twin|sre-twin/);
+    expect(CSS).not.toMatch(/attr\(data-twin\)|\.sre-twin/);
+  });
+  it('Today writes no word in the other language beside the reader\'s', () => {
+    expect(APP).not.toMatch(/lang === 'ta' \? 'en' : 'ta'/);
+    expect(APP).not.toMatch(/twinLabel|who-twin/);
+    expect(read('index.html')).not.toMatch(/who-twin|\/ இன்று/);
+  });
+  it('the switch is remembered on the device — only a person\'s own press — and applied by pressing the page\'s own switch', () => {
+    expect(CHROME).toMatch(/const LANG_KEY = 'sre\.lang';/);
+    expect(CHROME).toMatch(/if \(!e\.isTrusted \|\| !\(e\.target instanceof Element\) \|\| e\.target\.closest\('#lang'\) === null\) return;/);
+    expect(CHROME).toMatch(/if \(toggle && !toggle\.disabled\) toggle\.click\(\);/);
+    const update = readFileSync('packages/ui/web/sre-update.js', 'utf8');
+    expect(update).toMatch(/sre\.lang\.screen\./);
+    expect(update).toMatch(/!e\.isTrusted/);
+  });
+  it('a part the store computer writes in both languages shows only the page\'s one language', () => {
+    expect(CSS).toMatch(/html:not\(\[lang="ta"\]\) \[data-one-lang="ta"\], html\[lang="ta"\] \[data-one-lang="en"\] \{ display: none !important; \}/);
+  });
+  it('tripwire — the twin detector sees batch 12\'s line', () => {
+    expect("link.dataset.twin = other; link.classList.add('sre-twin');").toMatch(/dataset\.twin|sre-twin/);
   });
 });

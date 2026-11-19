@@ -130,6 +130,9 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
           if (ta.length > 0) found[`${file}@${width}/ta`] = ta;
           // The toggle now offers the way back, in the language just left.
           expect(await page.textContent('#lang'), `${file}: the toggle after switching to Tamil`).toBe('English');
+          // batch 17 · OB-855: the choice is remembered on this device — back to English, so the next page opens in English
+          await page.click('#lang');
+          await page.waitForFunction('document.documentElement.lang === "en"', undefined, { timeout: 5_000 });
         }
         await page.close();
       }
@@ -153,12 +156,13 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
 
     await page.evaluate('globalThis.laneWriteBase = "http://127.0.0.1:1"');
     await page.evaluate('globalThis.sreChrome.badge.refresh()');
-    expect(await page.textContent('#conn-text')).toBe('Store computer not answering');
+    // batch 17 · D-069: nothing listens on that port — said plainly as the till service not running
+    expect(await page.textContent('#conn-text')).toBe('Till service not running on this computer');
     expect(await page.getAttribute('#conn-dot', 'class')).toContain('error');
 
     await page.click('#lang');
     await page.waitForFunction('document.documentElement.lang === "ta"');
-    expect(await page.textContent('#conn-text')).toBe('கடை கணினி பதிலளிக்கவில்லை');
+    expect(await page.textContent('#conn-text')).toBe('இந்தக் கணினியில் விற்பனை முனையச் சேவை இயங்கவில்லை');
     expect(await page.textContent('#lang')).toBe('English');
   });
 

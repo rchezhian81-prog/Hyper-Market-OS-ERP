@@ -907,7 +907,7 @@ body.sre-shell h1.who small { margin-top: 2px; }
    `data-one-lang` part; only the page's own language shows. English unless the person pressed தமிழ். */
 html:not([lang="ta"]) [data-one-lang="ta"], html[lang="ta"] [data-one-lang="en"] { display: none !important; }
 
-/* ── Batch 17 · D-073 (owner, 19 Nov 2026: "all alignments are not perfect and font, tab are not uniform") — ONE form layout ──
+/* ── Batch 17 · D-071 (owner, 19 Nov 2026: "all alignments are not perfect and font, tab are not uniform") — ONE form layout ──
    Every office page's forms share one layout: the label ABOVE its box, boxes full width in a responsive grid, one box height
    (44px and up), one font, one gap, one heading size per level, one button size. Written with :where(), so it has no weight:
    it fills in what a page did not say and never overrides a page's own rule (registers, search boxes, the till keep theirs).
@@ -926,7 +926,7 @@ html:not([lang="ta"]) [data-one-lang="ta"], html[lang="ta"] [data-one-lang="en"]
   display: grid; gap: 6px; font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.35;
 }
 :where(body.sre-shell main) :where(label:has(> :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea))) > :is(input, select, textarea) { width: 100%; font-weight: 400; }
-:where(body.sre-shell main) :where(div, p, li, .field) > :where(label) + :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { width: 100%; }
+:where(body.sre-shell main) :where(label) + :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { width: 100%; }
 /* one heading size per level inside a page's sections */
 :where(body.sre-shell main) :where(section, .card, .panel, .form, .w5-section) > :where(h2) { margin: 0 0 6px; font-size: 22px; line-height: 1.25; font-weight: 650; color: var(--ink); }
 :where(body.sre-shell main) :where(section, .card, .panel, .form, .w5-action) > :where(h3) { margin: 0 0 6px; font-size: 18px; line-height: 1.3; font-weight: 650; color: var(--ink); }

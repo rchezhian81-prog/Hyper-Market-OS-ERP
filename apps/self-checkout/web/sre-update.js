@@ -60,7 +60,9 @@
   const chosen = () => { try { const v = window.localStorage.getItem(langKey); return v === 'ta' || v === 'en' ? v : null; } catch { return null; } };
   document.addEventListener('click', (e) => {
     if (!e.isTrusted || !(e.target instanceof Element) || e.target.closest('#lang') === null) return;
-    setTimeout(() => { try { window.localStorage.setItem(langKey, lang()); } catch { /* a convenience only */ } }, 0);
+    const keep = () => { try { window.localStorage.setItem(langKey, lang()); } catch { /* a convenience only */ } };
+    keep(); // the screen's own switch ran first (it is on the button; this listens on the document)
+    setTimeout(keep, 0); // and once more, for a screen that switches a moment later
   });
   const applyChosen = () => {
     const want = chosen();

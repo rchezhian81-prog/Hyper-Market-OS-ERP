@@ -165,7 +165,7 @@ describe.skipIf(!existsSync(CHROMIUM))('W1: the office shell finds pages and sho
       await page.goto(`${shop.base}/approvals`, { waitUntil: 'load' });
       await page.waitForFunction('globalThis.sreChrome !== undefined');
       expect(await texts(page, '#sre-menu .sre-quick[data-key="pinned"] a')).toEqual(['Customers']);
-      // the workspace is remembered open — and (batch 17 · D-070, the owner: "left side panel automatically closed") so is
+      // the workspace is remembered open — and (batch 17 · D-068, the owner: "left side panel automatically closed") so is
       // "More": it stays as the person left it on the next page, until they close it
       expect(await page.getAttribute('#sre-menu .group-section[data-key="Customers"] .group-toggle', 'aria-expanded')).toBe('true');
       expect(await page.getAttribute('#sre-menu .sre-more-toggle', 'aria-expanded')).toBe('true');

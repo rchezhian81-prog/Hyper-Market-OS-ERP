@@ -13,7 +13,11 @@
 3. **One primary action per screen**, visually dominant. Destructive/financial actions show consequence, required authority, and a confirm step.
 4. **Every screen shows connection state** — online / degraded / offline / reconnecting — **and the unsent count** and last-sync freshness.
 5. **Errors state three things:** what happened, whether data was saved, and the next safe action.
-6. **English and Tamil throughout**, switchable per user.
+6. **English and Tamil throughout — ONE language at a time, by choice** (OB-855, owner, 19 Nov 2026). Every word exists in
+   both languages, but a screen shows only one: English by default; the language switch shows Tamil only, and the choice is
+   remembered on that device (and per person on the office pages). Nothing shows the two languages side by side or one
+   under the other — not a menu row, a page title, a card name, a table heading or a status word. This replaces the earlier
+   rule "English and Tamil on every word" (batch 12 drew the other language under each name; batch 17 removed it).
 7. **Large touch targets and high contrast**; usable at arm's length under fluorescent light by staff aged 50.
 8. **Must work on a low-specification Android phone.**
 
@@ -84,7 +88,7 @@ unless said.
 **Rules the look keeps — the design system's, so not negotiable (QG-02, §27.1, NFR-07/08, P-08):** §1 rules 4, 6 and 7
 as written; base 16px with nothing a person must read under 14px (uppercase letter-spaced labels ≥ 12.5px; the logo
 mark, avatar initials and a keyboard hint are the only exceptions); controls ≥ 44px on the back-office desktop, 48px for
-the primary action, 56px on the till and the handhelds; every word in English and Tamil; status as word + icon, never
+the primary action, 56px on the till and the handhelds; every word in English and Tamil, one language shown at a time (OB-855); status as word + icon, never
 colour alone; a freshness line on every figure, and **Not known** in `--warn` with the reason instead of a zero; the
 sample-data strip at 14px; the system font stack with the Tamil faces before Arial (since OB-728: the two self-hosted faces first, then that stack, §3.5); one primary action per screen.
 The handhelds keep their task-first layouts and take only the palette.
@@ -221,7 +225,7 @@ colours moved over too: every page's browser bar colour (`theme-color`) and ever
 forest tint. The sign-in page (`packages/ui/src/sign-in-style.ts`, one source for the hosted sign-in and the store
 computer's front door) already uses this palette's values in its own scoped set.
 
-**What does not change:** every §1 hard rule (English and Tamil on every word; status as word + icon; nothing a person
+**What does not change:** every §1 hard rule (English and Tamil on every word, one language shown at a time — OB-855; status as word + icon; nothing a person
 must read under 14px; targets 44 / 48 / 56 / 64px); the meaning of every colour (green ok, amber pending or not known,
 red a problem, grey idle); the three-reds rule; no motion on the till's scan or total and reduced motion respected;
 offline first — nothing loads from the internet at run time, fonts included.
@@ -439,3 +443,18 @@ screen specs live in `docs/design/screens/`.
 - Sit a real, untrained cashier down: unsupervised billing within 30 minutes.
 - Test on the cheapest phone staff own, in the store, at 7pm.
 - Use `usability-test-script.md` and record every hesitation, question and pen-reach.
+
+
+## Batch 17 (19 Nov 2026) — one language at a time, one form layout
+
+- **One language at a time (OB-855).** See §1 rule 6. The office chrome (`apps/web-erp/web/sre-chrome.js`) and every other
+  screen (`packages/ui/web/sre-update.js`) remember the switch on the device (`sre.lang`, `sre.lang.<person>`,
+  `sre.lang.screen.<screen>`); only a person's own press is remembered. A part the store computer writes in both languages
+  carries each in its own `data-one-lang` part and the shared stylesheet shows the page's one language.
+- **The menu stays as the person left it (D-068).** "More" and each workspace stay open or closed as the person left them,
+  the list keeps its scroll position, and the page being shown is scrolled into view only as far as it takes.
+- **One form layout (D-071).** In `sre-foundation.css`: the label above its box; boxes full width in a responsive grid
+  (`.sre-form`, `.sre-form-grid`, `.form > .grid`, the W5 sections' `.w5-action`) — each at least 240px, stacked on a phone;
+  boxes 44px and up, 16px text; one heading size per level inside a page's sections (h2 22px, h3 18px); one button size
+  (the primary button no longer larger). The baseline rules are written with `:where()`, so they fill in what a page did not
+  say and never override a page's own rule.

@@ -20,15 +20,15 @@ import { prepareTillBox, pinOf, signInThroughScreen, takeFloatOnPage } from '../
  * **Batch 17 (owner, 19 Nov 2026, store PC 1.0.2246, signed in as the owner) — in a real Chromium, on a store-PC copy as
  * installed (office PIN sign-in on, the store setup from head office's own builder):**
  *
- *   • D-069 · OB-855 — ONE language at a time. Every office page opens in English only: the menu rows, the page title, Today's
+ *   • D-067 · OB-855 — ONE language at a time. Every office page opens in English only: the menu rows, the page title, Today's
  *     card names, table headings and status words carry no Tamil. Pressing தமிழ் shows Tamil only (no English beside it),
  *     and the next page opens in Tamil — remembered on this device. Pressing English goes back.
- *   • D-070 — the menu does not close by itself or jump to the top: "More" and a workspace the person opened stay open on
+ *   • D-068 — the menu does not close by itself or jump to the top: "More" and a workspace the person opened stay open on
  *     the next page, the list keeps its scroll position, and the page being shown is in view.
- *   • D-071 — the badge tells the truth: on the store PC it answers (never "Store computer not answering" while the store
+ *   • D-069 — the badge tells the truth: on the store PC it answers (never "Store computer not answering" while the store
  *     computer is on); with only the till's socket unreachable it says so; with nothing answering it says the till service
  *     is not running.
- *   • D-072 — bill numbers: a freshly installed store computer whose till head office has registered numbers its first sale
+ *   • D-070 — bill numbers: a freshly installed store computer whose till head office has registered numbers its first sale
  *     1L01/<YY-YY>/00001, and Today's Recent activity shows that number. A till head office has NOT registered numbers under
  *     a temporary 1T01 range, and the till's screen says so plainly and what to do.
  *
@@ -136,7 +136,7 @@ describe.skipIf(!HAVE_BROWSER)('batch 17 — one language at a time, the menu st
   const menuRows = (page: Page): Promise<string[]> => page.$$eval('#sre-menu .group-section a', (as) => as.map((a) => (a.textContent ?? '').trim()));
   const go = async (page: Page, url: string): Promise<void> => { await page.goto(url, { waitUntil: 'load' }); await page.waitForFunction('globalThis.sreChrome !== undefined'); };
 
-  it('D-069 · OB-855: English only until தமிழ் is pressed; then Tamil only, remembered on the next page; English again on the switch', async () => {
+  it('D-067 · OB-855: English only until தமிழ் is pressed; then Tamil only, remembered on the next page; English again on the switch', async () => {
     const { base } = await storePc(await headOfficeNumbering(true));
     const { page, errors } = await owner(base);
     // Today, in English: the title, the cards, the headings — not one Tamil letter; the menu rows the same
@@ -182,7 +182,7 @@ describe.skipIf(!HAVE_BROWSER)('batch 17 — one language at a time, the menu st
     expect(errors).toEqual([]);
   }, 180_000);
 
-  it('D-070: "More" and an opened workspace stay open on the next page; the list keeps its place; the page shown is in view', async () => {
+  it('D-068: "More" and an opened workspace stay open on the next page; the list keeps its place; the page shown is in view', async () => {
     const { base } = await storePc(await headOfficeNumbering(true));
     const { page, errors } = await owner(base, 1366, 600);
     const more = '#sre-menu .sre-more-toggle';
@@ -231,9 +231,12 @@ describe.skipIf(!HAVE_BROWSER)('batch 17 — one language at a time, the menu st
     expect(errors).toEqual([]);
   }, 180_000);
 
-  it('D-071: on the store PC the badge answers; the till socket alone unreachable is said; nothing answering says the till service is not running', async () => {
+  it('D-069: on the store PC the badge answers; the till socket alone unreachable is said; nothing answering says the till service is not running', async () => {
     const { base } = await storePc(await headOfficeNumbering(true));
     const { page } = await owner(base);
+    // Today on the store PC: whatever figures it lacks, the store computer answers — never "Not connected" or "not answering"
+    await page.waitForFunction('!/Checking/.test(document.getElementById("conn-text").textContent)');
+    expect(await page.textContent('#conn-text')).not.toMatch(/^Not connected|not answering|not running/);
     await go(page, `${base}/goods-receipt/`);
     // the store PC answers: never "not answering"
     await page.waitForFunction('!/Checking/.test(document.getElementById("conn-text").textContent)');
@@ -278,7 +281,7 @@ describe.skipIf(!HAVE_BROWSER)('batch 17 — one language at a time, the menu st
     return { page, context, receipt: (await page.textContent('#refusal-receipt')) ?? '' };
   }
 
-  it('D-072: a fresh store PC whose till head office registered numbers its first sale 1L01/YY-YY/00001, and Today lists it', async () => {
+  it('D-070: a fresh store PC whose till head office registered numbers its first sale 1L01/YY-YY/00001, and Today lists it', async () => {
     const yy = financialYearLabel(new Date().toISOString());
     const numbering = await headOfficeNumbering(true);
     expect(numbering.section).toMatchObject({ formatA: { storeNumber: 1, laneCodes: { 'lane-1': 'L01' } } });
@@ -296,7 +299,7 @@ describe.skipIf(!HAVE_BROWSER)('batch 17 — one language at a time, the menu st
     await shot(page, 'b17-today-recent-bill.png');
   }, 180_000);
 
-  it('D-072: a till head office has not registered numbers under a temporary 1T01 range, and the till says so and what to do', async () => {
+  it('D-070: a till head office has not registered numbers under a temporary 1T01 range, and the till says so and what to do', async () => {
     const yy = financialYearLabel(new Date().toISOString());
     const numbering = await headOfficeNumbering(false);
     expect(numbering.section).toMatchObject({ formatA: { storeNumber: 1, laneCodes: {} } });
