@@ -5,11 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-<<<<<<< HEAD
-  "testFiles": 2510,
-=======
-  "testFiles": 2518,
->>>>>>> origin/claude/batch-18c
+  "testFiles": 2523,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -660,17 +656,11 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-<<<<<<< HEAD
         "unit": 17,
-        "integration": 35,
+        "integration": 36,
         "realDb": 13,
-=======
-        "unit": 16,
-        "integration": 35,
-        "realDb": 12,
->>>>>>> origin/claude/batch-18c
-        "browser": 12,
-        "connected": 4,
+        "browser": 13,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -764,11 +754,8 @@
         ],
         "connected": [
           "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts",
-<<<<<<< HEAD
-          "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
-=======
           "tests/e2e/b18c-r2-a-saved-receipt-is-corrected-on-goods-receipt-review.e2e.ts",
->>>>>>> origin/claude/batch-18c
+          "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
           "tests/e2e/u6-the-stock-ledger-quarantine-and-adjustment-pages.e2e.ts",
           "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],

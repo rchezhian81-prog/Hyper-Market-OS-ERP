@@ -60,8 +60,12 @@ function paintDebitNotes() {
   const ul = $('dn-list'); ul.replaceChildren();
   if (account === null) return;
   $('dn-owed').textContent = account.totals ? `${w('dnOwed')}: ${money(account.totals.owedMinor)}` : '';
-  if (account.debitNotes.length === 0) { ul.append(el('li', w('dnNone'))); return; }
-  for (const d of account.debitNotes) {
+  paintShelfNotes();
+  // OB-879: an accepted shelf-return note is listed with the shelf notes below, not twice.
+  const shelfRefs = new Set((account.shelfReturnDebitNotes ?? []).map((d) => d.debitNoteRef));
+  const notes = account.debitNotes.filter((d) => !shelfRefs.has(d.debitNoteRef));
+  if (notes.length === 0) { ul.append(el('li', w('dnNone'))); return; }
+  for (const d of notes) {
     const li = document.createElement('li'); li.dataset.debitNote = d.debitNoteRef; li.dataset.issued = String(d.number !== null);
     li.append(el('strong', `${d.debitNoteRef} · ${d.productId} × ${d.quantityMinor} · ${money(d.valueMinor)} — ${d.number === null ? w('dnNotIssued') : `${w('dnIssued')} ${d.number}`}`));
     if (d.reason) li.append(el('span', d.reason, 'muted'));
@@ -78,6 +82,34 @@ function paintDebitNotes() {
     ul.append(li);
   }
 }
+/** OB-879: the debit notes for shelf stock sent back — waiting ones offer "Supplier accepted"; accepted ones say what came off. */
+function paintShelfNotes() {
+  const ul = $('dn-shelf'); ul.replaceChildren();
+  if (account === null) return;
+  const shelf = account.shelfReturnDebitNotes ?? [];
+  if (shelf.length === 0) { ul.append(el('li', w('shelfNone'), 'muted')); return; }
+  for (const d of shelf) {
+    const li = document.createElement('li'); li.dataset.shelfNote = d.debitNoteRef; li.dataset.state = d.state;
+    const head = `${d.number ?? d.debitNoteRef}${d.returnNumber ? ` (${d.returnNumber})` : ''} · ${d.productId} × ${d.quantityMinor} · ${money(d.valueMinor)}`;
+    const a = d.acceptance;
+    li.append(el('strong', a === null ? `${head} — ${w('shelfWaiting')}` : `${head} — ${w('shelfAccepted')} ${a.supplierCreditNoteNo} · ${a.supplierCreditNoteDate} · ${money(a.acceptedMinor)} ${w('shelfTakenOff')}`, 'shelf-head'));
+    if (a !== null && a.differenceMinor > 0) li.append(el('span', `${money(a.differenceMinor)} ${w('shelfNotAccepted')}${a.reason ? ` — ${a.reason}` : ''}`, 'muted shelf-diff'));
+    if (a === null) {
+      const box = (cls, label, type) => { const l = document.createElement('label'); l.append(el('span', label)); const i = document.createElement('input'); i.className = cls; i.type = type; i.autocomplete = 'off'; l.append(i); return l; };
+      li.append(box('shelf-cn', w('shelfCnNo'), 'text'), box('shelf-date', w('shelfCnDate'), 'date'), box('shelf-amount', w('shelfAmount'), 'text'), box('shelf-reason', w('shelfReason'), 'text'));
+      const go = el('button', w('shelfAccept'), 'shelf-accept sre-btn'); go.type = 'button';
+      go.addEventListener('click', async () => {
+        const v = (cls) => li.querySelector(`.${cls}`)?.value ?? '';
+        const out = await bc.session.acceptShelfNote(account.supplierId, d.debitNoteRef, { creditNoteNo: v('shelf-cn'), creditNoteDate: v('shelf-date'), accepted: v('shelf-amount'), reason: v('shelf-reason') });
+        $('dn-status').dataset.result = out.result;
+        $('dn-status').textContent = out.result === 'ok' ? `${w('shelfDone')} ${money(out.value.acceptance.acceptedMinor)}.` : bc.outcomeWords(lang, out, '');
+        if (out.result === 'ok') await showDebitNotes();
+      });
+      li.append(go);
+    }
+    ul.append(li);
+  }
+}
 async function showDebitNotes() {
   const supplierId = $('dn-supplier').value;
   const out = await bc.session.account(supplierId);
@@ -87,7 +119,7 @@ async function showDebitNotes() {
 
 function paintWords() {
   for (const [id, k] of [['chk-h', 'checkH'], ['chk-lede', 'checkLead'], ['chk-show', 'checksH'], ['type-ask', 'askCheck'],
-    ['dn-h', 'dnH'], ['dn-lede', 'dnLead'], ['l-dn-supplier', 'dnSupplierL'], ['dn-show', 'dnShow']]) $(id).textContent = w(k);
+    ['dn-h', 'dnH'], ['dn-lede', 'dnLead'], ['l-dn-supplier', 'dnSupplierL'], ['dn-show', 'dnShow'], ['dn-shelf-h', 'shelfH']]) $(id).textContent = w(k);
   paintChecks(); paintDebitNotes();
 }
 

@@ -57,6 +57,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-866 B �
           warehouseId: 'br-1', receivedOnDate: '2026-11-18', currency: 'INR', poId: 'po-1',
           lines: [{ lineId: 'L1', productId: 'RICE', orderedMinor: 10, countedMinor: 10, uom: 'ea', unitCost: unit(5_000), condition: 'good' }],
         }, 'grn-1');
+        // OB-879: ₹300 of shelf oil sent back to the supplier — its debit note waits for the supplier to accept.
+        await as(c, '/v1/inventory/movements', { movementId: 'rx-oil', productId: 'OIL', locationId: 'br-1', kind: 'received', quantityMinor: 20, uom: 'ea', occurredAt: '2026-11-01T09:00:00.000Z', enteredBy: OWNER, unitCostMinor: 15_000 }, 'rx-oil');
+        await as(c, '/v1/inventory/shelf-returns/rts-a', { productId: 'OIL', locationId: 'br-1', qty: 2, uom: 'ea', supplierId: 'sup-k', reason: 'expired' }, 'rts-a');
         // The accountant's posting rules as suggested — which name NO purchase round-off account.
         await as(c, '/v1/finance/posting-map', DEFAULT_RETAIL_POSTING_MAP, 'map', ACCT, 'PUT');
       },
@@ -182,4 +185,36 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-866 B �
     const books = (await api('/v1/finance/payables', ACCT)).body as { journals: { sourceId: string }[] };
     expect(books.journals.filter((j) => j.sourceId === 'sup-k-RO-1')).toHaveLength(1);
   }, 240_000);
+
+  it('OB-879: the accountant records "Supplier accepted" on a shelf-return debit note, and only then is it taken off what is owed', async () => {
+    const s = await open(ACCT, '/supplier-bills');
+    try {
+      await s.page.waitForSelector('#dn-part:not([hidden])', { timeout: 15_000 });
+      await s.page.fill('#dn-supplier', 'sup-k');
+      await s.page.click('#dn-show');
+      const row = s.page.locator('#dn-shelf li[data-shelf-note="DN-RTS-rts-a"]');
+      await row.waitFor({ timeout: 15_000 });
+      expect(await row.getAttribute('data-state')).toBe('waiting_for_supplier');
+      await says(s.page, '#dn-shelf li[data-shelf-note="DN-RTS-rts-a"] .shelf-head', /^SDN\/\d\d-\d\d\/\d{5} \(RTS1\/\d\d-\d\d\/00001\) · OIL × 2 · ₹300\.00 — waiting for the supplier to accept — not taken off what is owed yet$/);
+      const owedBefore = await s.page.locator('#dn-owed').innerText();
+      await row.locator('button.shelf-accept').click();
+      await says(s.page, '#dn-status', /^Type the supplier's credit-note number and its date first\.$/);
+      await row.locator('input.shelf-cn').fill('KA-CN-12');
+      await row.locator('input.shelf-date').fill('2026-11-18');
+      await row.locator('input.shelf-amount').fill('250');
+      await row.locator('button.shelf-accept').click();
+      await says(s.page, '#dn-status', /^Head office refused: The supplier accepted ₹250\.00 of ₹300\.00\. Say why/);
+      await row.locator('input.shelf-reason').fill('one tin past the date he takes back');
+      await shot(s.page, '6-supplier-accepted-typed');
+      await row.locator('button.shelf-accept').click();
+      await says(s.page, '#dn-status', /^Recorded — taken off what is owed: ₹250\.00\.$/);
+      await says(s.page, '#dn-shelf li[data-shelf-note="DN-RTS-rts-a"] .shelf-head', /accepted by the supplier as credit note KA-CN-12 · 2026-11-18 · ₹250\.00 taken off what is owed$/);
+      await says(s.page, '#dn-shelf li[data-shelf-note="DN-RTS-rts-a"] .shelf-diff', /^₹50\.00 not accepted by the supplier — one tin past the date he takes back$/);
+      expect(await s.page.locator('#dn-owed').innerText()).not.toBe(owedBefore);
+      expect(await s.page.locator('#dn-shelf button.shelf-accept').count(), 'an accepted note offers no second acceptance').toBe(0);
+      await shot(s.page, '7-supplier-accepted');
+      expect(s.writes).toEqual(['POST /v1/purchase/suppliers/sup-k/shelf-return-debit-notes/DN-RTS-rts-a/accept', 'POST /v1/purchase/suppliers/sup-k/shelf-return-debit-notes/DN-RTS-rts-a/accept']);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+  }, 120_000);
 });

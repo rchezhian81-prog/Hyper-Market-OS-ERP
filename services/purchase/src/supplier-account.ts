@@ -302,6 +302,36 @@ export interface ShelfReturnDebitNote {
   readonly nettedInBalance: false;
 }
 
+/**
+ * OB-879 (batch 19 · under OB-874 C): the supplier ACCEPTED a shelf-return debit note — recorded by the accountant with the
+ * supplier's own credit-note number and date. Append-only and audited, once per note; only then is the note taken off what
+ * is owed, once. The accepted amount defaults to the note's value; a lower one needs a reason and the difference stays shown.
+ */
+export interface ShelfDebitNoteAcceptance {
+  readonly debitNoteRef: string;
+  readonly supplierId: string;
+  readonly supplierCreditNoteNo: string;
+  /** The supplier's credit note's own date, YYYY-MM-DD. */
+  readonly supplierCreditNoteDate: string;
+  /** The note's value when it was accepted (before GST). */
+  readonly noteValueMinor: number;
+  /** What the supplier accepted — taken off what is owed. At most the note's value. */
+  readonly acceptedMinor: number;
+  /** noteValueMinor − acceptedMinor: what the supplier did NOT accept; stays visible, never netted. */
+  readonly differenceMinor: number;
+  /** Why less was accepted — required when `differenceMinor` > 0. */
+  readonly reason?: string;
+  readonly acceptedBy: string;
+  readonly acceptedAt: string;
+}
+
+/** A shelf-return debit note as the account shows it: waiting for the supplier, or accepted (and then netted, once). */
+export type ShelfReturnDebitNoteOnAccount = Omit<ShelfReturnDebitNote, 'nettedInBalance'> & {
+  readonly state: 'waiting_for_supplier' | 'accepted';
+  readonly nettedInBalance: boolean;
+  readonly acceptance: ShelfDebitNoteAcceptance | null;
+};
+
 export interface SupplierAccountTotals {
   readonly invoicedMinor: number;
   /** Σ matched payable — what the shop has agreed it owes. */
@@ -342,8 +372,12 @@ export interface SupplierAccountStatement extends PayablesAccount {
   readonly doorDebitNotes: readonly DoorDebitNote[];
   readonly doorDebitNotesTotal: { readonly valueMinor: number; readonly notesWithValueUnknown: number; readonly nettedInBalance: false };
   /** S1 (batch 18c): debit notes for shelf stock returned to this supplier — shown, not netted, until the GST treatment is decided. */
-  readonly shelfReturnDebitNotes: readonly ShelfReturnDebitNote[];
-  readonly shelfReturnDebitNotesTotal: { readonly valueMinor: number; readonly nettedInBalance: false; readonly why: string };
+  readonly shelfReturnDebitNotes: readonly ShelfReturnDebitNoteOnAccount[];
+  /**
+   * `valueMinor`: the notes still WAITING for the supplier (shown, not netted). OB-879: `acceptedMinor` — what the supplier
+   * accepted (netted, as debit notes); `notAcceptedMinor` — what the supplier did not accept of an accepted note (shown only).
+   */
+  readonly shelfReturnDebitNotesTotal: { readonly valueMinor: number; readonly nettedInBalance: false; readonly why: string; readonly acceptedMinor: number; readonly notAcceptedMinor: number };
   readonly totals: SupplierAccountTotals;
   readonly asAt: string;
 }
@@ -374,6 +408,8 @@ export interface SupplierAccountInput {
   readonly claimCredits?: readonly SupplierClaimCredit[];
   /** S1 (batch 18c) — every shelf-return debit note (all suppliers). Optional for callers that have none. */
   readonly shelfReturnDebitNotes?: readonly ShelfReturnDebitNote[];
+  /** OB-879 — every supplier acceptance of a shelf-return debit note (all suppliers). Optional for callers that have none. */
+  readonly shelfDebitNoteAcceptances?: readonly ShelfDebitNoteAcceptance[];
   readonly asAt: string;
 }
 
@@ -462,6 +498,24 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
     }
   }
 
+  // OB-879: a shelf-return debit note the supplier ACCEPTED is taken off what is owed — once, at the accepted amount, as a
+  // debit note on the account (so the payables posting puts it in the books once, through the debit-note rule). One still
+  // waiting stays shown and not netted (OB-874 C).
+  const acceptanceOf = new Map((input.shelfDebitNoteAcceptances ?? []).filter((a) => a.supplierId === input.supplierId).map((a) => [a.debitNoteRef, a]));
+  const shelfReturnDebitNotes: ShelfReturnDebitNoteOnAccount[] = (input.shelfReturnDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId).map((d) => {
+    const acceptance = acceptanceOf.get(d.debitNoteRef) ?? null;
+    return { ...d, state: acceptance === null ? 'waiting_for_supplier' : 'accepted', nettedInBalance: acceptance !== null, acceptance };
+  });
+  for (const d of shelfReturnDebitNotes) {
+    if (d.acceptance === null || d.acceptance.acceptedMinor <= 0) continue;
+    debitNotes.push({
+      debitNoteRef: d.debitNoteRef, grnId: d.returnNumber ?? d.returnId, lineId: '', productId: d.productId, poId: '', disposition: 'return',
+      quantityMinor: d.quantityMinor, valueMinor: d.acceptance.acceptedMinor, taxableMinor: d.acceptance.acceptedMinor, currency: 'INR',
+      decidedBy: d.acceptance.acceptedBy, decidedAt: d.acceptance.acceptedAt,
+      reason: `accepted by the supplier as credit note ${d.acceptance.supplierCreditNoteNo} of ${d.acceptance.supplierCreditNoteDate}`,
+      number: d.number, issuedBy: null, issuedAt: d.raisedAt,
+    });
+  }
   const accruedMinor = invoices.reduce((s, i) => s + i.payableMinor, 0);
   const debitNotesMinor = debitNotes.reduce((s, d) => s + d.valueMinor, 0);
   const payments = (input.payments ?? []).filter((p) => p.supplierId === input.supplierId);
@@ -471,11 +525,12 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const openings = (input.openings ?? []).filter((o) => o.supplierId === input.supplierId);
   const openingMinor = openings.filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0); // OB-44: a reversed opening is not owed
   const doorDebitNotes = (input.doorDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId);
-  const shelfReturnDebitNotes = (input.shelfReturnDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId);
   return {
     shelfReturnDebitNotes,
     shelfReturnDebitNotesTotal: {
-      valueMinor: shelfReturnDebitNotes.reduce((s, d) => s + d.valueMinor, 0), nettedInBalance: false,
+      valueMinor: shelfReturnDebitNotes.filter((d) => d.acceptance === null).reduce((s, d) => s + d.valueMinor, 0), nettedInBalance: false,
+      acceptedMinor: shelfReturnDebitNotes.reduce((s, d) => s + (d.acceptance?.acceptedMinor ?? 0), 0),
+      notAcceptedMinor: shelfReturnDebitNotes.reduce((s, d) => s + (d.acceptance?.differenceMinor ?? 0), 0),
       why: 'Waiting for the supplier to accept. Shown here, but not taken off what is owed until the supplier accepts it (owner\'s decision OB-874).',
     },
     supplierId: input.supplierId, currency: 'INR',
@@ -544,17 +599,20 @@ export interface SupplierAccountDeps {
   readonly claimCredits?: (tenantId: string) => Promise<readonly SupplierClaimCredit[]> | readonly SupplierClaimCredit[];
   /** S1 (batch 18c) — the debit notes issued for shelf stock returned to suppliers. Optional: a stub has none. */
   readonly shelfReturnDebitNotes?: (tenantId: string) => Promise<readonly ShelfReturnDebitNote[]> | readonly ShelfReturnDebitNote[];
+  /** OB-879 — the supplier acceptances of shelf-return debit notes. Optional: a stub has none. */
+  readonly shelfDebitNoteAcceptances?: (tenantId: string) => Promise<readonly ShelfDebitNoteAcceptance[]> | readonly ShelfDebitNoteAcceptance[];
   readonly now: () => string;
 }
 
 /** The registers the account folds from, read once — shared by the account routes, the master (SP-7c) and finance. */
 export async function accountRegisters(deps: SupplierAccountDeps, tenantId: string): Promise<Omit<SupplierAccountInput, 'supplierId'>> {
-  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, shelfReturnDebitNotes] = await Promise.all([
+  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, shelfReturnDebitNotes, shelfDebitNoteAcceptances] = await Promise.all([
     deps.invoices(tenantId), deps.latestMatches(tenantId), deps.purchaseOrders(tenantId), deps.receipts(tenantId),
     deps.payments(tenantId), deps.debitNoteIssues(tenantId), deps.openingBalances?.(tenantId) ?? [], deps.doorDebitNotes?.(tenantId) ?? [],
     deps.claimCredits?.(tenantId) ?? [], deps.shelfReturnDebitNotes?.(tenantId) ?? [],
+    deps.shelfDebitNoteAcceptances?.(tenantId) ?? [],
   ]);
-  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, shelfReturnDebitNotes, asAt: deps.now() };
+  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, shelfReturnDebitNotes, shelfDebitNoteAcceptances, asAt: deps.now() };
 }
 const registers = accountRegisters;
 

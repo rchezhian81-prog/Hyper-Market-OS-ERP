@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1756 | 1013 | 1013 | 196 | 453 |
+| 13 | 1757 | 1014 | 1014 | 196 | 453 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -331,6 +331,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/suppliers/:supplierId/payments/:paymentId` | `purchase.supplier.pay` | core | yes |
 | POST | `/v1/purchase/suppliers/:supplierId/receipts/:poId` | `purchase.performance.record` | core | yes |
 | GET | `/v1/purchase/suppliers/:supplierId/scorecard` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/suppliers/:supplierId/shelf-return-debit-notes/:debitNoteRef/accept` | `purchase.invoice.match` | core | yes |
 | GET | `/v1/purchase/suppliers/accounts` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/vmi-proposals` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/vmi-proposals/:proposalId/decide` | `purchase.order.propose` | core | yes |

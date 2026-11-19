@@ -105525,6 +105525,108 @@
         }
       }
     },
+    "/v1/purchase/suppliers/{supplierId}/shelf-return-debit-notes/{debitNoteRef}/accept": {
+      "post": {
+        "operationId": "postPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAccept",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.invoice.match",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "supplierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "debitNoteRef",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.invoice.match\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/purchase/vmi-proposals": {
       "get": {
         "operationId": "getPurchaseVmiProposals",
@@ -253266,6 +253368,70 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/supplier-master.ts"
       },
+      "PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptReply200": {
+        "type": "object",
+        "required": [
+          "acceptance",
+          "alreadyAccepted"
+        ],
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/ShelfDebitNoteAcceptance"
+          },
+          "alreadyAccepted": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-master.ts"
+      },
+      "PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptReply201": {
+        "type": "object",
+        "required": [
+          "acceptance",
+          "alreadyAccepted",
+          "owedMinor"
+        ],
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/ShelfDebitNoteAcceptance"
+          },
+          "alreadyAccepted": {
+            "type": "boolean"
+          },
+          "owedMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-master.ts"
+      },
+      "PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptRequest": {
+        "type": "object",
+        "required": [
+          "supplierCreditNoteDate",
+          "supplierCreditNoteNo"
+        ],
+        "properties": {
+          "acceptedMinor": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "supplierCreditNoteDate": {
+            "type": "string"
+          },
+          "supplierCreditNoteNo": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-master.ts"
+      },
       "PostPurchaseVmiLimitsBySupplierIdByStoreIdByProductIdReply": {
         "type": "object",
         "required": [
@@ -323191,6 +323357,53 @@
         },
         "additionalProperties": true
       },
+      "ShelfDebitNoteAcceptance": {
+        "type": "object",
+        "required": [
+          "debitNoteRef",
+          "supplierId",
+          "supplierCreditNoteNo",
+          "supplierCreditNoteDate",
+          "noteValueMinor",
+          "acceptedMinor",
+          "differenceMinor",
+          "acceptedBy",
+          "acceptedAt"
+        ],
+        "properties": {
+          "debitNoteRef": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "supplierCreditNoteNo": {
+            "type": "string"
+          },
+          "supplierCreditNoteDate": {
+            "type": "string"
+          },
+          "noteValueMinor": {
+            "type": "number"
+          },
+          "acceptedMinor": {
+            "type": "number"
+          },
+          "differenceMinor": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "acceptedBy": {
+            "type": "string"
+          },
+          "acceptedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "ShelfLifePolicy": {
         "type": "object",
         "required": [
@@ -323258,26 +323471,25 @@
         },
         "additionalProperties": true
       },
-      "ShelfReturnDebitNote": {
+      "ShelfReturnDebitNoteOnAccount": {
         "type": "object",
         "required": [
-          "debitNoteRef",
           "number",
-          "supplierId",
-          "returnId",
-          "returnNumber",
+          "reason",
           "productId",
+          "supplierId",
+          "raisedAt",
           "quantityMinor",
           "valueMinor",
-          "reason",
-          "raisedAt",
+          "debitNoteRef",
+          "returnId",
+          "returnNumber",
           "gstTreatment",
-          "nettedInBalance"
+          "state",
+          "nettedInBalance",
+          "acceptance"
         ],
         "properties": {
-          "debitNoteRef": {
-            "type": "string"
-          },
           "number": {
             "anyOf": [
               {
@@ -323288,7 +323500,25 @@
               }
             ]
           },
+          "reason": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
           "supplierId": {
+            "type": "string"
+          },
+          "raisedAt": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "debitNoteRef": {
             "type": "string"
           },
           "returnId": {
@@ -323304,28 +323534,29 @@
               }
             ]
           },
-          "productId": {
-            "type": "string"
-          },
-          "quantityMinor": {
-            "type": "number"
-          },
-          "valueMinor": {
-            "type": "number"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "raisedAt": {
-            "type": "string"
-          },
           "gstTreatment": {
             "type": "string",
             "const": "not_decided"
           },
+          "state": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "waiting_for_supplier"
+            ]
+          },
           "nettedInBalance": {
-            "type": "boolean",
-            "const": false
+            "type": "boolean"
+          },
+          "acceptance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShelfDebitNoteAcceptance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true
@@ -328539,7 +328770,7 @@
           "shelfReturnDebitNotes": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ShelfReturnDebitNote"
+              "$ref": "#/components/schemas/ShelfReturnDebitNoteOnAccount"
             }
           },
           "shelfReturnDebitNotesTotal": {
@@ -328547,7 +328778,9 @@
             "required": [
               "valueMinor",
               "nettedInBalance",
-              "why"
+              "why",
+              "acceptedMinor",
+              "notAcceptedMinor"
             ],
             "properties": {
               "valueMinor": {
@@ -328559,6 +328792,12 @@
               },
               "why": {
                 "type": "string"
+              },
+              "acceptedMinor": {
+                "type": "number"
+              },
+              "notAcceptedMinor": {
+                "type": "number"
               }
             },
             "additionalProperties": true
