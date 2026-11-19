@@ -61541,6 +61541,165 @@
         }
       }
     },
+    "/v1/inventory/goods-receipt/{grnId}/corrections": {
+      "get": {
+        "operationId": "getInventoryGoodsReceiptByGrnIdCorrections",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryGoodsReceiptByGrnIdCorrectionsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/goods-receipt/{grnId}/corrections/{correctionId}": {
+      "post": {
+        "operationId": "postInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionId",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.movement.append",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "correctionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.movement.append\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/goods-receipt/{grnId}/excess/decide": {
       "post": {
         "operationId": "postInventoryGoodsReceiptByGrnIdExcessDecide",
@@ -148122,6 +148281,111 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/free-samples.ts"
       },
+      "GetInventoryGoodsReceiptByGrnIdCorrectionsReply": {
+        "type": "object",
+        "required": [
+          "grnId",
+          "receiptNumber",
+          "lines",
+          "corrections",
+          "openBillExceptions",
+          "asAt"
+        ],
+        "properties": {
+          "grnId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "lineId",
+                "productId",
+                "uom",
+                "receivedMinor",
+                "nowMinor"
+              ],
+              "properties": {
+                "lineId": {
+                  "type": "string"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "uom": {
+                  "type": "string"
+                },
+                "receivedMinor": {
+                  "type": "number"
+                },
+                "nowMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "corrections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoredReceiptCorrection"
+            }
+          },
+          "openBillExceptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "correctionId",
+                "documentNumber",
+                "invoiceId",
+                "kind",
+                "paid",
+                "valueMinor",
+                "says"
+              ],
+              "properties": {
+                "correctionId": {
+                  "type": "string"
+                },
+                "documentNumber": {
+                  "type": "string"
+                },
+                "invoiceId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "debit_note_needed",
+                    "rematch_needed"
+                  ]
+                },
+                "paid": {
+                  "type": "boolean"
+                },
+                "valueMinor": {
+                  "type": "number"
+                },
+                "says": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-corrections.ts"
+      },
       "GetInventoryGoodsReceiptByGrnIdReply": {
         "type": "object",
         "required": [
@@ -220734,6 +220998,66 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/goods-receipt.ts"
       },
+      "PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdReply200": {
+        "type": "object",
+        "required": [
+          "correction",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "correction": {
+            "$ref": "#/components/schemas/StoredReceiptCorrection"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-corrections.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdReply201": {
+        "type": "object",
+        "required": [
+          "correction"
+        ],
+        "properties": {
+          "correction": {
+            "$ref": "#/components/schemas/StoredReceiptCorrection"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-corrections.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdRequest": {
+        "type": "object",
+        "required": [
+          "correctQuantityMinor",
+          "lineId",
+          "reason"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "correctQuantityMinor": {
+            "type": "integer"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-corrections.ts"
+      },
       "PostInventoryGoodsReceiptByGrnIdExcessDecideReply": {
         "type": "object",
         "required": [
@@ -283299,6 +283623,38 @@
         },
         "additionalProperties": true
       },
+      "CorrectionBillException": {
+        "type": "object",
+        "required": [
+          "invoiceId",
+          "kind",
+          "paid",
+          "valueMinor",
+          "says"
+        ],
+        "properties": {
+          "invoiceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "debit_note_needed",
+              "rematch_needed"
+            ]
+          },
+          "paid": {
+            "type": "boolean"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "says": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "CorrelationSubject": {
         "anyOf": [
           {
@@ -301045,6 +301401,7 @@
               "counted",
               "opening_reversed",
               "produced",
+              "receipt_corrected_out",
               "received",
               "returned",
               "returned_to_supplier",
@@ -304614,6 +304971,7 @@
               "counted",
               "opening_reversed",
               "produced",
+              "receipt_corrected_out",
               "received",
               "returned",
               "returned_to_supplier",
@@ -313864,6 +314222,7 @@
               "customer_debit_note",
               "floor_indent",
               "goods_receipt",
+              "goods_receipt_correction",
               "money_receipt",
               "purchase_order",
               "return_to_supplier",
@@ -326434,6 +326793,134 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "StoredReceiptCorrection": {
+        "type": "object",
+        "required": [
+          "correctionId",
+          "grnId",
+          "receiptNumber",
+          "lineId",
+          "productId",
+          "warehouseId",
+          "batchId",
+          "uom",
+          "wasMinor",
+          "nowMinor",
+          "deltaMinor",
+          "unitCost",
+          "valueMinor",
+          "reason",
+          "requestedBy",
+          "approvedBy",
+          "at",
+          "movementId",
+          "poId",
+          "orderCorrected",
+          "billExceptions"
+        ],
+        "properties": {
+          "correctionId": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "grnId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "warehouseId": {
+            "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "uom": {
+            "type": "string"
+          },
+          "wasMinor": {
+            "type": "number"
+          },
+          "nowMinor": {
+            "type": "number"
+          },
+          "deltaMinor": {
+            "type": "number"
+          },
+          "unitCost": {
+            "type": "object",
+            "required": [
+              "minor",
+              "currency"
+            ],
+            "properties": {
+              "minor": {
+                "type": "number"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "per": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "movementId": {
+            "type": "string"
+          },
+          "poId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "orderCorrected": {
+            "type": "boolean"
+          },
+          "billExceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CorrectionBillException"
+            }
           }
         },
         "additionalProperties": true

@@ -48,7 +48,7 @@ describe.each(backings)('R2: a saved goods receipt is corrected by a compensatin
     const body1 = { lineId: 'L1', correctQuantityMinor: 8, reason: '10 keyed, 8 bags on the pallet' };
     expect(codeOf(await post('c-1', body1))).toBe('correction_needs_approval');
     expect(await onHand()).toBe(10);
-    const asked = await askForApproval(h, T, P3.RECEIVER, { kind: 'goods_receipt_correction', subjectRef: 'c-1', details: actionDetails(body1, { grnId: 'grn-1', correctionId: 'c-1' }), valueMinor: 10_000 });
+    const asked = await askForApproval(h, T, P3.RECEIVER, { kind: 'goods_receipt_correction', subjectRef: 'c-1', details: actionDetails(body1, { grnId: 'grn-1', correctionId: 'c-1' }), valueMinor: null });
     expect(asked.status, JSON.stringify(asked.body)).toBe(201);
     expect((await decide(h, T, P3.RECEIVER, (asked.body as { requestId: string }).requestId)).status).toBeGreaterThanOrEqual(400);
     expect((await decide(h, T, P3.BUYER, (asked.body as { requestId: string }).requestId)).status).toBe(201);
@@ -71,7 +71,7 @@ describe.each(backings)('R2: a saved goods receipt is corrected by a compensatin
     void grn;
 
     // 9 actually came (one more found): +1, the bill now needs a re-match.
-    const c2Res = await sentWithApproval(h, T, P3.RECEIVER, P3.OWNER, { kind: 'goods_receipt_correction', subjectRef: 'c-2', pathIds: { grnId: 'grn-1', correctionId: 'c-2' }, valueMinor: 5_000 },
+    const c2Res = await sentWithApproval(h, T, P3.RECEIVER, P3.OWNER, { kind: 'goods_receipt_correction', subjectRef: 'c-2', pathIds: { grnId: 'grn-1', correctionId: 'c-2' }, valueMinor: null },
       { lineId: 'L1', correctQuantityMinor: 9, reason: 'one more bag found behind the pallet' }, (b) => post('c-2', b));
     expect(c2Res.status, JSON.stringify(c2Res.body)).toBe(201);
     const c2 = (c2Res.body as { correction: Correction }).correction;
@@ -83,7 +83,7 @@ describe.each(backings)('R2: a saved goods receipt is corrected by a compensatin
     // 8 are sold; only 1 is left — a correction to 0 would take stock below what was sold: refused in plain words.
     const sold = await call('POST', '/v1/inventory/movements', P3.OWNER, { movementId: 'sale-rice', productId: 'rice', locationId: P3.BACK, kind: 'sold', quantityMinor: 8, uom: 'ea', occurredAt: '2026-10-25T09:00:00.000Z', enteredBy: P3.OWNER });
     expect(sold.status, JSON.stringify(sold.body)).toBeLessThan(300);
-    const tooFar = await sentWithApproval(h, T, P3.RECEIVER, P3.OWNER, { kind: 'goods_receipt_correction', subjectRef: 'c-3', pathIds: { grnId: 'grn-1', correctionId: 'c-3' }, valueMinor: 45_000 },
+    const tooFar = await sentWithApproval(h, T, P3.RECEIVER, P3.OWNER, { kind: 'goods_receipt_correction', subjectRef: 'c-3', pathIds: { grnId: 'grn-1', correctionId: 'c-3' }, valueMinor: null },
       { lineId: 'L1', correctQuantityMinor: 0, reason: 'nothing came' }, (b) => post('c-3', b));
     expect(codeOf(tooFar)).toBe('correction_below_what_was_sold');
     expect((tooFar.body as { error: { whatHappened: string } }).error.whatHappened).toMatch(/only 1 of rice are still at wh-1 — the rest were already sold or moved/);

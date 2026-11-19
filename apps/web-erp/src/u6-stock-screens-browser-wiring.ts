@@ -8,6 +8,7 @@ import { createQuarantineSession } from './quarantine-session';
 import { createStockAdjustmentsSession } from './stock-adjustments-session';
 import type { HeadOfficeHttp } from './head-office-http';
 import { createShelfReturnSession } from './shelf-return-session';
+import { createReceiptCorrectionSession } from './receipt-correction-session';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
@@ -19,4 +20,6 @@ export function wireStockScreens(win: Record<string, unknown>, viewerIdentity: (
   win['stockAdjustmentsSession'] = createStockAdjustmentsSession(viewerIdentity(win['stockAdjustmentsData']), http());
   // S1 (batch 18c · OB-872): "Return to supplier" on the Quarantine page, for the person who may move stock.
   win['shelfReturnSession'] = createShelfReturnSession(viewerIdentity(win['quarantineData']), http());
+  // R2 (batch 18c · OB-873): "Correct a saved receipt" on Goods receipt review, for the person who may move stock.
+  win['receiptCorrectionSession'] = createReceiptCorrectionSession(viewerIdentity(win['goodsReceiptData']), http());
 }

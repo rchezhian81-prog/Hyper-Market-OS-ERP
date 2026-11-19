@@ -174,7 +174,9 @@ export function goodsReceiptCorrectionRoutes(deps: ReceiptCorrectionDeps): reado
         // The second person: an approval another person who handles stock gave for exactly this correction.
         const opened = await approvalNamedIn(deps.approvals, {
           tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
-          kind: 'goods_receipt_correction', subjectRef: correctionId, details: actionDetails(ctx.body, { grnId, correctionId }), valueMinor,
+          kind: 'goods_receipt_correction', subjectRef: correctionId, details: actionDetails(ctx.body, { grnId, correctionId }),
+          // The approval is of exactly this line and quantity (its fingerprint); its value is worked out here, not asked for.
+          valueMinor: null,
           maker: ctx.userId, usedBy: `receipt-correction:${correctionId}`, now: at,
         });
         if (opened === undefined) {

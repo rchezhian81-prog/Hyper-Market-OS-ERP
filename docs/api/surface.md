@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1754 | 1012 | 1012 | 196 | 453 |
+| 13 | 1756 | 1013 | 1013 | 196 | 453 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -435,6 +435,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/goods-receipt/:grnId/assemble` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/assembled` | `inventory.receipt.sync` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/bill-match` | `purchase.invoice.match` | core | yes |
+| GET | `/v1/inventory/goods-receipt/:grnId/corrections` | `inventory.availability.read` | core | — |
+| POST | `/v1/inventory/goods-receipt/:grnId/corrections/:correctionId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/dispatch` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/returned` | `inventory.movement.append` | core | yes |
