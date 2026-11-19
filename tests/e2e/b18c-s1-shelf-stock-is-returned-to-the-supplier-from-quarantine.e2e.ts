@@ -31,7 +31,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('S1: expire
   let shop: InboxShop;
   const as = (c: RealCloud, userId: string, path: string, body: unknown, key: string) => c.request({ method: 'POST', path, userId, body, idempotencyKey: key });
   const onHand = async (): Promise<number> =>
-    ((await shop.cloud().request({ method: 'GET', path: '/v1/inventory/availability', userId: OWNER, query: { productId: 'OIL' } })).body as { rows: { locationId: string; onHandMinor: number }[] }).rows.find((r) => r.locationId === 'br-1')?.onHandMinor ?? 0;
+    ((await shop.cloud().request({ method: 'GET', path: '/v1/inventory/availability?productId=OIL', userId: OWNER })).body as { rows: { locationId: string; onHandMinor: number }[] }).rows.find((r) => r.locationId === 'br-1')?.onHandMinor ?? 0;
 
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });

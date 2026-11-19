@@ -204,6 +204,13 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'stock_adjustment_up', label: 'Correct stock upward',
     makerPermission: 'inventory.movement.append', checkerPermission: 'inventory.movement.append', validForMinutes: 24 * 60,
   },
+  // R2 (batch 18c · OB-873, decided under OB-801): a saved goods receipt corrected for a wrongly keyed quantity changes stock,
+  // the order's received quantity and the bill match — checked by ANOTHER person who handles stock, as a write-off or an
+  // upward stock correction is, never the one who asked. Whatever its value: a receipt is never changed by one person.
+  goods_receipt_correction: {
+    kind: 'goods_receipt_correction', label: 'Correct a saved goods receipt (a wrongly keyed quantity)',
+    makerPermission: 'inventory.movement.append', checkerPermission: 'inventory.movement.append', validForMinutes: 24 * 60,
+  },
   order_refund: {
     kind: 'order_refund', label: 'Refund an online order',
     makerPermission: 'order.refund.issue', checkerPermission: 'order.refund.approve', validForMinutes: 24 * 60,

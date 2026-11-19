@@ -10,9 +10,10 @@ import { appendWithDocumentNumbers } from '../../platform/src/document-numbers-b
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import type { ShelfReturnDeps, StoredShelfReturn } from '../../inventory/src/shelf-returns';
 import type { DebitNoteIssue } from '../../purchase/src/supplier-account';
+import type { ReceiptCorrectionDeps, StoredReceiptCorrection } from '../../inventory/src/goods-receipt-corrections';
 import {
-  STREAM, streamName, allOf, movementEvent, storeNumberFor, DEBIT_NOTE_ISSUES_STREAM,
-  inventoryAdapter, writeOffAdapter, eWayBillAdapter, orgStructureAdapter, foldSupplierRecords,
+  STREAM, streamName, allOf, movementEvent, storeNumberFor, DEBIT_NOTE_ISSUES_STREAM, PURCHASE_ORDERS_STREAM, purchaseOrderGuardKey,
+  inventoryAdapter, writeOffAdapter, eWayBillAdapter, orgStructureAdapter, foldSupplierRecords, goodsReceiptAdapter, supplierAccountAdapter,
 } from './adapters';
 
 /** S1: the shelf returns register. */
@@ -96,6 +97,57 @@ export function shelfReturnsAdapter(input: { readonly store: EventStore; readonl
       });
       const [rts, sdn] = numbers;
       return { ...(rts === null || rts === undefined ? {} : { documentNumber: rts }), ...(sdn === null || sdn === undefined ? {} : { debitNoteNumber: sdn }) };
+    },
+  };
+}
+
+// ── R2 (batch 18c · OB-873): corrections of saved goods receipts ────────────────────────────────────────────────────
+
+/** R2: the receipt-corrections register. */
+export const RECEIPT_CORRECTIONS_STREAM = streamName(STREAM.inventory, 'grn-corrections');
+
+/**
+ * R2: the correction, its compensating stock movement and — when the receipt folded into an order — its compensating posting
+ * to the order (the difference, positive or negative), ONE append with the store's `GRC` number, under the order's guard.
+ */
+export function receiptCorrectionsAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<ReceiptCorrectionDeps, 'approvals' | 'recordAudit' | 'locationBranches'> {
+  const { store, now } = input;
+  const shelf = shelfReturnsAdapter(input);
+  const acct = supplierAccountAdapter(input);
+  return {
+    now,
+    grn: (tenantId, grnId) => goodsReceiptAdapter(input).grn(tenantId, grnId),
+    corrections: (tenantId) => allOf<StoredReceiptCorrection>(store, tenantId, RECEIPT_CORRECTIONS_STREAM, 'GoodsReceiptCorrected'),
+    onHandAt: shelf.onHandAt,
+    orderVersion: (tenantId, poId) => store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
+    billsForOrder: async (tenantId, poId) => {
+      const [invoices, matches, payments] = await Promise.all([acct.invoices(tenantId), acct.latestMatches(tenantId), acct.payments(tenantId)]);
+      const paid = new Set(payments.flatMap((p) => p.settles ?? []));
+      return invoices.filter((i) => i.poId === poId).map((i) => ({
+        invoiceId: i.invoiceId, productIds: [...new Set(i.lines.map((l) => l.productId))], matched: matches.has(i.invoiceId), paid: paid.has(i.invoiceId),
+      }));
+    },
+    commitCorrection: async (tenantId, rec, movement, orderGuard) => {
+      const place = await storeNumberFor(store, now, tenantId, rec.warehouseId);
+      const [n] = await appendWithDocumentNumbers(store, tenantId, {
+        docs: [{ range: { kind: 'goods_receipt_correction', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: rec.correctionId }],
+        at: rec.at,
+        entries: ([number]) => [
+          { stream: RECEIPT_CORRECTIONS_STREAM, event: makeEvent({
+            id: `grn-correction-${rec.correctionId}`, type: 'GoodsReceiptCorrected', occurredAt: rec.at,
+            idempotencyKey: `grn-correction-${tenantId}-${rec.correctionId}`, source: 'api/inventory',
+            payload: number === undefined || number === '' ? rec : { ...rec, documentNumber: number },
+          }) },
+          movementEvent(tenantId, movement),
+          ...(rec.orderCorrected && rec.poId !== null ? [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
+            id: `po-${rec.poId}-received-${rec.grnId}-correction-${rec.correctionId}`, type: 'PurchaseOrderReceiptPosted', occurredAt: rec.at,
+            idempotencyKey: `po-${tenantId}-${rec.poId}-received-${rec.grnId}-correction-${rec.correctionId}`, source: 'api/inventory',
+            payload: { poId: rec.poId, receiptId: `${rec.grnId}-correction-${rec.correctionId}`, receivedByProduct: { [rec.productId]: rec.deltaMinor }, by: rec.requestedBy, at: rec.at, correctionOf: rec.grnId },
+          }) }] : []),
+        ],
+        ...(orderGuard === undefined ? {} : { options: { guard: { key: purchaseOrderGuardKey(orderGuard.poId), expectedVersion: orderGuard.expectedVersion } } }),
+      });
+      return n === null || n === undefined || n === '' ? {} : { documentNumber: n };
     },
   };
 }

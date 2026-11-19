@@ -211,6 +211,9 @@ export async function stockValuationFor(input: { readonly store: EventStore; rea
       const v = atAverage();
       if (v === undefined) { unvaluedPurchases.push(`return to supplier ${m.movementId} of ${m.productId} (no average)`); continue; }
       returnedToSupplierMinor += v;
+    } else if (m.kind === 'receipt_corrected_out') {
+      // R2 (batch 18c): a receipt corrected down takes that part of the purchase back out, at the line's own cost.
+      receivedMinor -= m.unitCostMinor !== undefined ? valueAtCost(m.quantityMinor, m.uom, { minor: m.unitCostMinor, ...(m.unitCostPer === undefined ? {} : { per: m.unitCostPer }) }) : (atAverage() ?? 0);
     } else if (m.kind === 'opening_reversed') {
       openingLoadsMinor -= m.unitCostMinor !== undefined ? valueAtCost(m.quantityMinor, m.uom, { minor: m.unitCostMinor, ...(m.unitCostPer === undefined ? {} : { per: m.unitCostPer }) }) : (atAverage() ?? 0);
     }
