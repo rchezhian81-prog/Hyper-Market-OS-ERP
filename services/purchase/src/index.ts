@@ -262,6 +262,11 @@ export interface SupplierInvoiceRecord {
    * the bill's total; apportioned into the stock's cost when the bill is matched. Absent ⇒ the paper charges none.
    */
   readonly landedCharges?: LandedChargesOnBill;
+  /**
+   * OB-866 B: the bill's "Round off" line as printed, signed paise (−40 for "Round off −0.40"), at most ±100. Part of the bill's
+   * total; posts to the "Purchase round off" account the accountant names. Absent ⇒ the paper has none.
+   */
+  readonly roundOffMinor?: number;
 }
 
 /** OB-288 P3: charges on a supplier's bill that belong to the goods but to no one line (D03-FR-05). */
@@ -371,6 +376,8 @@ export interface StoredMatch extends MatchResult {
   readonly tax?: MatchTax;
   /** OB-288 P3: the bill's freight/duty/other — inside `invoicedMinor`, and inside `payableMinor` when not blocked. */
   readonly landedCharges?: LandedChargesOnBill & { readonly totalMinor: number };
+  /** OB-866 B: the bill's round off (signed paise) — inside `invoicedMinor`, and inside `payableMinor` when not blocked. */
+  readonly roundOffMinor?: number;
 }
 
 export interface MatchTax {
@@ -509,6 +516,45 @@ const refuseTotal = (totalMinor: number, declared: number, relayed: boolean) => 
   wasItSaved: 'not_saved',
   nextSafeAction: relayed ? 'Do not discard it at the store. Keep it in the queue and raise it.' : 'Check the lines against the paper and send it again. Nothing was saved.',
 });
+
+/**
+ * OB-866 B (owner, 19 Nov 2026 · M07-FR-04 · WF-05 · pilot audit B-10): a Tamil Nadu supplier bill often ends "Round off −0.40".
+ * It is typed as `roundOffMinor` — signed whole paise, at most ±100 (₹1.00); 0 or absent is none. It is part of the bill's
+ * total and of the three-way match; in the books it posts to the "Purchase round off" account the accountant names. Anything
+ * larger is refused in plain words: a difference over a rupee is a wrong line, a charge or a discount, never a round off.
+ */
+export const MAX_ROUND_OFF_MINOR = 100;
+export function readRoundOff(v: unknown): number | 'invalid' | 'too_large' {
+  if (v === undefined || v === null) return 0;
+  if (!Number.isInteger(v)) return 'invalid';
+  return Math.abs(v as number) > MAX_ROUND_OFF_MINOR ? 'too_large' : (v as number);
+}
+const refuseRoundOff = (got: 'invalid' | 'too_large', raw: unknown, relayed: boolean) => apiError(got === 'too_large' ? 422 : 400, {
+  code: got === 'too_large' ? 'round_off_more_than_one_rupee' : 'not_readable_as_a_supplier_invoice',
+  whatHappened: got === 'too_large'
+    ? `The round off typed is ${rupeesOf(Number(raw))}. A round off is at most one rupee either way (−₹1.00 to +₹1.00). A bigger difference is a wrong line, a charge or a discount — not a round off.`
+    : 'roundOffMinor, when given, is the bill\'s round off in whole paise, minus or plus (for example −40 for "Round off −0.40").',
+  wasItSaved: 'not_saved',
+  nextSafeAction: relayed ? 'Do not discard it at the store. Keep it in the queue and raise it.' : 'Check the round off against the paper and type it again. Nothing was saved.',
+});
+/** OB-866 B: the round off on a bill record — 0 when it has none. */
+export const roundOffOf = (invoice: Pick<SupplierInvoiceRecord, 'roundOffMinor'>): number => invoice.roundOffMinor ?? 0;
+
+/**
+ * OB-866 B: a bill's round off carried into its match verdict, exactly as its landed charges are: part of what the supplier
+ * invoiced; payable with the bill when it may be paid, withheld with it while it is blocked. Pure.
+ */
+export function withRoundOff<T extends MatchResult>(result: T, invoice: SupplierInvoiceRecord): T & { readonly roundOffMinor?: number } {
+  const r = roundOffOf(invoice);
+  if (r === 0) return result;
+  return {
+    ...result,
+    invoicedMinor: result.invoicedMinor + r,
+    payableMinor: result.blocked ? result.payableMinor : result.payableMinor + r,
+    withheldMinor: result.blocked ? result.withheldMinor + r : result.withheldMinor,
+    roundOffMinor: r,
+  };
+}
 
 const invoiceIdWithdrawn = (invoiceId: string) => apiError(409, {
   code: 'invoice_id_withdrawn',
@@ -781,7 +827,10 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         if (charges === 'invalid') {
           throw apiError(400, { code: 'not_readable_as_a_supplier_invoice', whatHappened: 'charges, when given, is { freightMinor?, dutyMinor?, otherMinor? } in whole, non-negative paise.', wasItSaved: 'not_saved', nextSafeAction: 'Send the charges as the paper prints them. Nothing was saved.' });
         }
-        const totalMinor = sumOf(read.lines) + chargesTotal(charges);
+        // OB-866 B: the bill's "Round off" line — signed, at most ±₹1.00; part of the total.
+        const roundOff = readRoundOff(b['roundOffMinor']);
+        if (roundOff === 'invalid' || roundOff === 'too_large') throw refuseRoundOff(roundOff, b['roundOffMinor'], false);
+        const totalMinor = sumOf(read.lines) + chargesTotal(charges) + roundOff;
         if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], false);
         // D03-FR-02 (round 12): the scan this bill was typed from, when the capture names one. It must be a scan head office
         // holds for THIS tenant, still waiting to be typed (or already typed as this same invoice — a re-send); anything
@@ -819,6 +868,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           invoiceId, supplierId: b['supplierId'], poId: isStr(poId) ? poId : null, lines: read.lines, declaredTotalMinor: b['declaredTotalMinor'], totalMinor, currency: 'INR',
           capturedBy: ctx.userId, capturedAt, approvedBy: checkedBy ?? null, approvedAt: checkedBy === undefined ? null : opened!.decision.decidedAt,
           source: 'head-office', governanceFlags: flags, ...supplierRef, ...(charges === undefined ? {} : { landedCharges: charges }),
+          ...(roundOff === 0 ? {} : { roundOffMinor: roundOff }),
         };
         // Round 13 (verifier B3 · P-08): the scan's link and the invoice are ONE atomic write — a crash or refusal can no
         // longer leave the scan "captured" as an invoice that was never saved. The approval is spent first (a refused spend
@@ -830,7 +880,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           actorId: ctx.userId, action: 'invoice.capture', objectType: 'supplier_invoice', objectId: invoiceId,
           at: capturedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: null,
-          after: { supplierId: record.supplierId, poId: record.poId ?? '', lines: String(record.lines.length), totalMinor: String(totalMinor), approvedBy: record.approvedBy ?? '', flags: flags.join(','), documentId: scanDocumentId ?? '', landedChargesMinor: String(chargesTotal(charges)) },
+          after: { supplierId: record.supplierId, poId: record.poId ?? '', lines: String(record.lines.length), totalMinor: String(totalMinor), approvedBy: record.approvedBy ?? '', flags: flags.join(','), documentId: scanDocumentId ?? '', landedChargesMinor: String(chargesTotal(charges)), ...(roundOff === 0 ? {} : { roundOffMinor: String(roundOff) }) },
           correlationId: invoiceId,
         });
         return { status: 201, body: { invoice: record, alreadyCaptured: false, flags, ...(scanDocumentId === undefined ? {} : { documentId: scanDocumentId }) } };
@@ -862,7 +912,9 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         }
         const charges = readLandedCharges(b['charges']); // OB-288 P3: the paper's freight / duty / other
         if (charges === 'invalid') throw refuseLines({ ok: false, code: 'not_readable', detail: 'charges is { freightMinor?, dutyMinor?, otherMinor? } in whole, non-negative paise' }, true);
-        const totalMinor = sumOf(read.lines) + chargesTotal(charges);
+        const roundOff = readRoundOff(b['roundOffMinor']); // OB-866 B: the paper's round off, at most ±₹1.00
+        if (roundOff === 'invalid' || roundOff === 'too_large') throw refuseRoundOff(roundOff, b['roundOffMinor'], true);
+        const totalMinor = sumOf(read.lines) + chargesTotal(charges) + roundOff;
         if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], true);
         const existing = await deps.invoice(ctx.tenantId, invoiceId);
         if (existing !== undefined) return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags } };
@@ -887,6 +939,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           ...(isStr(approvedBy) ? { approvalClaimedBy: approvedBy } : {}),
           relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'buyer-screen', storeId: isStr(b['storeId']) ? b['storeId'] : null,
           governanceFlags: flags, ...(charges === undefined ? {} : { landedCharges: charges }),
+          ...(roundOff === 0 ? {} : { roundOffMinor: roundOff }),
         };
         await deps.recordInvoice(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {
@@ -946,7 +999,8 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             for (const l of invoice.lines) claimed[l.productId] = (claimed[l.productId] ?? 0) + l.quantity;
             if (Object.entries(claimed).some(([productId, qty]) => qty > (orderedByProduct[productId] ?? 0))) flags.push('order_over_invoiced');
           }
-          result = withLandedCharges(withInvoiceTax(threeWayMatch({ lines: matchLinesFrom(order, invoice, invoicedBefore), ...policy }), invoice), invoice);
+          // OB-866 B: the bill's round off rides the verdict like its charges — payable with the bill, withheld with it.
+          result = withRoundOff(withLandedCharges(withInvoiceTax(threeWayMatch({ lines: matchLinesFrom(order, invoice, invoicedBefore), ...policy }), invoice), invoice), invoice);
           // OB-288 P3 (M06-FR-02 · §28): the person matching the bill may not be the one who raised, received or paid the order.
           if (deps.segregation !== undefined && poId !== null) {
             const conflict = segregationConflict(await deps.segregation.actorsOf(ctx.tenantId, poId), 'match', ctx.userId);

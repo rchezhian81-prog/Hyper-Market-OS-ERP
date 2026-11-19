@@ -34,7 +34,12 @@ function paint() {
   }
   const open = read.exceptions.filter((e) => e.state === 'open');
   if (open.length > 0) ex.append(el('li', w('apExceptions'), 'muted'));
-  for (const e of open) { const li = el('li', `⚠ ${w(`kind_${e.kind}`)} · ${e.reason}${e.detail ? ` — ${e.detail}` : ''}`, 'row'); li.dataset.exception = e.exceptionId; ex.append(li); }
+  for (const e of open) {
+    // OB-866 B: a reason with plain words of its own (a bill whose round-off account is not named) is said in them, first.
+    const said = pb.reasonWords(lang, e.reason);
+    const li = el('li', `⚠ ${w(`kind_${e.kind}`)} · ${said}${e.detail ? ` — ${e.detail}` : ''}`, 'row');
+    li.dataset.exception = e.exceptionId; li.dataset.reason = e.reason; ex.append(li);
+  }
 }
 
 async function show() {

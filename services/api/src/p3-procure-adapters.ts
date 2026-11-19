@@ -288,7 +288,9 @@ export async function rebateBasisFor(store: EventStore, tenantId: string, suppli
     const day = i.supplierInvoiceDate ?? shopDateIn(i.capturedAt, timeZone); // R1b: the shop's date, never UTC
     if (day < from || day > to) continue;
     const charges = (m as StoredMatch & { landedCharges?: { totalMinor: number } }).landedCharges?.totalMinor ?? 0;
-    amountMinor += (m.tax?.taxablePayableMinor ?? m.payableMinor) - (m.tax === undefined ? charges : 0);
+    // OB-866 B: a bill's round off is neither goods nor charges — never part of what a rebate is earned on.
+    const roundOff = m.roundOffMinor ?? 0;
+    amountMinor += (m.tax?.taxablePayableMinor ?? m.payableMinor) - (m.tax === undefined ? charges + roundOff : 0);
     invoices.push(i.invoiceId);
   }
   return { amountMinor, invoices };

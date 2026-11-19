@@ -15,7 +15,7 @@
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  buildDayBook, postDayBook, validatePostingMap, dayBookLedgerLines, DEFAULT_RETAIL_POSTING_MAP, POSTING_KINDS_TO_MAP,
+  buildDayBook, postDayBook, validatePostingMap, dayBookLedgerLines, DEFAULT_RETAIL_POSTING_MAP, POSTING_KINDS_TO_MAP, POSTING_LEGS_TO_NAME,
   type DayBookSale, type DayBookReturn, type DayBookException, type DayBookSourceKind, type PostingMap, type DayBookLoyalty,
 } from '../../../packages/finance/src/index';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
@@ -232,6 +232,8 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
             // Round 4d: the kinds other engines post that the suggestion leaves to the accountant (no account guessed), and
             // every version ever defined — who, when, why and which kinds it changed (append-only; the latest is in force).
             toMap: POSTING_KINDS_TO_MAP,
+            // OB-866 B: figures of a mapped kind still waiting for an account nobody suggests (a supplier bill's round off).
+            legsToName: POSTING_LEGS_TO_NAME,
             ...(versions === undefined ? {} : { history: postingMapHistory(versions) }),
             asAt: deps.now(),
           },

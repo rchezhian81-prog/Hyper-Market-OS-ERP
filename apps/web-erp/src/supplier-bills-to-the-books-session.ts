@@ -77,7 +77,17 @@ export const SUPPLIER_BOOKS_COPY = {
 
 export const supplierBooksWords = (lang: Lang, key: string): string =>
   (SUPPLIER_BOOKS_COPY[lang] as Record<string, string>)[key] ?? (SUPPLIER_BOOKS_COPY.en as Record<string, string>)[key] ?? key;
-export const supplierBooksOutcomeWords = (lang: Lang, out: Outcome<unknown>, good: string): string =>
+/**
+ * OB-866 B: the plain words for a reason a supplier bill is not in the books, where it has them; otherwise head office's own
+ * reason code, as before. A bill whose round off has no account yet is WAITING — not an error.
+ */
+const REASON_WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = {
+  en: { purchase_round_off_not_named: 'Accounting entry waiting — the accountant has not named the Purchase round-off account' },
+  ta: { purchase_round_off_not_named: 'கணக்குப் பதிவு காத்திருக்கிறது — கணக்காளர் கொள்முதல் முழுமையாக்கல் கணக்கைப் பெயரிடவில்லை' },
+};
+export const payablesReasonWords = (lang: Lang, reason: string): string => REASON_WORDS[lang][reason] ?? REASON_WORDS.en[reason] ?? reason;
+
+export const supplierBooksOutcomeWords =(lang: Lang, out: Outcome<unknown>, good: string): string =>
   out.result === 'ok' ? supplierBooksWords(lang, good) : outcomeIn((k) => supplierBooksWords(lang, k), out);
 export const rupees = (minor: number): string => `${minor < 0 ? '−' : ''}₹${(Math.abs(minor) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

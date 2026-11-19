@@ -106,6 +106,8 @@ export interface MatchView {
   readonly withheldMinor: number;
   /** M07-FR-04: the bill's freight / duty / other charges inside `invoicedMinor` (0 when it has none) — head office's figure. */
   readonly chargesMinor: number;
+  /** OB-866 B: the bill's round off inside `invoicedMinor`, signed paise (0 when it has none) — head office's figure. */
+  readonly roundOffMinor: number;
   /** OB-556: how the bill's other charges stand — null when it has none. Head office's own standing, never worked out here. */
   readonly otherCharges: OtherChargesView | null;
   readonly ownerAction: string;
@@ -173,6 +175,18 @@ export function rupeesToPaise(text: string): number | undefined {
   return m === null ? undefined : Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
 }
 
+/**
+ * OB-866 B: a bill's round off as typed — signed rupees ("-0.40", "−0.40", "+0.40", "0.40") → signed paise; a blank is 0;
+ * undefined when not money. Whether it is within ±₹1.00 is head office's judgement, refused in its words.
+ */
+export function signedRupeesToPaise(text: string | undefined): number | undefined {
+  if (text === undefined || text.trim() === '') return 0;
+  const t = text.replace(/[,\s₹]/g, '').replace(/^[−–]/, '-');
+  const sign = t.startsWith('-') ? -1 : 1;
+  const paise = rupeesToPaise(t.replace(/^[-+]/, ''));
+  return paise === undefined ? undefined : sign * paise || 0;
+}
+
 /** A quantity as typed, in the line's unit → its smallest steps (OB-31: kg and L in thousandths); undefined when it does not fit. */
 export function quantityToSteps(text: string, uom: string | null): number | undefined {
   const m = /^(\d+)(?:\.(\d{1,3}))?$/.exec(text.trim());
@@ -222,14 +236,14 @@ export interface TypedCharges { readonly freight?: string; readonly duty?: strin
 
 export type TypedCapture =
   | { readonly ok: true; readonly invoiceId: string; readonly body: Record<string, unknown> }
-  | { readonly ok: false; readonly problem: 'needs_invoice_supplier_total' | 'not_money' | 'charges_not_money'; readonly line?: number };
+  | { readonly ok: false; readonly problem: 'needs_invoice_supplier_total' | 'not_money' | 'charges_not_money' | 'round_off_not_money'; readonly line?: number };
 
 /**
  * The typed-capture body (`POST /v1/purchase/invoices/:invoiceId/capture`): the bill as the paper says it. Only the shape is
  * checked here (an invoice number, a supplier, a total, figures that are money) — whether the lines multiply and add up to
  * the total is head office's judgement, refused in its words.
  */
-export function typedCaptureBody(input: { readonly invoiceId: string; readonly supplierId: string; readonly poId?: string; readonly total: string; readonly lines: readonly TypedLine[]; readonly documentId?: string; readonly charges?: TypedCharges }): TypedCapture {
+export function typedCaptureBody(input: { readonly invoiceId: string; readonly supplierId: string; readonly poId?: string; readonly total: string; readonly lines: readonly TypedLine[]; readonly documentId?: string; readonly charges?: TypedCharges; /** OB-866 B: the paper's "Round off" line, signed rupees; blank is none. */ readonly roundOff?: string }): TypedCapture {
   const declaredTotalMinor = rupeesToPaise(input.total);
   if (input.invoiceId.trim() === '' || input.supplierId.trim() === '' || input.total.trim() === '' || input.lines.length === 0) return { ok: false, problem: 'needs_invoice_supplier_total' };
   if (declaredTotalMinor === undefined) return { ok: false, problem: 'not_money' };
@@ -248,11 +262,15 @@ export function typedCaptureBody(input: { readonly invoiceId: string; readonly s
   const freightMinor = charge(input.charges?.freight); const dutyMinor = charge(input.charges?.duty); const otherMinor = charge(input.charges?.other);
   if (freightMinor === undefined || dutyMinor === undefined || otherMinor === undefined) return { ok: false, problem: 'charges_not_money' };
   const charges = freightMinor + dutyMinor + otherMinor === 0 ? undefined : { freightMinor, dutyMinor, otherMinor };
+  // OB-866 B: the round off, signed paise; a blank (or nought) sends none, so a bill without one reads exactly as before.
+  const roundOffMinor = signedRupeesToPaise(input.roundOff);
+  if (roundOffMinor === undefined) return { ok: false, problem: 'round_off_not_money' };
   return {
     ok: true, invoiceId: input.invoiceId.trim(),
     body: {
       supplierId: input.supplierId.trim(), ...(input.poId !== undefined && input.poId.trim() !== '' ? { poId: input.poId.trim() } : {}), declaredTotalMinor, lines,
       ...(charges === undefined ? {} : { charges }),
+      ...(roundOffMinor === 0 ? {} : { roundOffMinor }),
       // The scan this bill was typed from: head office links it (and refuses by name a scan that is not waiting to be typed).
       ...(input.documentId !== undefined && input.documentId.trim() !== '' ? { documentId: input.documentId.trim() } : {}),
     },
@@ -271,6 +289,7 @@ export function presentMatch(raw: unknown): MatchView | null {
     invoiceId: m['invoiceId'], poId: typeof m['poId'] === 'string' ? m['poId'] : null, blocked: m['blocked'],
     payableMinor: Number(m['payableMinor'] ?? 0), invoicedMinor: Number(m['invoicedMinor'] ?? 0), withheldMinor: Number(m['withheldMinor'] ?? 0),
     chargesMinor: Number((m['landedCharges'] as { totalMinor?: unknown } | undefined)?.totalMinor ?? 0),
+    roundOffMinor: Number(m['roundOffMinor'] ?? 0),
     otherCharges: presentOtherCharges(m['otherCharges']),
     ownerAction: String(m['ownerAction'] ?? ''),
     // Exceptions first (P-03): a blocked line before one within tolerance before a matched one.

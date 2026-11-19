@@ -3,7 +3,7 @@
 // from the viewer the front door injected for that page (identity only). Nothing is read or written here.
 
 import {
-  createBillCheckSession, createPayablesBooksSession, createApTallySession, supplierBooksWords, supplierBooksOutcomeWords, rupees,
+  createBillCheckSession, createPayablesBooksSession, createApTallySession, supplierBooksWords, supplierBooksOutcomeWords, rupees, payablesReasonWords,
 } from './supplier-bills-to-the-books-session';
 import { typedCaptureBody } from './supplier-bills-session';
 import { createReceiptDecisionsSession, receiptDecisionWords, receiptDecisionOutcomeWords } from './goods-receipt-session';
@@ -18,7 +18,7 @@ export function wireW4Finance(win: Record<string, unknown>, viewerIdentity: (raw
   }
   // WF-05 · M23-FR-01: Day book — supplier bills in the books.
   if (win['dayBookData'] !== undefined) {
-    win['payablesBooks'] = { session: createPayablesBooksSession({ viewer: viewerIdentity(win['dayBookData']) }), ...common };
+    win['payablesBooks'] = { session: createPayablesBooksSession({ viewer: viewerIdentity(win['dayBookData']) }), reasonWords: payablesReasonWords, ...common };
   }
   // M07-FR-03 · WF-04: Goods receipts — the decisions a delivery waits for (held lines, held excess), by a second person.
   if (win['goodsReceiptData'] !== undefined) {

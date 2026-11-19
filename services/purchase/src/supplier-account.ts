@@ -154,6 +154,11 @@ export interface AccountInvoice {
   readonly flags: readonly string[];
   /** The GST inside `payableMinor`, by component — present when the paper charged tax (M23-FR-02). */
   readonly tax?: PayablesTax;
+  /**
+   * OB-866 B: the bill's round off inside `payableMinor` (signed paise) — the bill's own while it may be paid, nought while the
+   * latest match blocks it (then it is withheld with the bill). Absent ⇒ none. It posts to "Purchase round off", never purchases.
+   */
+  readonly roundOffMinor?: number;
 }
 
 /** A debit note raised by a second person's return / claim of stock the shop had received and was going to pay for. */
@@ -362,6 +367,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
         matched: m !== undefined, blocked: m?.blocked ?? false, matchedAt: m?.matchedAt ?? null,
         flags: [...i.governanceFlags, ...(m?.flags ?? [])],
         ...(m?.tax === undefined ? {} : { tax: { cgstMinor: m.tax.cgstMinor, sgstMinor: m.tax.sgstMinor, igstMinor: m.tax.igstMinor } }),
+        ...(m === undefined || m.blocked || (m.roundOffMinor ?? 0) === 0 ? {} : { roundOffMinor: m.roundOffMinor }),
       };
     });
 

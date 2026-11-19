@@ -24,6 +24,7 @@ function typedBill() {
   return bc.typedBody({
     invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines,
     documentId: $('type-invoice').dataset.doc ?? '', charges: { freight: $('type-freight').value, duty: $('type-duty').value, other: $('type-other').value },
+    roundOff: $('type-round-off').value, // OB-866 B: the paper's round off — checked by the second person with the rest
   });
 }
 

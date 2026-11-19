@@ -717,3 +717,16 @@ export const POSTING_KINDS_TO_MAP: readonly { readonly kind: string; readonly co
     legs: [{ side: 'debit', component: 'total' }, { side: 'credit', component: 'net' }, { side: 'credit', component: 'tax' }],
   },
 ]);
+
+/**
+ * OB-866 B (owner, 19 Nov 2026 · M07-FR-04 · WF-05): figures of a kind that is ALREADY mapped which still wait for an account
+ * the accountant has not named — no account is suggested (never invented). A supplier bill's "Round off" line posts to a
+ * separate "Purchase round off" account, the sibling of the sales round off (OB-279); until the accountant names it on the
+ * posting map, a bill carrying a round off is captured and matched but its accounting entry waits, said by name. The setup
+ * screen offers these legs blank and optional on the kind's own rule.
+ */
+export const POSTING_LEGS_TO_NAME: readonly { readonly kind: string; readonly legs: readonly { readonly side: 'debit' | 'credit'; readonly component: string }[] }[] = Object.freeze([
+  { kind: 'supplier_invoice', legs: [{ side: 'debit', component: 'purchase_round_off_up' }, { side: 'credit', component: 'purchase_round_off_down' }] },
+  // A re-match that lowers a bill takes its round off back with it — the mirror image.
+  { kind: 'supplier_invoice_reversal', legs: [{ side: 'credit', component: 'purchase_round_off_up' }, { side: 'debit', component: 'purchase_round_off_down' }] },
+]);

@@ -136362,6 +136362,7 @@
                   "type": "string",
                   "enum": [
                     "missing_component",
+                    "purchase_round_off_not_named",
                     "tax_not_mapped",
                     "unbalanced_journal",
                     "unmapped_kind"
@@ -137429,7 +137430,8 @@
           "asAt",
           "map",
           "suggested",
-          "toMap"
+          "toMap",
+          "legsToName"
         ],
         "properties": {
           "asAt": {
@@ -137471,6 +137473,45 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "legs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "side",
+                      "component"
+                    ],
+                    "properties": {
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "credit",
+                          "debit"
+                        ]
+                      },
+                      "component": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "legsToName": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "legs"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
                 },
                 "legs": {
                   "type": "array",
@@ -249582,6 +249623,24 @@
             "x-unchecked": true,
             "description": "Read and passed on as given; the handler does not check its type."
           },
+          "roundOffMinor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "too_large"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "invalid",
+                  "too_large"
+                ]
+              }
+            ]
+          },
           "supplierId": {
             "type": "string"
           },
@@ -249781,6 +249840,9 @@
               }
             },
             "additionalProperties": true
+          },
+          "roundOffMinor": {
+            "type": "number"
           },
           "lines": {
             "type": "array",
@@ -250245,6 +250307,24 @@
               },
               {
                 "type": "string"
+              }
+            ]
+          },
+          "roundOffMinor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "too_large"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "invalid",
+                  "too_large"
+                ]
               }
             ]
           },
@@ -269438,6 +269518,9 @@
           },
           "tax": {
             "$ref": "#/components/schemas/PayablesTax"
+          },
+          "roundOffMinor": {
+            "type": "number"
           }
         },
         "additionalProperties": true
@@ -307931,6 +308014,7 @@
             "type": "string",
             "enum": [
               "missing_component",
+              "purchase_round_off_not_named",
               "tax_not_mapped",
               "unbalanced_journal",
               "unmapped_kind"
@@ -324956,6 +325040,9 @@
             },
             "additionalProperties": true
           },
+          "roundOffMinor": {
+            "type": "number"
+          },
           "lines": {
             "type": "array",
             "items": {
@@ -327183,6 +327270,9 @@
           },
           "landedCharges": {
             "$ref": "#/components/schemas/LandedChargesOnBill"
+          },
+          "roundOffMinor": {
+            "type": "number"
           }
         },
         "additionalProperties": true
