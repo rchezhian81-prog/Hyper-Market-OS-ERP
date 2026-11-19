@@ -111,6 +111,8 @@ describe.skipIf(!HAVE_BROWSER)('OB-539: the Rota shows the store computer\'s cop
     await waitText(page, '#held-text', 'தலைமை அலுவலக உள்நுழைவைத் தலைமை அலுவலகம் மறுத்தது');
     expect(await page.textContent('#held-text')).toContain('கடைக் கணினி நகல்');
     expect(await page.textContent('#read-only-text')).toContain('படிக்க மட்டும்');
+    // batch 17 · OB-855: the language choice is remembered on this device — back to English before the page opens again
+    await page.click('#lang');
 
     // 2 — the manager signs in to head office with their own password and one-time code: head office's live roster.
     await page.goto(`${base}/login/?next=${encodeURIComponent('/rostering/')}`, { waitUntil: 'load' });

@@ -53,5 +53,23 @@
   // The language switch on every shell flips <html lang>; the strip follows it.
   new MutationObserver(paint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 
+  // Batch 17 · OB-855 (owner, 19 Nov 2026): ONE language at a time, by choice. Every shell opens in English; its language
+  // switch shows Tamil only, and the choice is remembered on this device for this screen (the till's, a handheld's), so the
+  // next visit opens in it. Only a person's own press is remembered; an empty or refused store simply means English.
+  const langKey = `sre.lang.screen.${(window.location.pathname.split('/').filter((p) => p !== '')[0] ?? 'home')}`;
+  const chosen = () => { try { const v = window.localStorage.getItem(langKey); return v === 'ta' || v === 'en' ? v : null; } catch { return null; } };
+  document.addEventListener('click', (e) => {
+    if (!e.isTrusted || !(e.target instanceof Element) || e.target.closest('#lang') === null) return;
+    const keep = () => { try { window.localStorage.setItem(langKey, lang()); } catch { /* a convenience only */ } };
+    keep(); // the screen's own switch ran first (it is on the button; this listens on the document)
+    setTimeout(keep, 0); // and once more, for a screen that switches a moment later
+  });
+  const applyChosen = () => {
+    const want = chosen();
+    const toggle = document.getElementById('lang');
+    if (want !== null && want !== lang() && toggle && !toggle.disabled) toggle.click(); // the screen's own switch repaints its words
+  };
+  if (document.readyState === 'complete') applyChosen(); else window.addEventListener('load', applyChosen, { once: true });
+
   window.sreUpdate = { ready: () => updateReady, paint };
 })();

@@ -863,8 +863,8 @@ th[aria-sort="ascending"] > .sre-sort > .sre-sort-dir, th[aria-sort="descending"
 }
 
 /* ── Batch 12 (owner, 17 Nov 2026: "pages like the attached look and feel") — the owner's look on every office page ──
-   A deep green rail with the SRE gold hexagon and "Retail OS"; big menu rows with the screen's name in both languages
-   (the other language drawn from `data-twin`, so the link's own text stays one name); a gold bar on the current row; the
+   A deep green rail with the SRE gold hexagon and "Retail OS"; big menu rows with the screen's name in the reader's ONE
+   language (batch 17 · OB-855: the second line in the other language is gone); a gold bar on the current row; the
    store at the foot. The page's name large in the header; the language switch and the avatar as round pills. Colours are
    the same tokens as before (gold stays decoration only, OB-728). */
 :root { --rail-width: 272px; }
@@ -875,13 +875,8 @@ th[aria-sort="ascending"] > .sre-sort > .sre-sort-dir, th[aria-sort="descending"
 .sre-menu .brand.sre-logo small { font-size: 14px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
 .sre-menu a { min-height: 52px; padding: 8px 12px 8px 14px; font-size: 16px; font-weight: 600; border-radius: var(--radius-lg); position: relative; }
 .sre-menu a .sre-icon { width: 22px; height: 22px; flex: none; }
-.sre-menu a.sre-twin { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 14px; row-gap: 1px; align-content: center; }
-.sre-menu a.sre-twin > .sre-icon { grid-row: span 2; align-self: center; }
-.sre-menu a.sre-twin::after { content: attr(data-twin); grid-column: 2; color: var(--on-rail-muted); font-size: 14px; font-weight: 400; line-height: 1.3; }
-.sre-menu a.sre-twin:not(:has(> .sre-icon))::after { grid-column: 1 / -1; }
 .sre-menu a[aria-current="page"] { background: var(--rail-2); box-shadow: none; }
 .sre-menu a[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 4px 4px 0; background: var(--rail-accent); }
-.sre-menu a[aria-current="page"].sre-twin::after { color: var(--on-rail); }
 .sre-menu .branch { margin: 10px 0 0; border-width: 1px 0 0; border-radius: 0; background: transparent; padding: 14px 6px 6px; }
 .sre-menu .branch .mark { background: transparent; color: var(--on-rail); }
 .sre-menu .branch b { text-transform: uppercase; letter-spacing: .04em; font-size: 14.5px; }
@@ -906,3 +901,57 @@ body.sre-shell h1.who small { margin-top: 2px; }
   .sre-account { display: none; } /* on a phone the person and Sign out are at the foot of the menu drawer and on the bar */
   body.sre-shell h1.who { font-size: 20px; }
 }
+
+/* ── Batch 17 · OB-855 (owner, 19 Nov 2026): ONE language at a time, by choice ──────────────────────────────────────────
+   A part the store computer writes in both languages (the licence notice) carries each language in its own
+   `data-one-lang` part; only the page's own language shows. English unless the person pressed தமிழ். */
+html:not([lang="ta"]) [data-one-lang="ta"], html[lang="ta"] [data-one-lang="en"] { display: none !important; }
+
+/* ── Batch 17 · D-071 (owner, 19 Nov 2026: "all alignments are not perfect and font, tab are not uniform") — ONE form layout ──
+   Every office page's forms share one layout: the label ABOVE its box, boxes full width in a responsive grid, one box height
+   (44px and up), one font, one gap, one heading size per level, one button size. Written with :where(), so it has no weight:
+   it fills in what a page did not say and never overrides a page's own rule (registers, search boxes, the till keep theirs).
+   A page asks for the grid explicitly with `.sre-form` (or `.sre-form-grid` on the box holding its fields). */
+:where(body.sre-shell main) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]), select, textarea) {
+  box-sizing: border-box; min-height: 44px; max-width: 100%; font: inherit; font-size: 16px; line-height: 1.4; color: var(--ink);
+  background: var(--field); border: 1px solid var(--field-line); border-radius: var(--radius); padding: 0 12px;
+}
+:where(body.sre-shell main) :where(textarea) { min-height: 96px; padding: 10px 12px; }
+:where(body.sre-shell main) :where(input, select, textarea):focus-visible { border-color: var(--accent); }
+/* a label before its box, or a label wrapping its box: the words above, never beside */
+:where(body.sre-shell main) :where(label:has(+ :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .sre-date, .sre-pick))) {
+  display: block; margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.35;
+}
+:where(body.sre-shell main) :where(label:has(> :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea))) {
+  display: grid; gap: 6px; font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.35;
+}
+:where(body.sre-shell main) :where(label:has(> :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea))) > :is(input, select, textarea) { width: 100%; font-weight: 400; }
+:where(body.sre-shell main) :where(label) + :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { width: 100%; }
+/* one heading size per level inside a page's sections */
+:where(body.sre-shell main) :where(section, .card, .panel, .form, .w5-section) > :where(h2) { margin: 0 0 6px; font-size: 22px; line-height: 1.25; font-weight: 650; color: var(--ink); }
+:where(body.sre-shell main) :where(section, .card, .panel, .form, .w5-action) > :where(h3) { margin: 0 0 6px; font-size: 18px; line-height: 1.3; font-weight: 650; color: var(--ink); }
+/* one button size: a bare button in a page's form looks like the rest */
+:where(body.sre-shell main) :where(button:not([class])) {
+  min-height: 44px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--panel); color: var(--ink);
+  font-size: 17px; font-weight: 600; padding: 0 20px;
+}
+.sre-btn-primary { font-size: 17px; }
+
+/* The form grid: fields side by side where there is room (each at least 240px), stacked on a phone; everything that is not a
+   field (a heading, a note, the button, the answer, a list) takes the whole row. The one button sits at the start. */
+.sre-form, .sre-form-grid, .w5-action, section.form > .grid, .form > .grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 14px 16px; align-items: end;
+}
+.sre-form > :not(.sre-field):not(.w5-field):not(.field), .w5-action > :not(.w5-field) { grid-column: 1 / -1; }
+.sre-form > button, .sre-form > .sre-btn, .w5-action > button { justify-self: start; }
+.w5-action { margin: 0 0 16px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.w5-action > h3 { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 650; }
+.w5-action > .note, .w5-action > .status:empty, .w5-action > .w5-rows:empty { margin: 0; }
+.w5-action > .w5-rows:empty, .w5-action > .status:empty { display: none; }
+.w5-field, .sre-form-grid > div, section.form > .grid > div, .form > .grid > div { display: grid; gap: 6px; min-width: 0; align-content: end; }
+.w5-field > label, .sre-form-grid > div > label, section.form > .grid > div > label, .form > .grid > div > label { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+.w5-field > :is(input, select, textarea), .sre-form-grid > div > :is(input, select, textarea), section.form > .grid > div > :is(input, select, textarea), .form > .grid > div > :is(input, select, textarea) { width: 100%; min-width: 0; }
+.w5-section { margin: 24px 0 0; }
+.w5-section > h2 { margin: 0 0 4px; font-size: 22px; line-height: 1.25; font-weight: 650; }
+.w5-section > .lead { margin: 0 0 12px; color: var(--muted); }
+.w5-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

@@ -19,6 +19,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Where things stand — 19 November 2026
+- **Batch 17 merged (#962), 19 Nov**: one language at a time (OB-855), the menu stays put, a truthful status badge, one form layout. Store PC release follows from main.
+- **Waiting on the owner (asked 19 Nov):**
+  - OB-860: supplier bank details, security and money;
+  - OB-861: a paid service to read supplier bills, money;
+  - OB-862: give the till its lane code automatically, tax;
+  - his picks from the missing-options list (28 items: R1–R7, T1–T2, P1–P3, S1–S5, A1–A3, O1–O3, B1–B3). Recommended first: B1, R1, P1, O1, R2, P2, A1, S1, R3, R4, O3, B3.
+- **Batch 17 not done:**
+  - the store computer's own system pages (About, Licence, Update, Head office sign-in, Handheld seal) still show both languages together;
+  - the sign-in page does not remember the language choice;
+  - the "tab / lead" placeholder on Buying;
+  - the Sign out bar overlaps the page corner.
+
 ## Where things stand — end of 18 November 2026 session
 - **Released:**
   - store PC **1.0.2242**: batches 14, 15 and 16 and remote access (OB-840), and the image fix plus OB-843 for the picomatch advisory;
@@ -36,6 +49,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - no dedicated tests yet for the TRF and RTS numbers and the batch write-offs at API level;
   - the remote relay has not yet run on a real server.
 - **Dated:** OB-843 (picomatch accepted for the development tools) ends 18 Dec 2026. A guardrail fails then, or as soon as a fixed picomatch is in the lockfile.
+## Batch 17 (19 Nov 2026) · one language at a time, the menu stays, the badge, bill numbers, one form layout (D-067 – D-071 · OB-855 – OB-859)
+- **Owner reported (store PC 1.0.2246, goods receipt, as the owner):** English and Tamil together everywhere; the left menu closes by itself and jumps to the top; a red "Store computer not answering" on the store computer itself; ragged forms and different fonts and buttons; he could not see the new bill numbers.
+- **Done (branch `claude/batch-17-ui`):**
+  - **One language at a time (OB-855, his decision).** English by default on every office page, the menu, Today, the till and the handhelds; தமிழ் shows Tamil only; the choice is remembered on that computer (per person on the office pages). Menu rows, Today's title, cards, headings and status words, the Sign out bar and the licence notice no longer show both. The design-system rule is changed in writing.
+  - **The menu stays as he left it (OB-857).** "More" and each opened group stay open on the next page; the list keeps its place; the page he is on is in view.
+  - **The badge says what did not answer (OB-858).** The store computer now also answers on the page's own address, so a page on the store PC hears it. The words are plain: "Till service not running on this computer", "Store computer on, but its till service did not answer this page", "refused (code)", or "slow". One slow answer no longer turns it red. Today no longer says "Not connected" when only some figures are missing. A copy set up like his PC (PIN sign-in, port 127.0.0.1) shows the badge working; the exact cause on his PC is confirmed when he reads the new words.
+  - **One form layout (OB-859).** Labels above full-width boxes in a grid, 44px boxes, one heading size, one button size — in the shared stylesheet, so every office page takes it. "Decide held goods" now lines up.
+  - **Bill numbers.** Proven on a store-PC copy: a till head office has registered numbers its first sale `1L01/26-27/00001` and Today's Recent activity shows it. A till head office has NOT registered numbers under a temporary `1T01/26-27/…` range, and the till says so and what to do (register it on Tills & devices).
+- **Owner, in the store:** (1) install the next store-PC update; (2) open Goods receipt — the menu and the page are English only; press தமிழ் — Tamil only; open another page — still Tamil; press English to go back; (3) open "More" and a group, open a page in it, then Today — the menu stays open where it was; (4) read the badge at the top right and tell me its exact words if it is not green; (5) on Tills & devices check that your till is listed — if not, register it, and the next bill reads `1L01/26-27/00001`.
+- **Owner decision needed (tax, batched):** should head office give the store computer's own till its lane code automatically the first time the store computer reports it (no person registers it), or keep the person's step on Tills & devices? See the final report's options.
+- **Not done yet:** the store computer's own system pages (About, Licence, Software update, Head office sign-in, Handheld seal) still show both languages stacked (they have no language switch); the sample-data strip's first line stays English on a page switched to Tamil after it opened; the language is not yet remembered on the sign-in page itself.
 
 ## Document numbers (OB-844–847) · 18 November 2026 · format A
 - **Owner decided (in writing):** "Document numbers, format A"; "OB-844 A, OB-845 A, OB-846 A". Small choices: OB-848 (decided under OB-801); the till's temporary range after a restore: OB-849 (CA to confirm).

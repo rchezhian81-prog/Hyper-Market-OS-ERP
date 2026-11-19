@@ -359,7 +359,6 @@
          languages, the big figure and its change against the previous day (green up, red down, grey no change or none);
          the first card's border gold (decoration only, OB-728). Then the sales chart beside what needs attention, the
          recent bills, the store's other cards, and the line saying what this computer holds and when it last sent. */
-      h1.who .twin { font-weight: 700; color: var(--accent); }
       h1.who .day { margin-top: 4px; font-size: 15px; font-weight: 500; letter-spacing: 0; }
       header .sync { padding: 6px 14px 6px 8px; border-radius: var(--radius-pill); background: var(--ok-surface); color: var(--on-ok-surface); font-weight: 600; }
       #view-home { background: transparent; color: var(--ink); border-radius: 0; padding: 0; gap: 16px; }
@@ -378,7 +377,6 @@
       .kpi .kpi-top { display: flex; align-items: center; gap: 12px; }
       .kpi .kpi-top > .sre-icon { width: 48px; height: 48px; flex: none; padding: 12px; box-sizing: border-box; border-radius: 50%; background: var(--panel-2); color: var(--accent); }
       .kpi .kpi-label { font-size: 16px; font-weight: 600; line-height: 1.3; }
-      .kpi .kpi-label small { display: block; font-size: 14px; font-weight: 400; color: var(--muted); }
       .kpi .kpi-n { font-size: clamp(28px, 2.4vw, 38px); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; line-height: 1.1; overflow-wrap: anywhere; }
       .kpi .kpi-n.unknown { font-size: 22px; color: var(--degraded-text, var(--on-warn-surface)); }
       .kpi .kpi-trend { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
@@ -461,7 +459,7 @@
   <body>
     <header>
       <h1 class="who" id="who">
-        Today <span class="twin" id="who-twin" lang="ta">/ இன்று</span>
+        Today
         <span class="day" id="day">Trading day —</span>
         <small id="whoami"></small>
       </h1>
