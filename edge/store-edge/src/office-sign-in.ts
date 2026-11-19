@@ -447,7 +447,7 @@ export function notAllowedPage(input: { readonly displayName: string; readonly l
 
 /** The Sign out button — a POST, so a link or a preview can never sign anybody out. */
 export function signOutForm(): string {
-  return '<form method="post" action="/office/sign-out" id="office-sign-out"><button type="submit">Sign out <span lang="ta">· வெளியேறு</span></button></form>';
+  return '<form method="post" action="/office/sign-out" id="office-sign-out"><button type="submit"><span lang="en">Sign out</span><span lang="ta">வெளியேறு</span></button></form>';
 }
 
 /**
@@ -464,7 +464,10 @@ export const SIGN_OUT_BAR = [
   'var f=document.createElement("form");f.method="post";f.action="/office/sign-out";f.id="sre-office-bar";',
   'f.setAttribute("style","position:fixed;right:12px;bottom:12px;z-index:2147483000;background:#14202b;color:#fff;padding:6px 10px;border-radius:6px;font:14px system-ui,sans-serif;display:flex;gap:8px;align-items:center");',
   'var n=document.createElement("span");n.textContent=s.displayName;f.appendChild(n);',
-  'var b=document.createElement("button");b.type="submit";b.id="sre-office-sign-out";b.textContent="Sign out \\u00b7 \\u0bb5\\u0bc6\\u0bb3\\u0bbf\\u0baf\\u0bc7\\u0bb1\\u0bc1";',
+  // Batch 17 · OB-855: the button says "Sign out" OR "வெளியேறு" — the page's one language, following its switch.
+  'var b=document.createElement("button");b.type="submit";b.id="sre-office-sign-out";',
+  'var say=function(){b.textContent=document.documentElement.lang==="ta"?"\\u0bb5\\u0bc6\\u0bb3\\u0bbf\\u0baf\\u0bc7\\u0bb1\\u0bc1":"Sign out";};say();',
+  'new MutationObserver(say).observe(document.documentElement,{attributes:true,attributeFilter:["lang"]});',
   'b.setAttribute("style","font:inherit;min-height:44px;min-width:44px;padding:4px 10px;border:0;border-radius:4px;background:#fff;color:#14202b;cursor:pointer");f.appendChild(b);',
   'document.body.appendChild(f);}if(document.body)draw();else document.addEventListener("DOMContentLoaded",draw);})();</script>',
 ].join('');

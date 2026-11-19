@@ -72,6 +72,13 @@ describe.skipIf(!existsSync(CHROMIUM))('the three stock pages switch to Tamil an
             page.on('pageerror', (e) => errors.push(e.message));
             await page.goto(`${srv.base}/${file}`, { waitUntil: 'load' });
             await page.waitForFunction('globalThis.sreChrome !== undefined', undefined, { timeout: 15_000 });
+            // OB-855: the language chosen on the first page is remembered on this device — the next page opens in Tamil.
+            // Prove that, then switch back to English, so each page is checked in both languages from English.
+            if (file !== PAGES[0]) {
+              expect(await page.evaluate('document.documentElement.lang'), `${file} opens in the remembered Tamil`).toBe('ta');
+              await page.click('#lang');
+              await page.waitForFunction('document.documentElement.lang === "en"', undefined, { timeout: 5_000 });
+            }
             expect(await page.evaluate(overflow), `${file} at ${width}px in English`).toEqual([]);
             await page.click('#lang');
             await page.waitForFunction('document.documentElement.lang === "ta"', undefined, { timeout: 5_000 });

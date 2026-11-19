@@ -696,14 +696,13 @@ function renderAttention(floor, today) {
     const text = document.createElement('span'); text.className = 'text';
     if (row.n !== null) { const b = document.createElement('b'); b.className = 'n'; b.textContent = String(row.n); text.append(b, document.createTextNode(` ${row.text}`)); } else text.textContent = row.text;
     li.append(text);
-    // Batch 12 (the owner's look): a row that needs someone wears the orange "Action needed" pill, in both languages.
+    // Batch 12 (the owner's look): a row that needs someone wears the orange "Action needed" pill — in the reader's one
+    // language (batch 17 · OB-855).
     if (row.tone === 'attention') {
       const pill = document.createElement('span'); pill.className = 'pill';
       const mark = lineIcon('triangle-alert', 16);
       if (mark) pill.append(mark);
-      const words = document.createElement('span'); words.textContent = board('actionNeeded', 'en');
-      const ta = document.createElement('small'); ta.lang = 'ta'; ta.textContent = board('actionNeeded', 'ta');
-      words.append(ta);
+      const words = document.createElement('span'); words.textContent = board('actionNeeded');
       pill.append(words);
       li.append(pill);
     }
@@ -775,15 +774,11 @@ const BOARD_WORDS = {
 };
 /** A board word in a language (the reader's when not named). */
 const board = (key, as) => BOARD_WORDS[as ?? lang][key] ?? BOARD_WORDS.en[key];
-/** "English / தமிழ்" — the label style of the owner's look: the reader's language first, the other under it. */
-function twinLabel(key) {
+/** A card's name in the reader's ONE language (batch 17 · OB-855: batch 12's "English / தமிழ்" pair is gone). */
+function cardLabel(key) {
   const words = document.createElement('span');
   words.className = 'kpi-label';
-  words.append(document.createTextNode(`${board(key)} /`));
-  const other = document.createElement('small');
-  other.lang = lang === 'ta' ? 'en' : 'ta';
-  other.textContent = board(key, lang === 'ta' ? 'en' : 'ta');
-  words.append(other);
+  words.textContent = board(key);
   return words;
 }
 const boardOf = () => {
@@ -829,7 +824,7 @@ function kpiCard({ key, iconName, figure, trend, why, note, action, opens }) {
   // The round icon sits beside its words (the one set's rule: never an icon alone).
   const mark = lineIcon(iconName, 24);
   if (mark) top.append(mark);
-  top.append(twinLabel(key));
+  top.append(cardLabel(key));
   const n = document.createElement('div'); n.className = 'kpi-n';
   card.append(top, n);
   if (figure === null) {
@@ -913,7 +908,7 @@ function lowStockListOf() {
 }
 function renderLowStock() {
   const list = lowStockListOf();
-  el('lowstock-title').textContent = `${board('lowStockTitle')} / ${board('lowStockTitle', lang === 'ta' ? 'en' : 'ta')}`;
+  el('lowstock-title').textContent = board('lowStockTitle');
   el('lowstock-close').textContent = board('close');
   if (list === null) { el('lowstock-card').hidden = true; return; }
   const at = typeof list.asAt === 'string' ? (window.sreShopDay?.dateTimeOf(list.asAt) || list.asAt) : null;
@@ -924,13 +919,11 @@ function renderLowStock() {
     host.replaceChildren(p);
     return;
   }
-  const other = lang === 'ta' ? 'en' : 'ta';
   const table = document.createElement('table'); table.className = 'recent lowstock';
   const head = document.createElement('tr');
   for (const [key, cls] of [['item'], ['onHand', 'money'], ['reorderLevel', 'money']]) {
     const th = document.createElement('th'); th.scope = 'col'; if (cls) th.className = cls;
-    th.append(document.createTextNode(board(key)));
-    const sub = document.createElement('small'); sub.lang = other; sub.textContent = board(key, other); th.append(sub);
+    th.textContent = board(key);
     head.append(th);
   }
   const thead = document.createElement('thead'); thead.append(head);
@@ -960,7 +953,7 @@ el('lowstock-close').addEventListener('click', () => {
 
 let chartRange = 'today';
 function renderSalesChart() {
-  el('chart-title').textContent = `${board('salesOverview')} / ${board('salesOverview', lang === 'ta' ? 'en' : 'ta')}`;
+  el('chart-title').textContent = board('salesOverview');
   el('chart-today').textContent = board('chartToday');
   el('chart-week').textContent = board('chartWeek');
   el('chart-today').setAttribute('aria-pressed', String(chartRange === 'today'));
@@ -1009,7 +1002,7 @@ const ACTIVITY_STATES = {
   sent: ['circle-check', 'done'], recorded: ['check', 'done'], needs_approval: ['triangle-alert', 'pending'], on_tills: ['tag', 'done'],
 };
 function renderRecent() {
-  el('recent-title').textContent = `${board('recentActivity')} / ${board('recentActivity', lang === 'ta' ? 'en' : 'ta')}`;
+  el('recent-title').textContent = board('recentActivity');
   const host = el('recent');
   const b = boardOf();
   const rows = b && Array.isArray(b.activity) ? b.activity : null;
@@ -1020,18 +1013,17 @@ function renderRecent() {
     host.replaceChildren(p);
     return;
   }
-  const other = lang === 'ta' ? 'en' : 'ta';
-  const cell = (tag, main, sub, cls) => {
+  // Batch 17 · OB-855: every heading and word in the reader's one language.
+  const cell = (tag, main, cls) => {
     const c = document.createElement(tag);
     if (cls) c.className = cls;
-    c.append(document.createTextNode(main));
-    if (sub) { const s = document.createElement('small'); s.lang = other; s.textContent = sub; c.append(s); }
+    c.textContent = main;
     return c;
   };
   const table = document.createElement('table'); table.className = 'recent';
   const head = document.createElement('tr');
   for (const [key, cls] of [['time'], ['activity'], ['reference'], ['status'], ['amount', 'money']]) {
-    const th = cell('th', board(key), board(key, other), cls);
+    const th = cell('th', board(key), cls);
     th.scope = 'col';
     head.append(th);
   }
@@ -1043,10 +1035,10 @@ function renderRecent() {
     const what = r.laneId ? ` · ${board('lane').replace('{lane}', r.laneId)}` : '';
     tr.append(
       cell('td', r.at ?? board('notKnown')),
-      cell('td', `${board('sale')}${what}`, board('sale', other)),
+      cell('td', `${board('sale')}${what}`),
       cell('td', r.number ?? r.id),
-      cell('td', board('completed'), board('completed', other), 'done'),
-      cell('td', inr(r.totalMinor), null, 'money'),
+      cell('td', board('completed'), 'done'),
+      cell('td', inr(r.totalMinor), 'money'),
     );
     body.append(tr);
   }
@@ -1061,18 +1053,17 @@ function renderActivity(host, rows) {
     host.replaceChildren(p);
     return;
   }
-  const other = lang === 'ta' ? 'en' : 'ta';
-  const cell = (tag, main, sub, cls) => {
+  // Batch 17 · OB-855: every heading, kind and state in the reader's one language (the state keeps its icon beside its word).
+  const cell = (tag, main, cls) => {
     const c = document.createElement(tag);
     if (cls) c.className = cls;
-    c.append(document.createTextNode(main));
-    if (sub) { const s2 = document.createElement('small'); s2.lang = other; s2.textContent = sub; c.append(s2); }
+    c.textContent = main;
     return c;
   };
   const table = document.createElement('table'); table.className = 'recent';
   const head = document.createElement('tr');
   for (const [key, cls] of [['time'], ['activity'], ['reference'], ['status'], ['amount', 'money']]) {
-    const th = cell('th', board(key), board(key, other), cls);
+    const th = cell('th', board(key), cls);
     th.scope = 'col';
     head.append(th);
   }
@@ -1088,8 +1079,7 @@ function renderActivity(host, rows) {
     if (mark) what.append(mark);
     const words = document.createElement('span');
     const detail = lang === 'ta' ? (r.detailTa ?? r.detail) : r.detail;
-    words.append(document.createTextNode(`${board(kindKey)}${detail ? ` · ${detail}` : ''}`));
-    const sub = document.createElement('small'); sub.lang = other; sub.textContent = board(kindKey, other); words.append(sub);
+    words.textContent = `${board(kindKey)}${detail ? ` · ${detail}` : ''}`;
     what.append(words);
     const [stateIcon, tone] = ACTIVITY_STATES[r.status] ?? ['circle-help', 'pending'];
     const state = document.createElement('td'); state.className = `state ${tone}`;
@@ -1097,14 +1087,13 @@ function renderActivity(host, rows) {
     const sMark = lineIcon(stateIcon, 16);
     if (sMark) stateWords.append(sMark);
     stateWords.append(document.createTextNode(board(`st_${r.status}`)));
-    const sSub = document.createElement('small'); sSub.lang = other; sSub.textContent = board(`st_${r.status}`, other);
-    state.append(stateWords, sSub);
+    state.append(stateWords);
     tr.append(
       cell('td', r.at ?? board('notKnown')),
       what,
       cell('td', r.reference),
       state,
-      cell('td', typeof r.amountMinor === 'number' ? inr(r.amountMinor) : '—', null, 'money'),
+      cell('td', typeof r.amountMinor === 'number' ? inr(r.amountMinor) : '—', 'money'),
     );
     body.append(tr);
   }
@@ -1150,15 +1139,11 @@ function renderReportsLink() {
   }
 }
 
-/** The page's one heading follows the tab, in the owner's "English / தமிழ்" style: "Today / இன்று", "Approvals / ஒப்புதல்கள்". */
+/** The page's one heading follows the tab, in the reader's ONE language: "Today" or "இன்று" (batch 17 · OB-855). */
 const TITLE_KEYS = { home: 'today', approvals: 'approvals', receive: 'receive', count: 'count', close: 'closeDay' };
 function paintTitle() {
   const key = TITLE_KEYS[view] ?? 'today';
-  const other = lang === 'ta' ? 'en' : 'ta';
   el('who').firstChild.textContent = `${t(key)} `;
-  const twin = el('who-twin');
-  twin.lang = other;
-  twin.textContent = `/ ${WORDS[other][key] ?? WORDS.en[key]}`;
 }
 /** "Tue 17 Nov 2026" for a trading day; anything that is not a date is shown as it came. */
 const longDay = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? `${shortDay(iso)} ${String(iso).slice(0, 4)}` : String(iso));
@@ -2200,7 +2185,7 @@ function paintChrome() {
   el('tab-receive').textContent = t('receive');
   el('tab-count').textContent = t('count');
   el('tab-close').textContent = t('closeDay');
-  el('home-title').textContent = `${board('overview')} / ${board('overview', lang === 'ta' ? 'en' : 'ta')}`;
+  el('home-title').textContent = board('overview'); // batch 17 · OB-855: one language
   el('home-lead').textContent = t('tapAFigure');
   el('approvals-title').textContent = t('approvals');
   el('approvals-lead').textContent = t('biggestFirst');

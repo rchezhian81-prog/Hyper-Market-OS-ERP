@@ -123,6 +123,8 @@ describe.skipIf(!HAVE_BROWSER)('help, readings and losses saved at the store wit
     expect(records[0]!.payload).toMatchObject({ sopId: 'SOP-01', employeeId: 'u-cash', version: 1 });
     await page.click('#lang');
     expect((await page.textContent('#contact-rows')) ?? '').toContain('தீயணைப்பு: 101');
+    // batch 17 · OB-855: the language choice is remembered on this device — back to English before the page opens again
+    await page.click('#lang');
     await page.reload({ waitUntil: 'load' });
     await waitText(page, '#sops article[data-sop="SOP-01"]', 'You have read this version');
     await page.waitForTimeout(500);

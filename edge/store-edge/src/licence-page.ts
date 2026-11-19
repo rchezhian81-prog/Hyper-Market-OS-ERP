@@ -91,7 +91,10 @@ export function licenceNotice(s: LicenceStanding): string | null {
   const w = STATE_WORDS[s.state];
   const bg = w.tone === 'red' ? '#8a1f11' : '#8a4b00';
   return `<div id="sre-licence-notice" role="status" style="background:${bg};color:#fff;padding:8px 16px;font:15px/1.4 system-ui,'Segoe UI','Nirmala UI',sans-serif">`
-    + `<strong>${esc(w.en)} · <span lang="ta">${esc(w.ta)}</span></strong> — ${esc(s.en)} <a href="${LICENCE_PATHS.page}" style="color:#fff;text-decoration:underline">Licence / உரிமம்</a></div>`;
+    // Batch 17 · OB-855: one language at a time — the English words, or (once தமிழ் is pressed) the Tamil words alone; the
+    // shared stylesheet shows the one that matches the page's language (`data-one-lang`).
+    + `<span data-one-lang="en"><strong>${esc(w.en)}</strong> — ${esc(s.en)} <a href="${LICENCE_PATHS.page}" style="color:#fff;text-decoration:underline">Licence</a></span>`
+    + `<span data-one-lang="ta" lang="ta"><strong>${esc(w.ta)}</strong> — ${esc(s.ta)} <a href="${LICENCE_PATHS.page}" style="color:#fff;text-decoration:underline">உரிமம்</a></span></div>`;
 }
 
 /** Put the notice at the top of an office page (after <body …>). An empty notice leaves the page as it is. */
