@@ -278,8 +278,9 @@ export function doorDebitNotesFrom(versions: readonly DoorCheckInForAccount[]): 
 
 /**
  * S1 (batch 18c · OB-872): the debit note issued when expired, near-expiry or damaged SHELF stock went back to this supplier
- * (its `SDN` number, its `RTS` return). Valued at the stock's own cost, before GST. How its GST is treated is the owner's /
- * CA's decision, not yet given — so it is SHOWN and not netted from what is owed, said in words (P-08).
+ * (its `SDN` number, its `RTS` return). Valued at the stock's own cost, before GST. OB-874 C (owner, 19 Nov 2026, in
+ * writing): it is SHOWN on the account but NOT taken off what is owed until the supplier accepts it — said in words, "waiting
+ * for the supplier to accept" (P-08).
  */
 export interface ShelfReturnDebitNote {
   readonly debitNoteRef: string;
@@ -469,7 +470,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
     shelfReturnDebitNotes,
     shelfReturnDebitNotesTotal: {
       valueMinor: shelfReturnDebitNotes.reduce((s, d) => s + d.valueMinor, 0), nettedInBalance: false,
-      why: 'Shown, not taken off what is owed, until the owner and the CA decide how GST is treated on a return of shelf stock.',
+      why: 'Waiting for the supplier to accept. Shown here, but not taken off what is owed until the supplier accepts it (owner\'s decision OB-874).',
     },
     supplierId: input.supplierId, currency: 'INR',
     invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments, claimCredits, openings,

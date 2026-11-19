@@ -18,12 +18,18 @@
 // sold or moved — is refused in plain words. It needs a reason and a SECOND person's approval (an approval of kind
 // `goods_receipt_correction`, checked by another person who handles stock, as a write-off is), whatever its value. Every
 // correction is sealed on the audit trail with who asked, who approved, what changed and why.
+//
+// OB-875 B (owner, 19 Nov 2026): a receipt dated in a month whose GST return is already filed, or whose accounting month is
+// closed and signed, is NOT corrected until the CA signs that month off — reopens it with the existing `period_reopen`
+// approval (Approvals → Reopen a signed accounting month). Head office refuses it here, in plain words that name the month
+// and the way forward; the receipt screen shows the same words when the receipt is opened.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, concurrentChange } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
+import { tradingMonthIn } from '../../../packages/calendar/src/shop-clock';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { assertLocationInScope, type LocationBranches } from './location-scope';
 import type { GrnRecord } from './goods-receipt';
@@ -78,6 +84,59 @@ export interface BillForCorrection {
   readonly paid: boolean;
 }
 
+/** OB-875 B: what head office knows of the receipt's month — its accounts' state and its GST returns filed. */
+export interface ReceiptMonthState {
+  /** `YYYY-MM` — the month of the receipt's own date. */
+  readonly period: string;
+  /** The accounting month's latest fact: `closed` (closed and signed) or `open` (never closed, or reopened). */
+  readonly accounts: 'open' | 'closed';
+  /** The month's GST returns recorded as filed (GSTR-1, GSTR-3B), with the date filed (`YYYY-MM-DD`; '' when not known). */
+  readonly filedReturns: readonly { readonly type: string; readonly filedOn: string }[];
+  /** When the month's latest fact is a reopen (the CA's sign-off): the shop's date it was reopened (`YYYY-MM-DD`). */
+  readonly reopenedOn?: string;
+}
+
+export type ReceiptMonthLock =
+  | { readonly locked: false }
+  | { readonly locked: true; readonly period: string; readonly why: 'accounts_signed' | 'gst_filed'; readonly says: string; readonly next: string };
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
+/** `2026-10` → `October 2026`. */
+export function monthInWords(period: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(period);
+  const name = m === null ? undefined : MONTHS[Number(m[2]) - 1];
+  return m === null || name === undefined ? period : `${name} ${m[1]}`;
+}
+const RETURN_WORDS: Readonly<Record<string, string>> = { GSTR1: 'GSTR-1', GSTR3B: 'GSTR-3B' };
+
+/**
+ * OB-875 B: may a receipt dated in this month still be corrected? Not when the month's accounts are closed and signed; not
+ * when a GST return of the month is filed — unless the CA reopened the month (`period_reopen`) on or after the filing.
+ */
+export function receiptMonthLock(receiptNumber: string, m: ReceiptMonthState): ReceiptMonthLock {
+  const month = monthInWords(m.period);
+  const returns = [...new Set(m.filedReturns.map((r) => RETURN_WORDS[r.type] ?? r.type))].join(' and ');
+  const filed = m.filedReturns.length > 0;
+  const reopenStep = `Ask the CA to reopen ${month} (Approvals → Reopen a signed accounting month), then correct the receipt.`;
+  if (m.accounts === 'closed') {
+    return {
+      locked: true, period: m.period, why: 'accounts_signed', next: reopenStep,
+      says: `${receiptNumber} is dated ${month}. ${filed ? `That month's GST return (${returns}) is filed and its` : 'That month\'s'} accounts are closed and signed, so the receipt is not corrected until the CA signs the month off. ${reopenStep}`,
+    };
+  }
+  if (!filed) return { locked: false };
+  const lastFiled = m.filedReturns.map((r) => r.filedOn).sort().at(-1) ?? '';
+  if (m.reopenedOn !== undefined && m.reopenedOn >= lastFiled) return { locked: false };
+  const next = `Ask the CA to close and sign ${month} and then reopen it (Approvals → Close and sign an accounting month, then Approvals → Reopen a signed accounting month), then correct the receipt.`;
+  return {
+    locked: true, period: m.period, why: 'gst_filed', next,
+    says: `${receiptNumber} is dated ${month}. That month's GST return (${returns}) is filed, so the receipt is not corrected until the CA signs the month off. ${next}`,
+  };
+}
+
+/** The month a receipt belongs to: the shop's trading month of the moment it was saved (never the UTC month). */
+export const receiptMonthOf = (rec: GrnRecord): string => tradingMonthIn(rec.receivedAt);
+
 export interface ReceiptCorrectionDeps {
   readonly grn: (tenantId: string, grnId: string) => Promise<GrnRecord | undefined> | GrnRecord | undefined;
   readonly corrections: (tenantId: string) => Promise<readonly StoredReceiptCorrection[]> | readonly StoredReceiptCorrection[];
@@ -88,6 +147,8 @@ export interface ReceiptCorrectionDeps {
   readonly orderVersion?: (tenantId: string, poId: string) => Promise<number> | number;
   /** The correction, its movement and (when the receipt folded into an order) its compensating order posting — ONE save. */
   readonly commitCorrection: (tenantId: string, rec: StoredReceiptCorrection, movement: Movement, orderGuard?: { readonly poId: string; readonly expectedVersion: number }) => Promise<{ readonly documentNumber?: string }>;
+  /** OB-875 B: the receipt's month — its accounts' state and its GST returns filed. Absent: no month lock is judged. */
+  readonly monthState?: (tenantId: string, period: string) => Promise<ReceiptMonthState> | ReceiptMonthState;
   readonly approvals?: ApprovalPort;
   readonly locationBranches?: LocationBranches;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -141,6 +202,12 @@ export function goodsReceiptCorrectionRoutes(deps: ReceiptCorrectionDeps): reado
         if (line === undefined) throw notFound(`line ${String(b['lineId'])} on goods receipt ${receiptNumber}`);
         if (reason === '') {
           throw apiError(422, { code: 'reason_required', whatHappened: 'A correction of a saved receipt needs a reason — what was keyed wrong.', wasItSaved: 'not_saved', nextSafeAction: 'Write why, and send it again. Nothing was changed.' });
+        }
+        // OB-875 B: a month whose GST return is filed, or whose accounts are closed and signed, is not corrected until the CA
+        // signs it off (reopens it) — refused here, at head office, before anyone is asked to approve anything.
+        const lock = deps.monthState === undefined ? { locked: false as const } : receiptMonthLock(receiptNumber, await deps.monthState(ctx.tenantId, receiptMonthOf(rec)));
+        if (lock.locked) {
+          throw apiError(409, { code: 'receipt_month_filed_or_signed', whatHappened: `${lock.says} Nothing was changed.`, wasItSaved: 'not_saved', nextSafeAction: `${lock.next} Nothing was changed.` });
         }
         if (line.costNotKnown === true && !(rec.billCosts ?? []).some((c) => c.lineId === line.lineId)) {
           throw apiError(422, {
@@ -250,10 +317,14 @@ export function goodsReceiptCorrectionRoutes(deps: ReceiptCorrectionDeps): reado
         if (rec === undefined) throw notFound(`goods receipt ${grnId}`);
         await assertLocationInScope(ctx, rec.warehouseId, deps.locationBranches);
         const mine = (await deps.corrections(ctx.tenantId)).filter((c) => c.grnId === grnId);
+        const receiptNumber = rec.documentNumber ?? rec.number;
+        // OB-875 B: the screen says, as soon as the receipt is opened, when its month is filed or signed.
+        const lock = deps.monthState === undefined ? { locked: false as const } : receiptMonthLock(receiptNumber, await deps.monthState(ctx.tenantId, receiptMonthOf(rec)));
         return {
           status: 200,
           body: {
-            grnId, receiptNumber: rec.documentNumber ?? rec.number,
+            grnId, receiptNumber,
+            ...(lock.locked ? { monthLocked: { period: lock.period, why: lock.why, says: lock.says } } : {}),
             lines: rec.captured.lines.map((l) => ({ lineId: l.lineId, productId: l.productId, uom: l.uom, receivedMinor: l.sellableMinor, nowMinor: correctedSellable(rec, mine)[l.lineId] ?? l.sellableMinor })),
             corrections: mine, openBillExceptions: mine.flatMap((c) => c.billExceptions.map((x) => ({ ...x, correctionId: c.correctionId, documentNumber: c.documentNumber ?? c.correctionId }))),
             asAt: deps.now(),

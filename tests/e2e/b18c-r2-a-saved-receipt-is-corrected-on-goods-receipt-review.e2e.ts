@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import type { RealCloud } from '../support/real-store';
+import { tradingMonthIn, shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **R2 · batch 18c — "Correct a saved receipt" on Goods receipt review, in a real browser, on the PRODUCTION API over real
@@ -97,6 +98,33 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('R2: a save
       const po = (await shop.cloud().request({ method: 'GET', path: '/v1/purchase/orders/PO-R2', userId: OWNER })).body as { order: { receivedByProduct: Record<string, number> } };
       expect(po.order.receivedByProduct['RICE']).toBe(8);
       expect(errors).toEqual([]);
+    } finally { await context.close(); }
+  });
+
+  // OB-875 B (owner, 19 Nov 2026): once the receipt's month has its GST return filed, head office refuses a correction until
+  // the CA reopens the month — the page says so when the receipt is opened, and again when Save is pressed.
+  it('says, in plain words, that a receipt in a month whose GST return is filed waits for the CA to reopen the month', async () => {
+    const grn = (await shop.cloud().request({ method: 'GET', path: '/v1/inventory/goods-receipt/grn-r2', userId: OWNER })).body as { grn: { receivedAt: string } };
+    const month = tradingMonthIn(grn.grn.receivedAt);
+    await ok(shop.cloud().request({ method: 'POST', path: `/v1/finance/returns/GSTR1/${month.slice(5, 7)}${month.slice(0, 4)}/filed`, userId: OWNER, idempotencyKey: 'gstr1-filed-r2', body: { arn: 'AA3311260000002', filedOn: shopDateIn(new Date().toISOString()) } }), 'GSTR-1 recorded filed');
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
+    await shop.signIn(context, MGR, 'br-1');
+    const page = await context.newPage();
+    try {
+      await page.goto(`${shop.base}/goods-receipt`, { waitUntil: 'load' });
+      await page.locator('#grc-section').waitFor({ timeout: 20_000 });
+      await page.fill('#grc-ref', grnNumber);
+      await page.click('#grc-open');
+      await page.locator('#grc-lines tr[data-line="L1"]').waitFor({ timeout: 20_000 });
+      expect(await page.locator('#grc-state').innerText()).toMatch(/That month's GST return \(GSTR-1\) is filed, so the receipt is not corrected until the CA signs the month off\./);
+      await page.selectOption('#grc-line', 'L1');
+      await page.fill('#grc-right', '7');
+      await page.fill('#grc-why', 'one more bag short');
+      await page.click('#grc-save');
+      await statusSays(page, /Head office did not save it: .*GST return \(GSTR-1\) is filed.*Approvals → Reopen a signed accounting month.*Nothing was changed\./);
+      if (SHOTS !== undefined) await page.locator('#grc-section').screenshot({ path: `${SHOTS}/r2-2-month-filed-refused.png` });
+      const po = (await shop.cloud().request({ method: 'GET', path: '/v1/purchase/orders/PO-R2', userId: OWNER })).body as { order: { receivedByProduct: Record<string, number> } };
+      expect(po.order.receivedByProduct['RICE']).toBe(8);
     } finally { await context.close(); }
   });
 });

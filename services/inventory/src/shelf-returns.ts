@@ -12,8 +12,8 @@
 //     when one is named; a return of more than is on hand there is refused in plain words, nothing saved;
 //   • the supplier's debit note is raised and ISSUED in the same save under the shop's one debit-note range
 //     (`SDN/26-27/00001`, the existing path's `recordNumberedDebitNoteIssue` numbering), valued at the stock's own average
-//     cost. Its GST treatment is the owner's / CA's decision (asked, not guessed): until then the note is SHOWN on the
-//     supplier's account and not netted from what is owed (P-08 — said on the account in words);
+//     cost. OB-874 C (owner, 19 Nov 2026): the note is SHOWN on the supplier's account and NOT netted from what is owed
+//     until the supplier accepts it (P-08 — said on the account in words: "waiting for the supplier to accept");
 //   • above the e-way-bill limit the goods leave only under a GENERATED e-way bill for this return's movement — the same
 //     tested rule (`checkDispatchEwb`) a return from the goods-receipt page passes; refused by name otherwise;
 //   • it needs the same approval as a write-off of that value (OB-872): at or above the shop's write-off threshold — or

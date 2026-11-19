@@ -57,7 +57,8 @@ function paint() {
 async function open() {
   const got = await api.open($('grc-ref').value);
   if (got === 'not_found' || got === 'lost_link') { view = null; $('grc-state').textContent = got === 'lost_link' ? w('lost') : w('notFound'); paint(); return; }
-  view = got; $('grc-state').textContent = `${got.receiptNumber}`; paint();
+  // OB-875 B: head office's words when the receipt's month is filed or signed — said before anything is typed.
+  view = got; $('grc-state').textContent = got.monthLocked ? `${got.receiptNumber} — ${got.monthLocked}` : `${got.receiptNumber}`; paint();
 }
 
 function say(out) {

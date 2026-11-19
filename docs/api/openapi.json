@@ -148284,20 +148284,14 @@
       "GetInventoryGoodsReceiptByGrnIdCorrectionsReply": {
         "type": "object",
         "required": [
-          "grnId",
-          "receiptNumber",
           "lines",
           "corrections",
           "openBillExceptions",
-          "asAt"
+          "asAt",
+          "grnId",
+          "receiptNumber"
         ],
         "properties": {
-          "grnId": {
-            "type": "string"
-          },
-          "receiptNumber": {
-            "type": "string"
-          },
           "lines": {
             "type": "array",
             "items": {
@@ -148379,6 +148373,36 @@
             }
           },
           "asAt": {
+            "type": "string"
+          },
+          "monthLocked": {
+            "type": "object",
+            "required": [
+              "period",
+              "why",
+              "says"
+            ],
+            "properties": {
+              "period": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string",
+                "enum": [
+                  "accounts_signed",
+                  "gst_filed"
+                ]
+              },
+              "says": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "grnId": {
+            "type": "string"
+          },
+          "receiptNumber": {
             "type": "string"
           }
         },

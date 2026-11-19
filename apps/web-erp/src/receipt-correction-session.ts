@@ -7,6 +7,8 @@
 // approve it first, so "Ask for approval" sends the request for exactly this correction; once another person approves it,
 // the same press saves it. The correction id is kept for the form, so a press after the approval is the same correction.
 // A bill already matched against the old quantity comes back as a visible exception (debit note / re-match) — shown as said.
+// OB-875 B: a receipt whose month has its GST return filed or its accounts signed is refused by head office until the CA
+// reopens the month; head office's words are shown as soon as the receipt is opened, and again if Save is pressed.
 // Holds no rule of its own; DOM-free and tested.
 
 import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
@@ -46,7 +48,11 @@ export interface CorrectionRow {
   readonly requestedBy: string; readonly approvedBy: string; readonly reason: string; readonly at: string;
   readonly exceptions: readonly string[];
 }
-export interface ReceiptView { readonly grnId: string; readonly receiptNumber: string; readonly lines: readonly ReceiptLineNow[]; readonly corrections: readonly CorrectionRow[] }
+export interface ReceiptView {
+  readonly grnId: string; readonly receiptNumber: string; readonly lines: readonly ReceiptLineNow[]; readonly corrections: readonly CorrectionRow[];
+  /** OB-875 B: head office's words when the receipt's month has its GST return filed or its accounts signed ('' when not). */
+  readonly monthLocked: string;
+}
 
 export type CorrectionOutcome =
   | { readonly kind: 'saved'; readonly row: CorrectionRow }
@@ -107,6 +113,7 @@ export function createReceiptCorrectionSession(viewer: { readonly userId?: strin
         grnId: str(b['grnId']), receiptNumber: str(b['receiptNumber']),
         lines: (Array.isArray(b['lines']) ? b['lines'] as unknown[] : []).filter(isRec).map((l) => ({ lineId: str(l['lineId']), productId: str(l['productId']), uom: str(l['uom']) || 'ea', receivedMinor: num(l['receivedMinor']), nowMinor: num(l['nowMinor']) })),
         corrections: (Array.isArray(b['corrections']) ? b['corrections'] as unknown[] : []).map(correctionRowOf).filter((r): r is CorrectionRow => r !== null),
+        monthLocked: isRec(b['monthLocked']) ? str(b['monthLocked']['says']) : '',
       };
     },
     async save(grnId: string, form: { readonly lineId: string; readonly right: string; readonly why: string }): Promise<CorrectionOutcome> {

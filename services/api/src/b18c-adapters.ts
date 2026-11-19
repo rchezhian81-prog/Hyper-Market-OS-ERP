@@ -10,10 +10,12 @@ import { appendWithDocumentNumbers } from '../../platform/src/document-numbers-b
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import type { ShelfReturnDeps, StoredShelfReturn } from '../../inventory/src/shelf-returns';
 import type { DebitNoteIssue } from '../../purchase/src/supplier-account';
-import type { ReceiptCorrectionDeps, StoredReceiptCorrection } from '../../inventory/src/goods-receipt-corrections';
+import type { ReceiptCorrectionDeps, StoredReceiptCorrection, ReceiptMonthState } from '../../inventory/src/goods-receipt-corrections';
+import { r3GstLedger, localDateOf } from './r3-gst-adapters';
 import {
   STREAM, streamName, allOf, movementEvent, storeNumberFor, DEBIT_NOTE_ISSUES_STREAM, PURCHASE_ORDERS_STREAM, purchaseOrderGuardKey,
   inventoryAdapter, writeOffAdapter, eWayBillAdapter, orgStructureAdapter, foldSupplierRecords, goodsReceiptAdapter, supplierAccountAdapter,
+  financeAdapter,
 } from './adapters';
 
 /** S1: the shelf returns register. */
@@ -127,6 +129,7 @@ export function receiptCorrectionsAdapter(input: { readonly store: EventStore; r
         invoiceId: i.invoiceId, productIds: [...new Set(i.lines.map((l) => l.productId))], matched: matches.has(i.invoiceId), paid: paid.has(i.invoiceId),
       }));
     },
+    monthState: (tenantId, period) => receiptMonthStateOf(input, tenantId, period),
     commitCorrection: async (tenantId, rec, movement, orderGuard) => {
       const place = await storeNumberFor(store, now, tenantId, rec.warehouseId);
       const [n] = await appendWithDocumentNumbers(store, tenantId, {
@@ -150,4 +153,26 @@ export function receiptCorrectionsAdapter(input: { readonly store: EventStore; r
       return n === null || n === undefined || n === '' ? {} : { documentNumber: n };
     },
   };
+}
+
+/**
+ * R2 · OB-875 B: the receipt's month as head office already records it — the accounting month's latest close/reopen fact
+ * (`PeriodClosed` / `PeriodReopened` on the finance periods stream, M23-FR-04) and the month's GST returns filed (GSTR-1 from
+ * the submission store or recorded as filed outside, GSTR-3B recorded filed — the filing register's own facts). No new state.
+ */
+export async function receiptMonthStateOf(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, period: string): Promise<ReceiptMonthState> {
+  const accounts = (await financeAdapter(input).periodStates(tenantId)).get(period) ?? 'open';
+  const gstPeriod = `${period.slice(5, 7)}${period.slice(0, 4)}`;
+  const filedReturns = (await r3GstLedger(input).facts(tenantId))
+    .filter((f) => (f.type === 'GSTR1' || f.type === 'GSTR3B') && f.period === gstPeriod && f.filedOn !== undefined)
+    .map((f) => ({ type: f.type, filedOn: f.filedOn ?? '' }));
+  let reopenedOn: string | undefined;
+  if (accounts === 'open') {
+    const reopens = (await allOf<{ readonly period: string; readonly seq?: number; readonly reopenedAt?: string }>(input.store, tenantId, STREAM.periods, 'PeriodReopened'))
+      .filter((e) => e.period === period && typeof e.reopenedAt === 'string')
+      .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+    const last = reopens.at(-1);
+    if (last?.reopenedAt !== undefined) reopenedOn = localDateOf(last.reopenedAt, 'Asia/Kolkata');
+  }
+  return { period, accounts, filedReturns, ...(reopenedOn === undefined ? {} : { reopenedOn }) };
 }

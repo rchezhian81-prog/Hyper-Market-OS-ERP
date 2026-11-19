@@ -60,7 +60,8 @@ describe.each(useBackings())('S1: shelf stock goes back to the supplier — on $
     const acct = (await req('GET', '/v1/purchase/suppliers/sup-1/account', undefined, 'u-owner')).body as { shelfReturnDebitNotes: { number: string; returnNumber: string; valueMinor: number }[]; shelfReturnDebitNotesTotal: { valueMinor: number; nettedInBalance: boolean; why: string } };
     expect(acct.shelfReturnDebitNotes.map((d) => [d.number, d.returnNumber, d.valueMinor])).toEqual([[a.debitNote.number, a.documentNumber, 30_000]]);
     expect(acct.shelfReturnDebitNotesTotal).toMatchObject({ valueMinor: 30_000, nettedInBalance: false });
-    expect(acct.shelfReturnDebitNotesTotal.why).toMatch(/GST/);
+    // OB-874 C: not taken off what is owed until the supplier accepts it — said plainly.
+    expect(acct.shelfReturnDebitNotesTotal.why).toMatch(/^Waiting for the supplier to accept\. .*not taken off what is owed until the supplier accepts it/);
 
     // More than is on hand of that batch: refused in plain words, nothing saved.
     const tooMany = await req('POST', '/v1/inventory/shelf-returns/rts-b', ret('rts-b', { qty: 119 }));
