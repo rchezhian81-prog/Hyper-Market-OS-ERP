@@ -321,9 +321,19 @@ export interface ShelfDebitNoteAcceptance {
   readonly differenceMinor: number;
   /** Why less was accepted — required when `differenceMinor` > 0. */
   readonly reason?: string;
+  /**
+   * OB-881 B (owner, 19 Nov 2026): the GST the supplier's credit note shows, typed as its own figure — optional. When present
+   * the books reverse that input GST once, on top of the accepted amount (the debit note then carries it as its tax). Absent ⇒
+   * no GST reversal. `rateBps` is the highest GST rate known on the item when it was checked (the figure may not exceed
+   * acceptedMinor × that rate).
+   */
+  readonly gst?: { readonly cgstMinor: number; readonly sgstMinor: number; readonly igstMinor: number; readonly rateBps: number };
   readonly acceptedBy: string;
   readonly acceptedAt: string;
 }
+
+/** OB-881 B: the GST an acceptance reverses, in all (0 when the credit note showed none or none was typed). */
+export const gstOf = (a: Pick<ShelfDebitNoteAcceptance, 'gst'>): number => (a.gst === undefined ? 0 : a.gst.cgstMinor + a.gst.sgstMinor + a.gst.igstMinor);
 
 /** A shelf-return debit note as the account shows it: waiting for the supplier, or accepted (and then netted, once). */
 export type ShelfReturnDebitNoteOnAccount = Omit<ShelfReturnDebitNote, 'nettedInBalance'> & {
@@ -377,7 +387,7 @@ export interface SupplierAccountStatement extends PayablesAccount {
    * `valueMinor`: the notes still WAITING for the supplier (shown, not netted). OB-879: `acceptedMinor` — what the supplier
    * accepted (netted, as debit notes); `notAcceptedMinor` — what the supplier did not accept of an accepted note (shown only).
    */
-  readonly shelfReturnDebitNotesTotal: { readonly valueMinor: number; readonly nettedInBalance: false; readonly why: string; readonly acceptedMinor: number; readonly notAcceptedMinor: number };
+  readonly shelfReturnDebitNotesTotal: { readonly valueMinor: number; readonly nettedInBalance: false; readonly why: string; readonly acceptedMinor: number; readonly notAcceptedMinor: number; readonly gstReversedMinor: number };
   readonly totals: SupplierAccountTotals;
   readonly asAt: string;
 }
@@ -510,7 +520,10 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
     if (d.acceptance === null || d.acceptance.acceptedMinor <= 0) continue;
     debitNotes.push({
       debitNoteRef: d.debitNoteRef, grnId: d.returnNumber ?? d.returnId, lineId: '', productId: d.productId, poId: '', disposition: 'return',
-      quantityMinor: d.quantityMinor, valueMinor: d.acceptance.acceptedMinor, taxableMinor: d.acceptance.acceptedMinor, currency: 'INR',
+      // OB-881 B: with the credit note's GST typed, the note takes the goods AND that GST off what is owed, and the payables
+      // posting reverses the input GST through the debit-note rule's own input-tax legs (or waits, named, when unmapped).
+      quantityMinor: d.quantityMinor, valueMinor: d.acceptance.acceptedMinor + gstOf(d.acceptance), taxableMinor: d.acceptance.acceptedMinor, currency: 'INR',
+      ...(gstOf(d.acceptance) === 0 ? {} : { tax: { cgstMinor: d.acceptance.gst!.cgstMinor, sgstMinor: d.acceptance.gst!.sgstMinor, igstMinor: d.acceptance.gst!.igstMinor } }),
       decidedBy: d.acceptance.acceptedBy, decidedAt: d.acceptance.acceptedAt,
       reason: `accepted by the supplier as credit note ${d.acceptance.supplierCreditNoteNo} of ${d.acceptance.supplierCreditNoteDate}`,
       number: d.number, issuedBy: null, issuedAt: d.raisedAt,
@@ -530,6 +543,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
     shelfReturnDebitNotesTotal: {
       valueMinor: shelfReturnDebitNotes.filter((d) => d.acceptance === null).reduce((s, d) => s + d.valueMinor, 0), nettedInBalance: false,
       acceptedMinor: shelfReturnDebitNotes.reduce((s, d) => s + (d.acceptance?.acceptedMinor ?? 0), 0),
+      gstReversedMinor: shelfReturnDebitNotes.reduce((s, d) => s + (d.acceptance === null ? 0 : gstOf(d.acceptance)), 0),
       notAcceptedMinor: shelfReturnDebitNotes.reduce((s, d) => s + (d.acceptance?.differenceMinor ?? 0), 0),
       why: 'Waiting for the supplier to accept. Shown here, but not taken off what is owed until the supplier accepts it (owner\'s decision OB-874).',
     },

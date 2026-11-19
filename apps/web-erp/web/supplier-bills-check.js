@@ -93,14 +93,18 @@ function paintShelfNotes() {
     const head = `${d.number ?? d.debitNoteRef}${d.returnNumber ? ` (${d.returnNumber})` : ''} · ${d.productId} × ${d.quantityMinor} · ${money(d.valueMinor)}`;
     const a = d.acceptance;
     li.append(el('strong', a === null ? `${head} — ${w('shelfWaiting')}` : `${head} — ${w('shelfAccepted')} ${a.supplierCreditNoteNo} · ${a.supplierCreditNoteDate} · ${money(a.acceptedMinor)} ${w('shelfTakenOff')}`, 'shelf-head'));
+    const gstBack = a?.gst ? a.gst.cgstMinor + a.gst.sgstMinor + a.gst.igstMinor : 0;
+    if (gstBack > 0) li.append(el('span', `${money(gstBack)} ${w('shelfGstReversed')}`, 'muted shelf-gst'));
     if (a !== null && a.differenceMinor > 0) li.append(el('span', `${money(a.differenceMinor)} ${w('shelfNotAccepted')}${a.reason ? ` — ${a.reason}` : ''}`, 'muted shelf-diff'));
     if (a === null) {
       const box = (cls, label, type) => { const l = document.createElement('label'); l.append(el('span', label)); const i = document.createElement('input'); i.className = cls; i.type = type; i.autocomplete = 'off'; l.append(i); return l; };
-      li.append(box('shelf-cn', w('shelfCnNo'), 'text'), box('shelf-date', w('shelfCnDate'), 'date'), box('shelf-amount', w('shelfAmount'), 'text'), box('shelf-reason', w('shelfReason'), 'text'));
+      li.append(box('shelf-cn', w('shelfCnNo'), 'text'), box('shelf-date', w('shelfCnDate'), 'date'), box('shelf-amount', w('shelfAmount'), 'text'), box('shelf-reason', w('shelfReason'), 'text'),
+        // OB-881 B: the GST the supplier's credit note shows, by head — optional.
+        box('shelf-cgst', w('shelfCgst'), 'text'), box('shelf-sgst', w('shelfSgst'), 'text'), box('shelf-igst', w('shelfIgst'), 'text'));
       const go = el('button', w('shelfAccept'), 'shelf-accept sre-btn'); go.type = 'button';
       go.addEventListener('click', async () => {
         const v = (cls) => li.querySelector(`.${cls}`)?.value ?? '';
-        const out = await bc.session.acceptShelfNote(account.supplierId, d.debitNoteRef, { creditNoteNo: v('shelf-cn'), creditNoteDate: v('shelf-date'), accepted: v('shelf-amount'), reason: v('shelf-reason') });
+        const out = await bc.session.acceptShelfNote(account.supplierId, d.debitNoteRef, { creditNoteNo: v('shelf-cn'), creditNoteDate: v('shelf-date'), accepted: v('shelf-amount'), reason: v('shelf-reason'), cgst: v('shelf-cgst'), sgst: v('shelf-sgst'), igst: v('shelf-igst') });
         $('dn-status').dataset.result = out.result;
         $('dn-status').textContent = out.result === 'ok' ? `${w('shelfDone')} ${money(out.value.acceptance.acceptedMinor)}.` : bc.outcomeWords(lang, out, '');
         if (out.result === 'ok') await showDebitNotes();

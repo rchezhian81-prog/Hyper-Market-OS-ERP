@@ -205,6 +205,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-866 B �
       await row.locator('button.shelf-accept').click();
       await says(s.page, '#dn-status', /^Head office refused: The supplier accepted ₹250\.00 of ₹300\.00\. Say why/);
       await row.locator('input.shelf-reason').fill('one tin past the date he takes back');
+      // OB-881 B: the credit note's GST is optional; a minus figure is refused by head office in plain words.
+      await row.locator('input.shelf-cgst').fill('-6.25');
+      await row.locator('button.shelf-accept').click();
+      await says(s.page, '#dn-status', /^Head office refused: The GST on a credit note cannot be below nothing\. Type it as the credit note shows it, without a minus sign\./);
+      await row.locator('input.shelf-cgst').fill('');
       await shot(s.page, '6-supplier-accepted-typed');
       await row.locator('button.shelf-accept').click();
       await says(s.page, '#dn-status', /^Recorded — taken off what is owed: ₹250\.00\.$/);
@@ -213,7 +218,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-866 B �
       expect(await s.page.locator('#dn-owed').innerText()).not.toBe(owedBefore);
       expect(await s.page.locator('#dn-shelf button.shelf-accept').count(), 'an accepted note offers no second acceptance').toBe(0);
       await shot(s.page, '7-supplier-accepted');
-      expect(s.writes).toEqual(['POST /v1/purchase/suppliers/sup-k/shelf-return-debit-notes/DN-RTS-rts-a/accept', 'POST /v1/purchase/suppliers/sup-k/shelf-return-debit-notes/DN-RTS-rts-a/accept']);
+      expect(s.writes).toEqual(Array(3).fill('POST /v1/purchase/suppliers/sup-k/shelf-return-debit-notes/DN-RTS-rts-a/accept'));
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
   }, 120_000);

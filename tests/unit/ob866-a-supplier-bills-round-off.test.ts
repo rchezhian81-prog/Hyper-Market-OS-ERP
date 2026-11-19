@@ -137,6 +137,7 @@ describe('OB-866 B — the screens (apps/web-erp)', () => {
   it('says the waiting reason in plain words, in both languages', () => {
     expect(payablesReasonWords('en', 'purchase_round_off_not_named')).toBe(PURCHASE_ROUND_OFF_WAITING);
     expect(payablesReasonWords('ta', 'purchase_round_off_not_named')).toMatch(/^கணக்குப் பதிவு காத்திருக்கிறது/);
-    expect(payablesReasonWords('en', 'tax_not_mapped')).toBe('tax_not_mapped');
+    expect(payablesReasonWords('en', 'tax_not_mapped')).toBe('Accounting entry waiting — the accountant has not named the input-GST account for this');
+    expect(payablesReasonWords('en', 'unmapped_kind')).toBe('unmapped_kind');
   });
 });

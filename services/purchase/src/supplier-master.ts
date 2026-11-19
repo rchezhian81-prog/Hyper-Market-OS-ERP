@@ -132,6 +132,11 @@ export interface SupplierMasterDeps extends SupplierAccountDeps {
    * answers the acceptance that STANDS (a second, different one collapses onto the first, which the route then refuses).
    */
   readonly recordShelfDebitNoteAcceptance?: (tenantId: string, acceptance: ShelfDebitNoteAcceptance) => Promise<ShelfDebitNoteAcceptance>;
+  /**
+   * OB-881 B: the highest GST rate head office knows on an item, in basis points (500 = 5%) — the published pack's rate and the
+   * rate any supplier bill charged on it. Undefined when none is known (then a typed GST cannot be checked and is refused).
+   */
+  readonly highestGstRateBps?: (tenantId: string, productId: string) => Promise<number | undefined> | number | undefined;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /**
    * R3 · A24: the income-tax TDS this payment carries (the CA's list, the owner's switch, the year's aggregate so far).
@@ -586,11 +591,31 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         if (acceptedMinor > note.valueMinor) throw refuse(422, 'accepted_more_than_the_note', `The supplier cannot accept ${rupees(acceptedMinor)} of a debit note for ${rupees(note.valueMinor)}.`, 'Type what the supplier\'s credit note says, at most the debit note\'s value. Nothing was recorded.');
         if (acceptedMinor === 0) throw refuse(422, 'accepted_nothing', 'An acceptance of ₹0.00 takes nothing off what is owed — the supplier has not accepted this note.', 'Leave the note waiting, or type what the supplier\'s credit note says. Nothing was recorded.');
         if (acceptedMinor < note.valueMinor && reason === undefined) throw refuse(422, 'reason_needed_for_less', `The supplier accepted ${rupees(acceptedMinor)} of ${rupees(note.valueMinor)}. Say why the supplier accepted less — the difference of ${rupees(note.valueMinor - acceptedMinor)} stays shown on the account.`, 'Type the reason and record it again. Nothing was recorded.');
+        // OB-881 B (owner, 19 Nov 2026): the GST the supplier's credit note shows — optional, typed by the accountant (CGST + SGST on an
+        // intra-state note, IGST on an inter-state one, never both). Never negative; never more than the accepted amount at the
+        // highest GST rate head office knows on the item. Present ⇒ the books reverse that input GST once; absent ⇒ none.
+        const gstIn = { cgstMinor: b['cgstMinor'], sgstMinor: b['sgstMinor'], igstMinor: b['igstMinor'] };
+        const heads = Object.entries(gstIn).filter(([, v]) => v !== undefined && v !== null);
+        if (heads.some(([, v]) => typeof v !== 'number' || !Number.isSafeInteger(v))) throw refuse(400, 'not_readable_as_a_supplier_acceptance', 'The GST on the supplier\'s credit note, when given, is CGST, SGST or IGST in whole paise.', 'Type the GST as the credit note shows it, or leave it blank. Nothing was recorded.');
+        if (heads.some(([, v]) => (v as number) < 0)) throw refuse(422, 'gst_cannot_be_negative', 'The GST on a credit note cannot be below nothing. Type it as the credit note shows it, without a minus sign.', 'Correct the GST, or leave it blank if the credit note shows none. Nothing was recorded.');
+        const g = { cgstMinor: (gstIn.cgstMinor as number | undefined) ?? 0, sgstMinor: (gstIn.sgstMinor as number | undefined) ?? 0, igstMinor: (gstIn.igstMinor as number | undefined) ?? 0 };
+        const gstMinor = g.cgstMinor + g.sgstMinor + g.igstMinor;
+        let gst: ShelfDebitNoteAcceptance['gst'];
+        if (gstMinor > 0) {
+          if (g.igstMinor > 0 && g.cgstMinor + g.sgstMinor > 0) throw refuse(422, 'gst_heads_do_not_go_together', 'A credit note charges CGST and SGST (inside the state) or IGST (from another state) — never both.', 'Type the GST heads the credit note shows. Nothing was recorded.');
+          const rateBps = await deps.highestGstRateBps?.(t, note.productId);
+          if (rateBps === undefined) throw refuse(422, 'gst_rate_not_known', `Head office knows no GST rate for ${note.productId}, so it cannot check the GST typed (${rupees(gstMinor)}).`, 'Record it without the GST, or set the item\'s HSN and GST rate first. Nothing was recorded.');
+          const capMinor = Math.ceil((acceptedMinor * rateBps) / 10_000);
+          if (gstMinor > capMinor) throw refuse(422, 'gst_more_than_the_rate_allows', `The GST typed (${rupees(gstMinor)}) is more than ${rupees(acceptedMinor)} at the highest GST rate on ${note.productId} (${rateBps / 100}%), which is ${rupees(capMinor)}.`, 'Check the GST on the supplier\'s credit note. Nothing was recorded.');
+          gst = { ...g, rateBps };
+        }
         const draft: ShelfDebitNoteAcceptance = {
           debitNoteRef, supplierId, supplierCreditNoteNo: no.trim(), supplierCreditNoteDate: date, noteValueMinor: note.valueMinor,
-          acceptedMinor, differenceMinor: note.valueMinor - acceptedMinor, ...(reason === undefined ? {} : { reason }), acceptedBy: ctx.userId, acceptedAt: deps.now(),
+          acceptedMinor, differenceMinor: note.valueMinor - acceptedMinor, ...(reason === undefined ? {} : { reason }), ...(gst === undefined ? {} : { gst }),
+          acceptedBy: ctx.userId, acceptedAt: deps.now(),
         };
-        const same = (a: ShelfDebitNoteAcceptance) => a.supplierCreditNoteNo === draft.supplierCreditNoteNo && a.supplierCreditNoteDate === draft.supplierCreditNoteDate && a.acceptedMinor === draft.acceptedMinor;
+        const same = (a: ShelfDebitNoteAcceptance) => a.supplierCreditNoteNo === draft.supplierCreditNoteNo && a.supplierCreditNoteDate === draft.supplierCreditNoteDate && a.acceptedMinor === draft.acceptedMinor
+          && (a.gst?.cgstMinor ?? 0) === g.cgstMinor && (a.gst?.sgstMinor ?? 0) === g.sgstMinor && (a.gst?.igstMinor ?? 0) === g.igstMinor;
         const prior = note.acceptance;
         if (prior !== null) {
           if (same(prior)) return { status: 200, body: { acceptance: prior, alreadyAccepted: true } };
@@ -601,10 +626,10 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         await audit(t, {
           actorId: ctx.userId, action: 'supplier.debit_note.accepted', objectType: 'supplier', objectId: supplierId,
           at: draft.acceptedAt, origin: { tenantId: t, branchId: ctx.branchId ?? null }, before: { state: 'waiting_for_supplier' },
-          after: { debitNoteRef, number: note.number ?? '', supplierCreditNoteNo: draft.supplierCreditNoteNo, supplierCreditNoteDate: date, noteValueMinor: String(note.valueMinor), acceptedMinor: String(acceptedMinor), differenceMinor: String(draft.differenceMinor) },
+          after: { debitNoteRef, number: note.number ?? '', supplierCreditNoteNo: draft.supplierCreditNoteNo, supplierCreditNoteDate: date, noteValueMinor: String(note.valueMinor), acceptedMinor: String(acceptedMinor), differenceMinor: String(draft.differenceMinor), gstReversedMinor: String(gstMinor), ...(gst === undefined ? {} : { cgstMinor: String(gst.cgstMinor), sgstMinor: String(gst.sgstMinor), igstMinor: String(gst.igstMinor), gstRateBps: String(gst.rateBps) }) },
           ...(reason === undefined ? {} : { reason }), correlationId: debitNoteRef,
         });
-        return { status: 201, body: { acceptance: standing, alreadyAccepted: false, owedMinor: account.totals.owedMinor - acceptedMinor } };
+        return { status: 201, body: { acceptance: standing, alreadyAccepted: false, owedMinor: account.totals.owedMinor - acceptedMinor - gstMinor } };
       },
     },
   ];

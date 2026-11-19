@@ -253418,8 +253418,20 @@
           "acceptedMinor": {
             "type": "integer"
           },
+          "cgstMinor": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "igstMinor": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
           "reason": {
             "type": "string"
+          },
+          "sgstMinor": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
           },
           "supplierCreditNoteDate": {
             "type": "string"
@@ -323395,6 +323407,30 @@
           "reason": {
             "type": "string"
           },
+          "gst": {
+            "type": "object",
+            "required": [
+              "cgstMinor",
+              "sgstMinor",
+              "igstMinor",
+              "rateBps"
+            ],
+            "properties": {
+              "cgstMinor": {
+                "type": "number"
+              },
+              "sgstMinor": {
+                "type": "number"
+              },
+              "igstMinor": {
+                "type": "number"
+              },
+              "rateBps": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
           "acceptedBy": {
             "type": "string"
           },
@@ -328780,7 +328816,8 @@
               "nettedInBalance",
               "why",
               "acceptedMinor",
-              "notAcceptedMinor"
+              "notAcceptedMinor",
+              "gstReversedMinor"
             ],
             "properties": {
               "valueMinor": {
@@ -328797,6 +328834,9 @@
                 "type": "number"
               },
               "notAcceptedMinor": {
+                "type": "number"
+              },
+              "gstReversedMinor": {
                 "type": "number"
               }
             },

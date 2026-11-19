@@ -50,3 +50,23 @@ describe('OB-879 — the screen\'s acceptance body', () => {
     expect(acceptanceBody({ creditNoteNo: 'CN-1', creditNoteDate: '2026-11-19', accepted: '₹250.5', reason: ' part ' })).toEqual({ ok: true, body: { supplierCreditNoteNo: 'CN-1', supplierCreditNoteDate: '2026-11-19', acceptedMinor: 25_050, reason: 'part' } });
   });
 });
+
+describe('OB-881 B — the credit note\'s GST, typed on acceptance', () => {
+  it('takes the goods and the GST off what is owed; the debit note carries the GST as its tax, so the posting reverses it once', () => {
+    const a = fold([{ ...accepted('DN-1', 30_000, 30_000), gst: { cgstMinor: 750, sgstMinor: 750, igstMinor: 0, rateBps: 500 } }]);
+    expect(a.debitNotes.map((d) => [d.valueMinor, d.taxableMinor, d.tax])).toEqual([[31_500, 30_000, { cgstMinor: 750, sgstMinor: 750, igstMinor: 0 }]]);
+    expect(a.totals.owedMinor).toBe(-31_500);
+    expect(a.shelfReturnDebitNotesTotal).toMatchObject({ acceptedMinor: 30_000, gstReversedMinor: 1_500 });
+    const [p] = planPayablesPostings([a], []);
+    expect(p!.components).toEqual({ amount: 31_500, taxable: 30_000, cgst: 750, sgst: 750, igst: 0 });
+    // Without it: no tax on the note, exactly as before.
+    expect(fold([accepted('DN-1', 30_000, 30_000)]).debitNotes[0]!.tax).toBeUndefined();
+  });
+
+  it('the screen sends each GST head typed (a minus reaches head office, to be refused in its words); blank is none', () => {
+    const base = { creditNoteNo: 'CN-1', creditNoteDate: '2026-11-19' };
+    expect(acceptanceBody({ ...base, cgst: '7.50', sgst: '7.5', igst: '' })).toEqual({ ok: true, body: { supplierCreditNoteNo: 'CN-1', supplierCreditNoteDate: '2026-11-19', cgstMinor: 750, sgstMinor: 750 } });
+    expect(acceptanceBody({ ...base, igst: '−6.25' })).toEqual({ ok: true, body: { supplierCreditNoteNo: 'CN-1', supplierCreditNoteDate: '2026-11-19', igstMinor: -625 } });
+    expect(acceptanceBody({ ...base, cgst: 'seven' })).toEqual({ ok: false, why: 'notRupees' });
+  });
+});

@@ -9202,6 +9202,20 @@ export function supplierMasterAdapter(input: {
       return build(saved?.number ?? '');
     },
     allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
+    // OB-881 B: the highest GST rate known on an item — the published pack's rate and every rate a supplier bill charged on it.
+    highestGstRateBps: async (tenantId, productId) => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      const rates: number[] = [];
+      const packRate = pack?.snapshot.products.find((p) => p.productId === productId)?.taxBps;
+      if (typeof packRate === 'number') rates.push(packRate);
+      for (const inv of await liveSupplierInvoices(input.store, tenantId)) {
+        for (const l of inv.lines) {
+          const tax = (l.cgstMinor ?? 0) + (l.sgstMinor ?? 0) + (l.igstMinor ?? 0);
+          if (l.productId === productId && l.lineTotalMinor > 0 && tax > 0) rates.push(Math.round((tax * 10_000) / l.lineTotalMinor));
+        }
+      }
+      return rates.length === 0 ? undefined : Math.max(...rates);
+    },
     // OB-879: keyed on the note — a second acceptance collapses onto the first, which is what stands (and is answered).
     recordShelfDebitNoteAcceptance: async (tenantId, acceptance) => {
       const key = `shelf-dn-accept-${tenantId}-${acceptance.supplierId}-${acceptance.debitNoteRef}`;
