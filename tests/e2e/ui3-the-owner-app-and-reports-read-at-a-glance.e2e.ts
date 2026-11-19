@@ -244,7 +244,7 @@ describe.skipIf(!HAVE_BROWSER)('UI-3: the owner app and the reports read at a gl
       await p.locator('#reports-list .row', { hasText: 'What is selling, by department' }).locator('button').click();
       await p.waitForSelector('figure[data-chart="units_by_category"]');
       // D-057: the store by its NAME; each department in rupees (what the till charged on its lines), items beside it.
-      expect(await text(p, '#report-covers')).toMatch(new RegExp(`^Store Test Store · trading day ${TODAY} · read from the store computer at \\d{4}-`));
+      expect(await text(p, '#report-covers')).toMatch(new RegExp(`^Store Test Store · today, ${TODAY.slice(8, 10)}/${TODAY.slice(5, 7)}/${TODAY.slice(0, 4)} · read from the store computer at \\d{4}-`));
       expect(await text(p, 'figure[data-chart="units_by_category"] tbody')).toContain('In no department₹896.00');
       expect(await text(p, '#report-figures')).toMatch(/In no department — items\s*6/);
       // D-057 (batch 14): the margin per department — here the till's items carry no cost, so it says so, never a guess.

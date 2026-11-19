@@ -290,7 +290,8 @@ import { backupVerificationRoutes } from '../../platform/src/backup-verification
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
 import { branchLifecycleRoutes, branchTransitionRoutes } from '../../platform/src/branch-lifecycle';
 import { branchTransitionsAdapter } from './branch-transitions';
-import { documentSourcesAdapter } from './document-sources';
+import { documentSourcesAdapter, documentPrintAdapter } from './document-sources';
+import { documentPrintRoutes } from '../../platform/src/document-print';
 import { NO_APPROVALS } from '../../identity/src/approval-requests';
 import { documentsRoutes } from '../../platform/src/documents';
 import { suspendedBillsRoutes } from '../../pos/src/suspended-bills';
@@ -1975,6 +1976,11 @@ export function buildSurface(deps: {
       ...documentSourcesAdapter({ store, now, ...(deps.numberSeries === undefined ? {} : { numberSeries: deps.numberSeries }) }),
       ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }),
     }),
+    // Batch 18b · R1 / P1 / B2 (M31-FR-02 · WF-03): the print view of an issued purchase order, a goods receipt and a supplier's
+    // statement — read from the same registers the documents are issued from; the page prints it with the browser (A4).
+    ...documentPrintRoutes(store === undefined
+      ? { printView: async () => ({ outcome: 'missing' as const, detail: 'This service holds no records to print.' }) }
+      : documentPrintAdapter({ store, now })),
     // Suspended (parked) bills (M15-FR-01/M12-FR-02) — park/resume/abandon; a recall is a claim, once.
     ...suspendedBillsRoutes(store === undefined ? {
       bills: empty([]), record: () => {}, now,
