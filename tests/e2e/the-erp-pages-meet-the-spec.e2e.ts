@@ -316,9 +316,11 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       expect(await page.evaluate('document.querySelectorAll("#kpis .kpi .kpi-top svg").length')).toBe(4); // an icon on each card
       // what needs you: the number first, then the words; a way in where the person holds one; a figure the box lacks says why
       const rows = await texts(page, '#attention li');
-      expect(rows[0]).toMatch(/^1 approvals you can clear\s*Action neededசெயல்பாடு தேவை\s*Open$/); // batch 12: the orange pill, both languages
-      expect(rows).toContainEqual(expect.stringMatching(/^4 batches expiring soon\s*Action neededசெயல்பாடு தேவை$/)); // no "Open": this rail has no Expiry screen
-      expect(rows).toContainEqual(expect.stringMatching(/^1 counts awaiting approval\s*Action neededசெயல்பாடு தேவை\s*Open$/)); // the rail has Stock counts
+      // batch 12: the orange pill — batch 17 · OB-855: in ONE language, never the Tamil beside it
+      expect(rows[0]).toMatch(/^1 approvals you can clear\s*Action needed\s*Open$/);
+      expect(rows).toContainEqual(expect.stringMatching(/^4 batches expiring soon\s*Action needed$/)); // no "Open": this rail has no Expiry screen
+      expect(rows).toContainEqual(expect.stringMatching(/^1 counts awaiting approval\s*Action needed\s*Open$/)); // the rail has Stock counts
+      expect(rows.some((r) => /[\u0B80-\u0BFF]/.test(r))).toBe(false);
       expect(rows.some((r) => /recall/i.test(r))).toBe(false); // zero recalls is not a worry
       expect(await page.getAttribute('#attention li a.go', 'href')).toMatch(/\/counts\/$/);
       // purchase to shelf: four steps, one honestly not known with the reason

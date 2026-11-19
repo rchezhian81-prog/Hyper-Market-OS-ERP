@@ -454,6 +454,9 @@ function sameOrigin(req: IncomingMessage): boolean {
   try { return new URL(origin).host === req.headers['host']; } catch { return false; }
 }
 
+/** Batch 17 (D-071): the store computer's own status on the screens' socket (same origin as every office page). */
+export const BOX_STATUS_PATH = '/sre-box/sync-status';
+
 export async function startScreenServer(input: {
   readonly port: number;
   /** The address to bind — `SCREEN_HOST` (loopback) unless a deployment names another (see `SCREEN_HOST`). */
@@ -469,6 +472,13 @@ export async function startScreenServer(input: {
    * box serves no lane socket, in which case the screen keeps its local, read-only behaviour.
    */
   readonly laneWriteBase?: string;
+  /**
+   * Batch 17 (D-071): the box's own sync status, answered on THIS socket too (`GET /sre-box/sync-status`, same origin) so an
+   * office page's badge hears the store computer even where the browser cannot reach the till's socket on its other port —
+   * and then says plainly that the till's socket is what did not answer. Counts and times only, as on the lane socket; never
+   * through the remote door and never behind the hosted front. Absent: the route is not served.
+   */
+  readonly syncStatus?: () => unknown;
   /** Which LANE this box is (`EDGE_LANE_ID`, SP-4b · F09) — told to the served till so every sale names it. */
   readonly laneId?: string;
   /** B13 (OB-138): the hallmark HUIDs this box has sold — told to the served till with its lane, per request. */
@@ -942,6 +952,18 @@ export async function startScreenServer(input: {
         res.end(req.method === 'HEAD' ? undefined : font);
         return;
       }
+      // Batch 17 (D-071): the store computer's own status, same origin — only on the shop PC's own loopback socket.
+      if (doorPath === BOX_STATUS_PATH) {
+        req.resume();
+        if (input.syncStatus === undefined || remote !== undefined || input.trustForwardedUser === true) { send(res, 404, 'text/plain; charset=utf-8', 'not served here'); return; }
+        if (req.method !== 'GET') { send(res, 405, 'text/plain; charset=utf-8', 'read with GET'); return; }
+        if (typeof req.headers.origin === 'string' && req.headers.origin !== '' && !sameOrigin(req)) { send(res, 403, 'text/plain; charset=utf-8', 'refused: not from a page this store computer served'); return; }
+        let status: unknown;
+        try { status = input.syncStatus(); } catch (e) { send(res, 500, 'application/json; charset=utf-8', JSON.stringify({ error: e instanceof Error ? e.message : String(e) })); return; }
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+        res.end(JSON.stringify(status));
+        return;
+      }
       // OB-388: Sign out on a box with the head-office link also ends the person's head-office session here.
       if (office === undefined && link !== undefined && req.method === 'POST' && doorPath === '/office/sign-out') {
         if (!sameOrigin(req)) { send(res, 403, 'text/plain; charset=utf-8', 'refused: not from a page this store computer served'); return; }
@@ -1267,6 +1289,8 @@ export async function startScreenServer(input: {
           // (a local preview) when it is absent.
           // Never through the remote door: the day close is done in the shop (and the phone could not reach it anyway).
           ...(input.laneWriteBase === undefined || remote !== undefined ? {} : { laneWriteBase: input.laneWriteBase }),
+          // Batch 17 (D-071): where the page asks the store computer itself how it is (same origin), beside the till's socket.
+          ...(input.syncStatus === undefined || remote !== undefined || input.trustForwardedUser === true ? {} : { sreBoxStatusPath: BOX_STATUS_PATH }),
         },
       );
       // The Sign out bar goes on every office page, drawn by the box, just before the page's own end.

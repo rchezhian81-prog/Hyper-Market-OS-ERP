@@ -67,7 +67,12 @@ describe.skipIf(!HAVE_BROWSER)('the office screens ask for the person\'s own PIN
     expect(new URL(page.url()).pathname).toBe('/manager/');
     await page.locator('#sre-office-bar').waitFor({ state: 'visible', timeout: 15_000 });
     expect(await page.locator('#sre-office-bar span').innerText()).toBe('Manager Person');
-    expect(await page.locator('#sre-office-sign-out').innerText()).toBe('Sign out · வெளியேறு');
+    // Batch 17 · OB-855: one language at a time — "Sign out" in English; pressing தமிழ் says "வெளியேறு" alone, no English.
+    expect(await page.locator('#sre-office-sign-out').innerText()).toBe('Sign out');
+    await page.click('#lang');
+    await page.waitForFunction('document.getElementById("sre-office-sign-out").textContent === "வெளியேறு"');
+    await page.click('#lang');
+    await page.waitForFunction('document.getElementById("sre-office-sign-out").textContent === "Sign out"');
     expect(await page.evaluate('window.managerData && window.managerData.userId')).toBe('u-manager');
 
     await Promise.all([page.waitForLoadState('load'), page.click('#sre-office-sign-out')]);

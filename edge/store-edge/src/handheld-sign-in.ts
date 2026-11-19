@@ -354,7 +354,8 @@ export function phoneHolderStrip(input: { readonly displayName: string; readonly
   const left = input.expiresAt === undefined ? null : signInLeftWords(Date.parse(input.expiresAt) - Date.parse(input.now ?? new Date().toISOString()));
   return `${STRIP_STYLE}<form method="post" action="${escapeHtml(input.signOutAction)}" data-phone-holder>`
     + `<span class="hh-chip hh-who sre-with-icon"><span data-sre-icon="user-round" aria-hidden="true"></span><span>Signed in: <strong>${escapeHtml(input.displayName)}</strong></span></span>`
-    + `<button type="submit" class="hh-out">Sign out · வெளியேறு</button>`
+    // Batch 17 · OB-855: one language at a time — the shared stylesheet shows the part that matches the screen's language.
+    + `<button type="submit" class="hh-out"><span data-one-lang="en">Sign out</span><span data-one-lang="ta" lang="ta">வெளியேறு</span></button>`
     + (left === null ? '' : `<div class="hh-chip hh-left sre-with-icon${left.ended ? ' is-ended' : ''}"><span data-sre-icon="clock" aria-hidden="true"></span><span data-sre-icon="lock" aria-hidden="true"></span><p data-sign-in-left${left.ended ? ' data-ended role="alert"' : ''} style="${left.ended ? ENDED_STYLE : LEFT_STYLE}">${escapeHtml(left.text)}</p></div>${signInLeftScript(lockLiteral(input.lockTo))}`)
     + `</form>`;
 }

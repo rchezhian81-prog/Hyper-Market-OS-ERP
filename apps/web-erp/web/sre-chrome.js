@@ -31,6 +31,8 @@
       staleShell: 'No connection to the store computer. This page is what it was last told, at',
       notConnected: 'Not connected to the store computer', checkingBox: 'Checking the store computer…',
       connected: 'Connected', boxNotAnswering: 'Store computer not answering',
+      tillNotRunning: 'Till service not running on this computer', tillLinkDown: 'Store computer on, but its till service did not answer this page',
+      boxSlow: 'Store computer slow to answer — checking again', boxRefused: 'Store computer refused the check ({n})',
       noCloud: 'Head office cannot be reached — working from the store computer',
       cloudLoginRefused: 'This store computer\'s head office login needs renewing', cloudNotSetUp: 'No head office link on this store computer', cloudUnknown: 'Head office not checked yet',
       lastContact: 'last contact', switchLanguage: 'Switch language', otherLanguage: 'தமிழ்',
@@ -55,6 +57,8 @@
       staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
       notConnected: 'கடை கணினியுடன் இணைப்பு இல்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
       connected: 'இணைப்பில்', boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை',
+      tillNotRunning: 'இந்தக் கணினியில் விற்பனை முனையச் சேவை இயங்கவில்லை', tillLinkDown: 'கடைக் கணினி இயங்குகிறது, ஆனால் அதன் விற்பனை முனையச் சேவை இந்தப் பக்கத்துக்குப் பதிலளிக்கவில்லை',
+      boxSlow: 'கடைக் கணினி பதில் தர தாமதமாகிறது — மீண்டும் சரிபார்க்கிறது', boxRefused: 'கடைக் கணினி சரிபார்ப்பை மறுத்தது ({n})',
       noCloud: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — கடை கணினியிலிருந்து வேலை',
       cloudLoginRefused: 'இந்தக் கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'இந்தக் கடை கணினியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
       lastContact: 'கடைசித் தொடர்பு', switchLanguage: 'மொழியை மாற்று', otherLanguage: 'English',
@@ -144,7 +148,15 @@
     if (window.sreBlind === true) { dot.classList.add('unknown'); text.textContent = t('notConnected'); return; }
     if (laneBase() === null) { dot.classList.add('idle'); text.textContent = t('notConnected'); return; }
     if (!box.asked) { dot.classList.add('idle'); text.textContent = t('checkingBox'); return; }
-    if (!box.reachable) { dot.classList.add('error'); text.textContent = t('boxNotAnswering'); return; }
+    // Batch 17 (D-071): what did not answer, in plain words — the till service not running at all, the till's socket not
+    // answering while the store computer is on, a refusal with its code, or only a slow answer (amber, asked again).
+    if (!box.reachable) {
+      if (box.why === 'slow') { dot.classList.add('degraded'); text.textContent = t('boxSlow'); return; }
+      dot.classList.add('error');
+      text.textContent = box.why === 'down' ? t('tillNotRunning') : box.why === 'refused' ? t('boxRefused').replace('{n}', String(box.code ?? '')) : t('boxNotAnswering');
+      return;
+    }
+    if (box.laneDown) { dot.classList.add('error'); text.textContent = t('tillLinkDown'); return; }
     const s = box.status;
     const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
     if (s.cloud === 'online') { text.textContent = `${t('connected')}${when}`; return; }
@@ -152,18 +164,37 @@
     text.textContent = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'login_refused' ? t('cloudLoginRefused') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
   }
 
+  /** One status read: its answer, or why there was none — 'slow' (no answer in time), 'down' (no connection), 'refused' (a code). */
+  async function askStatus(url) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const res = await fetch(url, { cache: 'no-store', signal: ctl.signal });
+      if (!res.ok) return { ok: false, why: 'refused', code: res.status };
+      return { ok: true, status: await res.json() };
+    } catch (e) {
+      return { ok: false, why: e && e.name === 'AbortError' ? 'slow' : 'down' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  let slowChecks = 0;
   async function refreshBadge() {
     const base = laneBase();
     if (base === null) { paintBadge(); return; }
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 3000);
-    try {
-      const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
-      box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
-    } catch {
-      box = { asked: true, reachable: false, status: null };
-    } finally {
-      clearTimeout(timer);
+    // Batch 17 (D-071): the till's socket (another port on this computer) AND, where the store computer serves it, its own
+    // answer on this page's address — so "not answering" is said only when it is true, and says which part did not answer.
+    const own = typeof window.sreBoxStatusPath === 'string' && window.sreBoxStatusPath.startsWith('/') ? window.sreBoxStatusPath : null;
+    const [lane, mine] = await Promise.all([askStatus(`${base}/lane/sync-status`), own === null ? Promise.resolve(null) : askStatus(own)]);
+    if (lane.ok) { slowChecks = 0; box = { asked: true, reachable: true, status: lane.status }; }
+    else if (mine !== null && mine.ok) { slowChecks = 0; box = { asked: true, reachable: true, status: mine.status, laneDown: lane.why }; }
+    else {
+      const why = mine !== null && mine.why !== 'slow' ? mine.why : lane.why;
+      const code = why === 'refused' ? (mine !== null && mine.why === 'refused' ? mine.code : lane.code) : undefined;
+      // one slow answer is not "not answering": the last answer stands, and two in a row are said as slow (amber)
+      if (why === 'slow' && slowChecks === 0 && box.reachable) { slowChecks += 1; return; }
+      slowChecks += why === 'slow' ? 1 : 0;
+      box = { asked: true, reachable: false, status: null, why, ...(code === undefined ? {} : { code }) };
     }
     paintBadge();
     paintStoreComputer();
@@ -507,6 +538,8 @@
     if (menuMark) button.replaceChildren(menuMark, document.createTextNode(t('screens')));
     else button.textContent = `☰ ${t('screens')}`;
     panel.setAttribute('aria-label', t('screens'));
+    // Batch 17 (D-070): where the person had scrolled the list to — this drawing's, or the last page's on this device.
+    const keptScroll = panel.querySelector('.groups')?.scrollTop ?? railScroll();
     panel.replaceChildren(brand());
     const groups = Array.isArray(nav.groups) ? nav.groups : [];
     if (groups.length === 0) {
@@ -538,12 +571,13 @@
     const opened = rememberedObject('open');
     // D-027 / D-007: a person with a daily list sees THAT list open and every other screen they may open under one
     // closed "More" — nothing removed, no permission changed (the box still sends every screen the role opens). "More"
-    // opens itself only when the page being shown lives in it, or while a search finds something in it; it is not
-    // remembered, so the short list is what every visit starts from.
+    // opens itself when the page being shown lives in it, or while a search finds something in it.
+    // Batch 17 (D-070, owner 19 Nov 2026: "left side panel automatically closed and comes to the top"): once the person
+    // opens "More" it STAYS open on every page they go to, on this device, until they close it — as each workspace does.
     const more = groups.some((g) => g.key === 'Daily') && groups.length > 1 ? moreSection() : null;
     if (more) {
       const inMore = groups.some((g) => g.key !== 'Daily' && (g.items ?? []).some((item) => isCurrent(item)));
-      setMoreOpen(more.section, inMore);
+      setMoreOpen(more.section, inMore || opened.More === true);
     }
     for (const [index, group] of groups.entries()) {
       const key = typeof group.key === 'string' ? group.key : `g${index}`;
@@ -601,8 +635,34 @@
     }
     filterMenu(byId('sre-find')?.value ?? '');
     layout();
+    // Batch 17 (D-070): the list stays where the person left it, and the page being shown is in view — moved only as far as
+    // it takes to show it, never back to the top.
+    scroller.scrollTop = keptScroll;
+    scroller.addEventListener('scroll', () => { rememberRailScroll(scroller.scrollTop); }, { passive: true });
     const current = scroller.querySelector('.group-section a[aria-current="page"]');
-    if (current && typeof current.scrollIntoView === 'function') current.scrollIntoView({ block: 'nearest' });
+    if (current && current.offsetParent !== null) {
+      const top = current.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      const bottom = top + current.getBoundingClientRect().height;
+      if (top < 0 || bottom > scroller.clientHeight) {
+        scroller.scrollTop = Math.max(0, scroller.scrollTop + (top < 0 ? top - 8 : bottom - scroller.clientHeight + 8));
+      }
+    }
+    if (scroller.offsetParent !== null) rememberRailScroll(scroller.scrollTop); // a closed drawer (a phone) keeps the last place
+  }
+  // Batch 17 (D-070): the rail's scroll position, per person on this device (a convenience: none kept means the top).
+  function railScroll() {
+    try { const v = Number(window.localStorage.getItem(storeKey('scroll'))); return Number.isFinite(v) && v > 0 ? v : 0; } catch { return 0; }
+  }
+  let scrollSaveQueued = false;
+  function rememberRailScroll(top) {
+    if (scrollSaveQueued) return;
+    scrollSaveQueued = true;
+    setTimeout(() => {
+      scrollSaveQueued = false;
+      const list = byId('sre-menu')?.querySelector('.groups');
+      if (list && list.offsetParent === null) return;
+      try { window.localStorage.setItem(storeKey('scroll'), String(Math.round(list?.scrollTop ?? top))); } catch { /* a convenience only */ }
+    }, 120);
   }
 
   // ── W1: the rail's own parts ─────────────────────────────────────────────────────────────────────────────────
@@ -613,10 +673,8 @@
     const shape = itemIcon(item);
     if (shape) link.append(shape);
     link.append(document.createTextNode(word(item.label)));
-    // Batch 12 (the owner's look): the screen's name in the other language under it, drawn by the stylesheet from this
-    // attribute — the link's own text stays the one name (what a search, a screen reader and the tests read).
-    const other = item.label && typeof item.label === 'object' ? item.label[lang() === 'ta' ? 'en' : 'ta'] : null;
-    if (main && typeof other === 'string' && other !== '' && other !== word(item.label)) { link.dataset.twin = other; link.classList.add('sre-twin'); }
+    // Batch 17 · OB-855 (owner, 19 Nov 2026): ONE language at a time. The row says the screen's name in the reader's language
+    // only — batch 12's second line in the other language is gone; the Tamil name is shown when Tamil is chosen.
     if (main && isCurrent(item)) link.setAttribute('aria-current', 'page');
     if (!main) link.className = 'sre-quick-link';
     return link;
@@ -654,7 +712,12 @@
     body.id = 'sre-more-body';
     body.className = 'sre-more-body';
     toggle.addEventListener('click', () => {
-      setMoreOpen(section, toggle.getAttribute('aria-expanded') !== 'true');
+      const nowOpen = toggle.getAttribute('aria-expanded') !== 'true';
+      // Batch 17 (D-070): remembered, like a workspace heading — it stays as the person left it on the next page.
+      const all = rememberedObject('open');
+      all.More = nowOpen;
+      remember('open', all);
+      setMoreOpen(section, nowOpen);
       filterMenu(byId('sre-find')?.value ?? '');
     });
     title.append(toggle);
@@ -2788,6 +2851,36 @@
 
   function repaint() { paintToggle(); paintHeading(); paintWhoAmI(); paintStale(); paintStoreCopy(); paintSample(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); repaintAdapters(); paintAnatomy(); }
 
+  // ── Batch 17 · OB-855 (owner, 19 Nov 2026): ONE language at a time, by choice ─────────────────────────────────────
+  // Every office page opens in English. The language switch shows the page in Tamil only; the choice is remembered on this
+  // device (for the person signed in, and for the device as a whole) and the next page opens in it. A convenience kept in
+  // this browser only: an empty or refused store simply means English.
+  const LANG_KEY = 'sre.lang';
+  const langKeyOf = () => { const who = navigation()?.userId ?? directory()?.me?.userId; return typeof who === 'string' && who !== '' ? `${LANG_KEY}.${who}` : null; };
+  function chosenLanguage() {
+    try {
+      const mine = langKeyOf();
+      const v = (mine === null ? null : window.localStorage.getItem(mine)) ?? window.localStorage.getItem(LANG_KEY);
+      return v === 'ta' || v === 'en' ? v : null;
+    } catch { return null; }
+  }
+  function rememberLanguage(v) {
+    try { window.localStorage.setItem(LANG_KEY, v); const mine = langKeyOf(); if (mine !== null) window.localStorage.setItem(mine, v); } catch { /* a convenience only */ }
+  }
+  // Only a person's own press is remembered (the chrome's own press below is not), after the page has switched.
+  document.addEventListener('click', (e) => {
+    if (!e.isTrusted || !(e.target instanceof Element) || e.target.closest('#lang') === null) return;
+    setTimeout(() => rememberLanguage(lang()), 0);
+  });
+  function applyChosenLanguage(again) {
+    const want = chosenLanguage();
+    if (want === null || want === lang()) return;
+    const toggle = byId('lang');
+    if (toggle && !toggle.disabled) toggle.click(); // the page's own switch, so the page repaints its own words
+    // a page that wires its switch only once its data has arrived is asked again when it has loaded
+    if (lang() !== want && again) window.addEventListener('load', () => applyChosenLanguage(false), { once: true });
+  }
+
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   new MutationObserver(repaintTables).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   repaint();
@@ -2805,6 +2898,7 @@
   const tabsEl = byId('tabs');
   if (tabsEl) new MutationObserver(scheduleAnatomy).observe(tabsEl, { childList: true, subtree: true });
   openAskedTab();
+  applyChosenLanguage(document.readyState !== 'complete');
   void refreshBadge();
   setInterval(() => { void refreshBadge(); }, 10_000);
 
