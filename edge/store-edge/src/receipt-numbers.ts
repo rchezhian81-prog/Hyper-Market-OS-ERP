@@ -375,7 +375,7 @@ const fallbackWords = (because: FallbackReason, prefix: string, detail: string):
     case 'financial_year_series_not_issued':
       return `Bill numbers start again every financial year, and head office has not issued this till its prefix for ${detail}, so ${own} Tell the manager to issue this till's prefix for ${detail}.`;
     case 'till_code_not_issued':
-      return `Head office has not given this till its lane code (L01, L02, …) yet, so this store computer numbers its bills under a temporary range ${prefix} that has never been used, so they never clash with another bill. Tell the manager to register this till on the Tills & devices page.`;
+      return `Head office has not given this till its lane code (L01, L02, …) yet, so this store computer numbers its bills under a temporary range ${prefix} that has never been used, so they never clash with another bill. Head office gives it its code by itself the next time this store computer reaches head office (OB-862). If this stays, tell the manager to register this till on the Tills & devices page.`;
     case 'restored_from_backup':
       return `This store computer's data was restored from a backup, or may have been (${detail}), so a bill number it gave after that backup could be given again. To never repeat one, this store computer numbers its bills under a brand-new store prefix ${prefix} that has never been used, so they never clash with another bill. It goes back to the till's own prefix, above the last bill head office holds, as soon as head office's latest setup arrives. Tell the manager.`;
   }

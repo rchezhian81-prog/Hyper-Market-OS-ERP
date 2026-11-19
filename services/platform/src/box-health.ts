@@ -129,6 +129,8 @@ export interface BoxHealthRecord {
    * lists (`believedRecord`), so a number it does not hold can still be named "never received".
    */
   readonly queueContradiction?: string;
+  /** OB-862 A: the tills this store computer said it serves (absent on an older box). */
+  readonly lanes?: readonly string[];
 }
 
 /**
@@ -251,6 +253,8 @@ export interface BillNumberFinding {
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** OB-862 A: a till lane a store computer reports — a till's own id, or a handheld queue till's `device:<id>` (ADR-0028). */
+const REPORTED_LANE = /^(device:)?[A-Za-z0-9._-]{1,40}$/;
 const isIso = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) && !Number.isNaN(Date.parse(v));
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
 const isWord = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim() !== '' && v.length <= max;
@@ -261,6 +265,7 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
   {
     observedAt: string; disk: BoxDisk; queue: { unsent: number; deadLettered: number }; tills: TillDeviceReport[]; clockAheadCorrected: boolean;
     receiptNumbersIssued?: IssuedReport[]; billNumbering?: BillNumberingState; zoneCheck?: BoxZoneCheck; clockCheck?: BoxClockCheck;
+    lanes?: string[];
   } | { problems: string[] } {
   const b = isObj(body) ? body : {};
   const problems: string[] = [];
@@ -431,6 +436,15 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
       };
     }
   }
+  // OB-862 A: the tills this store computer serves (its own lane and every lane that reported to it) — optional; an older
+  // box does not say. Head office gives each one it has not coded yet its lane code (L01, L02, …), once, never again.
+  const rawLanes = b['lanes'];
+  let lanes: string[] | undefined;
+  if (rawLanes !== undefined) {
+    if (!Array.isArray(rawLanes) || rawLanes.length > 50 || !rawLanes.every((l: unknown) => typeof l === 'string' && REPORTED_LANE.test(l))) {
+      problems.push('lanes must be a list (at most 50) of till lane ids (letters, digits, dot, dash, underscore, colon; 1–48 characters)');
+    } else lanes = [...new Set(rawLanes as string[])];
+  }
   if (problems.length > 0) return { problems };
   const observedRaw = b['observedAt'] as string;
   const observedAt = earlier(observedRaw, receivedAt);
@@ -448,6 +462,7 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
     ...(billNumbering === undefined ? {} : { billNumbering }),
     ...(zone === undefined ? {} : { zoneCheck: zone }),
     ...(clock === undefined ? {} : { clockCheck: clock }),
+    ...(lanes === undefined ? {} : { lanes }),
   };
 }
 
@@ -4144,6 +4159,12 @@ export interface BoxHealthDeps {
   readonly refusedAtDoorLines?: (tenantId: string) => Promise<readonly DoorRefusalLine[]>;
   /** Round 33 · OB-121: the tills head office registered at each store (a lane registered for a computer must be one, when known). */
   readonly registeredTills?: (tenantId: string) => Promise<readonly { readonly storeId: string; readonly tillId: string }[]>;
+  /**
+   * OB-862 A (owner, 19 Nov 2026, in writing; the CA confirms): give each till this store computer reports, and that has no
+   * lane code yet at its store, the next free code (L01, L02, … ; a handheld queue till Q01, …) — once, audited, never
+   * reused and never changed. Answers the codes given now. Absent: nothing is given (a person registers the till instead).
+   */
+  readonly assignLaneCodes?: (tenantId: string, a: { readonly storeId: string; readonly lanes: readonly string[]; readonly by: string; readonly at: string }) => Promise<Readonly<Record<string, string>>>;
 }
 
 /** Verifier r23 NEW-3 · OB-91: one grant through which a person may manage alerts (see `BoxHealthDeps.alertAuthorityOf`). */
@@ -4387,13 +4408,20 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
         ...(read.billNumbering === undefined ? {} : { billNumbering: read.billNumbering }),
         ...(read.zoneCheck === undefined ? {} : { zoneCheck: read.zoneCheck }),
         ...(read.clockCheck === undefined ? {} : { clockCheck: read.clockCheck }), // §31.1 · OB-403
+        ...(read.lanes === undefined ? {} : { lanes: read.lanes }), // OB-862 A
       };
       // The reply is what head office KEPT (a re-send answers the first record, never an unsaved copy).
       const kept = (await deps.record(ctx.tenantId, r)) ?? r;
+      // OB-862 A: every till this box serves gets its lane code the first time it is reported — the box's own lane and each
+      // lane whose devices reported to it. A till that already has one keeps it; a code is never given twice.
+      const reportedLanes = [...new Set([...(read.lanes ?? []), ...read.tills.map((t) => t.laneId)])];
+      const laneCodesGiven = reportedLanes.length === 0 || deps.assignLaneCodes === undefined ? {}
+        : await deps.assignLaneCodes(ctx.tenantId, { storeId, lanes: reportedLanes, by: ctx.userId, at: receivedAt });
       return {
         status: 200,
         body: {
           recorded: kept, canRecordSales: boxCanRecordSales(kept.disk),
+          ...(Object.keys(laneCodesGiven).length === 0 ? {} : { laneCodesGiven }),
           ...(judged === undefined || judged.notFolded.length === 0 ? {} : {
             refusedAtTheDoor: {
               prefixes: judged.notFolded.slice(0, DOOR_REFUSAL_EXAMPLES_MAX).map((x) => x.prefix), count: judged.notFolded.length,
