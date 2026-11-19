@@ -689,6 +689,9 @@ a.sre-summary-card:hover { background: var(--hover); box-shadow: var(--shadow-sm
 .sre-datatable-columns legend { padding: 0 4px; font-size: 14px; font-weight: 600; color: var(--muted); }
 .sre-datatable-columns label.sre-check { display: flex; align-items: center; gap: 8px; width: auto; height: auto; min-height: var(--tap); font-size: 15px; color: var(--ink); }
 .sre-datatable-columns label.sre-check > input { width: 20px; height: 20px; accent-color: var(--accent); }
+/* Batch 18b · B1: the list's one download, and what it says afterwards (rows written, personal data removed, the record). */
+.sre-datatable-download-status { flex: 1 1 100%; margin: 0; font-size: 14px; color: var(--muted); }
+.sre-datatable-download-status[hidden] { display: none; }
 .sre-register th.sre-end, .sre-register td.sre-end { text-align: right; }
 .sre-register td.sre-unknown { color: var(--degraded); font-weight: 600; }
 .sre-sort { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); margin: -10px -12px; padding: 0 12px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
@@ -955,3 +958,4 @@ html:not([lang="ta"]) [data-one-lang="ta"], html[lang="ta"] [data-one-lang="en"]
 .w5-section > h2 { margin: 0 0 4px; font-size: 22px; line-height: 1.25; font-weight: 650; }
 .w5-section > .lead { margin: 0 0 12px; color: var(--muted); }
 .w5-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+

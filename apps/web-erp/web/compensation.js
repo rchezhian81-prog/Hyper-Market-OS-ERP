@@ -91,7 +91,7 @@ function paintCases() {
       { key: 'customerRef', label: both('customer'), sort: 'text', value: (c) => customerName(c.customerRef) },
       { key: 'kind', label: both('kindCol'), sort: 'text', value: (c) => (api.caseKind(lang, c.kind)) },
       { key: 'state', label: both('state'), sort: 'text', value: (c) => c.state, render: (c) => stateChip(o, c.state) },
-      { key: 'summary', label: both('summary') },
+      { key: 'summary', label: both('summary'), personal: true },
       { key: 'openedAt', label: both('opened'), sort: 'text', value: (c) => shopTime(c.openedAt) },
       { key: 'choose', label: both('choose'), sort: false, render: (c) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-quiet'; b.dataset.choose = c.caseId; b.textContent = t('choose'); b.addEventListener('click', () => { void choose(c); }); return b; } },
     ],

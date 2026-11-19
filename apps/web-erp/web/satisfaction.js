@@ -84,7 +84,7 @@ function paintCases() {
       { key: 'customerRef', label: both('customer'), sort: 'text', value: (c) => customerName(c.customerRef) },
       { key: 'kind', label: both('kindCol'), sort: 'text', value: (c) => t(`kind_${c.kind}`) },
       { key: 'state', label: both('state'), sort: 'text', value: (c) => c.state, render: (c) => stateChip(o, c) },
-      { key: 'summary', label: both('summary') },
+      { key: 'summary', label: both('summary'), personal: true },
       { key: 'resolvedAt', label: both('resolvedCol'), sort: 'text', value: (c) => (c.resolvedAt ? shopTime(c.resolvedAt) : null) },
       { key: 'ratable', label: both('ratable'), sort: 'text', value: (c) => (c.ratable ? t('yes') : t('notRatable')), render: (c) => o.chip(c.ratable ? 'ok' : 'pending', c.ratable ? t('yes') : t('notRatable')) },
       { key: 'choose', label: both('choose'), sort: false, render: (c) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-quiet'; b.dataset.choose = c.caseId; b.textContent = t('choose'); b.addEventListener('click', () => { choose(c); }); return b; } },

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1748 | 1007 | 1007 | 196 | 453 |
+| 13 | 1752 | 1008 | 1008 | 196 | 453 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -244,6 +244,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/export/:domain` | `export.read` | core | yes |
 | GET | `/v1/export/coverage` | `export.read` | core | — |
 | GET | `/v1/exports` | `export.read` | core | — |
+| POST | `/v1/exports/screen-lists` | `identity.self.read` | core | yes |
 | POST | `/v1/import/commit` | `purchase.import.record` | core | yes |
 | GET | `/v1/import/commits` | `purchase.import.read` | core | — |
 | GET | `/v1/import/commits/:jobId` | `purchase.import.read` | core | — |
@@ -1407,6 +1408,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/documents/:documentId/disposal` | `document.retention.dispose` | core | yes |
 | GET | `/v1/documents/issued/:documentId` | `document.template.read` | core | — |
 | POST | `/v1/documents/issued/:documentId/reprint` | `document.issue` | core | yes |
+| GET | `/v1/documents/print/goods-receipts/:grnId` | `inventory.goodsreceipt.read` | core | — |
+| GET | `/v1/documents/print/purchase-orders/:poId` | `purchase.commitment.read` | core | — |
+| GET | `/v1/documents/print/supplier-statements/:supplierId` | `purchase.commitment.read` | core | — |
 | GET | `/v1/documents/retention/documents` | `document.template.read` | core | — |
 | GET | `/v1/documents/retention/templates` | `document.template.read` | core | — |
 | GET | `/v1/documents/templates/:templateId/current` | `document.template.read` | core | — |
