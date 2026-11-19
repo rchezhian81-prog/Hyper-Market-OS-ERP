@@ -71,6 +71,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner decision needed (security, batched):** anyone who can open a list may download what they see (personal data still removed unless allowed). Options: **A** (as built); **B** only people with the export permission (owner, accountant, CA) may download.
 - **Not done / blocked:** the supplier-statement button has no browser test of its own (its print view is proven in the integration test and the shared sheet in the PO/GRN browser test); the existing Reports "Write this out to a file" button is unchanged (the list download now does that job); a real .xlsx is not made (OB-867).
 
+## Where things stand — 19 November 2026, evening
+- **Merged today:**
+  - batch 17 (#962): one language at a time, the menu stays, form layout, a truthful badge;
+  - batch 18a (#963): the till gets its lane code automatically (OB-862), system pages in one language, Receive MRP and failed-check, search boxes;
+  - batch 18b (#965): Download to Excel, Print PO / GRN / statement, past-period reports, item-wise sales;
+  - batch 18c (#964, carried by #966): reject or send back a PO, return shelf stock to the supplier (RTS1 + SDN), correct a saved GRN (GRC1; OB-875 B lock);
+  - batch 19 (#966): supplier-bill round off (OB-866 B), "Supplier accepted" (OB-879) with optional GST reversal (OB-881 B).
+- **Release:** main's run for 5de02e73 did not publish. The Windows update-and-rollback check failed before its step started (exit -1073741502, STATUS_DLL_INIT_FAILED, a runner start-up fault). The same job passed on #966's head. This session cannot re-run a job, so the next merge to main publishes the store PC release.
+- **Answered today:** OB-860 A, OB-861 A, OB-862 A, OB-866 B, OB-874 C, OB-875 B, OB-876 A, OB-877 A, OB-878 A, OB-881 B.
+- **Owner / accountant, after installing:**
+  - name the "Purchase round off" ledger and check the input-GST mapping on Accounts and Tally names;
+  - the CA confirms OB-845, OB-853, OB-854, OB-862 and OB-875 in writing.
+- **Still open from the missing-options list:**
+  - R5, R6, R7 (search and dates on receipts, attachments, cases × pack);
+  - T1, T2 (cash loan / safe drop, price check);
+  - P3 (supplier search: done in 18a as B3);
+  - S2–S5 (past write-offs, past counts, stockout cost, back-store sharing);
+  - A2 (GST rate filled in from the item), A3 (done in 18b as B2);
+  - O2 (the 18 reports that cannot run yet);
+  - the handheld Receive's MRP and failed-check boxes.
+
 ## Where things stand — 19 November 2026
 - **Batch 17 merged (#962), 19 Nov**: one language at a time (OB-855), the menu stays put, a truthful status badge, one form layout. Store PC release follows from main.
 - **Waiting on the owner (asked 19 Nov):**
