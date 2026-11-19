@@ -231,6 +231,8 @@ describe.skipIf(!HAVE_BROWSER)('WF-16 — the driver collects an online return o
     await page.click('#sheet-cancel');
 
     // RELOAD: the collected one stays collected (the durable queue decides); nothing is sent twice.
+    // batch 17 · OB-855: the language choice is remembered on this device — back to English before the page opens again
+    await page.click('#lang');
     await page.reload({ waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PhoneWindow).routeSession !== undefined, undefined, { timeout: 15_000 });
     await page.waitForSelector(card('RET-1'));

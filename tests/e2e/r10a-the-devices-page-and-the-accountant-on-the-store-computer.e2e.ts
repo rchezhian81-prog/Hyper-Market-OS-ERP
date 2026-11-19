@@ -214,6 +214,8 @@ describe.skipIf(!HAVE_BROWSER)('R10-A: the Devices page\'s handheld-version sect
     await says(page, '#vx-rows li', 'தலைமை அலுவலகம் திரும்பப் பெற்ற பதிப்பு');
 
     // 3 — head office goes down: the section says it could not be reached — the old finding is NOT shown as current.
+    // batch 17 · OB-855: the language choice is remembered on this device — back to English before the page opens again
+    await page.click('#lang');
     await ho.stop();
     await page.goto(`${base()}/fleet/`, { waitUntil: 'load' });
     await says(page, '#vx-text', 'head office could not be reached');
