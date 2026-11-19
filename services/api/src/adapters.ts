@@ -225,6 +225,7 @@ import type { DisplayFundingDeps, DisplayFundingJournal } from '../../finance/sr
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import { applyProposalStep, type ProposalStepRecord } from '../../purchase/src/purchase-order-proposal-steps';
+import type { StoredShelfReturn } from '../../inventory/src/shelf-returns';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
 import { withLandedCost, type StockCostAdjustment } from '../../inventory/src/landed-cost'; // OB-288 P3 (M07-FR-04)
 import type { StoreReplenishmentFacts } from '../../inventory/src/replenishment';
@@ -457,7 +458,7 @@ const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
  * The type goes to the store rather than to a `filter` afterwards. A caller that reads a million
  * events and keeps forty has still read a million.
  */
-async function allOf<T>(
+export async function allOf<T>(
   store: EventStore, tenantId: string, stream: string, type: string,
 ): Promise<readonly T[]> {
   const events = await store.readStream(tenantId, stream, { type });
@@ -1573,7 +1574,7 @@ const MATCH_POLICY_STREAM = streamName(STREAM.purchase, 'match-policy');
 // issued under a number — three tenant-wide registers (a shop has hundreds of suppliers, not hundreds of thousands).
 const SUPPLIERS_STREAM = streamName(STREAM.purchase, 'suppliers');
 const SUPPLIER_PAYMENTS_STREAM = streamName(STREAM.purchase, 'supplier-payments');
-const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
+export const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
 /** U7 · OB-725 — the accountant's decisions on draft credits from accepted supplier claims (append-only; first per credit stands). */
 export const SUPPLIER_CLAIM_CREDITS_STREAM = streamName(STREAM.purchase, 'supplier-claim-credits');
 /** U7 · M24-FR-02 alt — how each disputed (rejected) supplier claim was settled (append-only; first per dispute stands). */
@@ -7347,7 +7348,7 @@ export function writeOffCommittedEntry(tenantId: string, w: StoredWriteOff, occu
 const RECEIPT_POLICY_STREAM = streamName(STREAM.inventory, 'receipt-policy');
 
 /** One inbound movement in the SAME format the inventory adapter uses, so the availability projection folds it as any other (mv-<movementId>). */
-const movementEvent = (tenantId: string, m: Movement) => ({
+export const movementEvent = (tenantId: string, m: Movement) => ({
   stream: STREAM.inventory,
   event: makeEvent({
     id: `mv-${m.movementId}`,
@@ -8816,6 +8817,12 @@ export function supplierAccountAdapter(input: {
     doorDebitNotes: async (tenantId) => doorDebitNotesFrom(await allOf<DoorCheckInForAccount>(input.store, tenantId, streamName(STREAM.inventory, 'dsd-checkins'), 'DsdCheckInRecorded')),
     // U7 · OB-725: only the credits the accountant APPROVED count on the account; a draft or a refused one never does.
     claimCredits: async (tenantId) => approvedClaimCredits(await allOf<ClaimCreditDecision>(input.store, tenantId, SUPPLIER_CLAIM_CREDITS_STREAM, 'SupplierClaimCreditDecided')),
+    // S1 (batch 18c): the debit notes issued for shelf stock returned to a supplier (services/api/src/b18c-adapters.ts).
+    shelfReturnDebitNotes: async (tenantId) => (await allOf<StoredShelfReturn>(input.store, tenantId, streamName(STREAM.inventory, 'shelf-returns'), 'ShelfStockReturnedToSupplier')).map((r) => ({
+      debitNoteRef: r.debitNote.debitNoteRef, number: r.debitNote.number ?? null, supplierId: r.supplierId, returnId: r.returnId,
+      returnNumber: r.documentNumber ?? null, productId: r.productId, quantityMinor: r.quantityMinor, valueMinor: r.debitNote.valueMinor,
+      reason: r.reason, raisedAt: r.at, gstTreatment: 'not_decided' as const, nettedInBalance: false as const,
+    })),
   };
 }
 

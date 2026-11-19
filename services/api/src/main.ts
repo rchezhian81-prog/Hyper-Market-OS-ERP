@@ -172,6 +172,8 @@ import { weighedCostingRoutes } from '../../inventory/src/weighed-costing';
 import { packagingRoutes } from '../../inventory/src/packaging';
 import { wasteRoutes } from '../../inventory/src/waste';
 import { writeOffRoutes } from '../../inventory/src/write-off';
+import { shelfReturnRoutes } from '../../inventory/src/shelf-returns'; // S1 (batch 18c)
+import { shelfReturnsAdapter } from './b18c-adapters'; // S1 (batch 18c)
 import { coldChainRoutes } from '../../inventory/src/cold-chain';
 import { expiryRoutes } from '../../inventory/src/expiry';
 import { lotTraceRoutes } from '../../inventory/src/lot-trace';
@@ -1303,6 +1305,9 @@ export function buildSurface(deps: {
       writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {},
       ownersOfStockAt: () => [], now,
     } : { ...writeOffAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze }),
+    // S1 (batch 18c · OB-872): expired, near-expiry or damaged shelf stock goes back to the supplier — RTS number, ledger
+    // movement, issued SDN debit note, e-way-bill rule, and the same approval as a write-off of that value.
+    ...(store === undefined ? [] : shelfReturnRoutes({ ...shelfReturnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze })),
     ...calendared(productionRoutes)(store === undefined ? { // OB-607: USE BY on the shop's clock
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},
       onHand: empty(0), priorConsumption: empty({}),

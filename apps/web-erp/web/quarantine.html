@@ -62,6 +62,25 @@
         <button id="hold" type="button" class="sre-btn sre-btn-primary">Put in quarantine</button>
         <p class="status" id="new-status" role="status" aria-live="polite"></p>
       </section>
+      <!-- S1 (batch 18c · OB-872): expired, near-expiry or damaged shelf stock goes back to the supplier (shelf-return.js). -->
+      <section aria-labelledby="rts-h" id="return-section" hidden>
+        <h3 id="rts-h">Return to supplier</h3>
+        <p class="lede" id="rts-lede"></p>
+        <form id="rts-form" class="row" onsubmit="return false">
+          <label class="f" for="rts-product"><span id="rts-l-product"></span><input id="rts-product" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="rts-place"><span id="rts-l-place"></span><input id="rts-place" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="rts-batch"><span id="rts-l-batch"></span><input id="rts-batch" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="rts-qty"><span id="rts-l-qty"></span><input id="rts-qty" class="sre-input" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" /></label>
+          <label class="f" for="rts-supplier"><span id="rts-l-supplier"></span><select id="rts-supplier" class="sre-input"></select></label>
+          <label class="f" for="rts-reason"><span id="rts-l-reason"></span><select id="rts-reason" class="sre-input"></select></label>
+          <label class="f" for="rts-note"><span id="rts-l-note"></span><input id="rts-note" class="sre-input" autocomplete="off" maxlength="300" /></label>
+          <label class="f" for="rts-value"><span id="rts-l-value"></span><input id="rts-value" class="sre-input" type="number" min="0" step="0.01" autocomplete="off" /></label>
+        </form>
+        <div class="row"><button id="rts-send" type="button" class="sre-btn sre-btn-primary"></button><button id="rts-ask" type="button" class="sre-btn sre-btn-secondary" hidden></button></div>
+        <p class="status" id="rts-status" role="status" aria-live="polite"></p>
+        <h3 id="rts-list-h"></h3>
+        <ul id="rts-list" class="meta"></ul>
+      </section>
       <section aria-labelledby="holds-h" id="holds-section">
         <h3 id="holds-h">Batches on quality hold</h3>
         <p class="lede" id="holds-lede"></p>
@@ -81,6 +100,7 @@
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script type="module" src="./quarantine.js"></script>
+    <script type="module" src="./shelf-return.js"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

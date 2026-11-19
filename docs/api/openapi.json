@@ -63239,6 +63239,144 @@
         }
       }
     },
+    "/v1/inventory/shelf-returns": {
+      "get": {
+        "operationId": "getInventoryShelfReturns",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryShelfReturnsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/shelf-returns/{returnId}": {
+      "post": {
+        "operationId": "postInventoryShelfReturnsByReturnId",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.movement.append",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "returnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInventoryShelfReturnsByReturnIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryShelfReturnsByReturnIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryShelfReturnsByReturnIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.movement.append\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/stockout-impact": {
       "post": {
         "operationId": "postInventoryStockoutImpact",
@@ -150079,6 +150217,31 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/sales-history.ts"
       },
+      "GetInventoryShelfReturnsReply": {
+        "type": "object",
+        "required": [
+          "returns",
+          "count",
+          "asAt"
+        ],
+        "properties": {
+          "returns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoredShelfReturn"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/shelf-returns.ts"
+      },
       "GetInventoryValuationReply": {
         "type": "object",
         "required": [
@@ -222583,6 +222746,106 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/warehouse-synced.ts"
+      },
+      "PostInventoryShelfReturnsByReturnIdReply200": {
+        "type": "object",
+        "required": [
+          "shelfReturn",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "shelfReturn": {
+            "$ref": "#/components/schemas/StoredShelfReturn"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/shelf-returns.ts"
+      },
+      "PostInventoryShelfReturnsByReturnIdReply201": {
+        "type": "object",
+        "required": [
+          "shelfReturn"
+        ],
+        "properties": {
+          "shelfReturn": {
+            "$ref": "#/components/schemas/StoredShelfReturn"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/shelf-returns.ts"
+      },
+      "PostInventoryShelfReturnsByReturnIdRequest": {
+        "type": "object",
+        "required": [
+          "locationId",
+          "productId",
+          "qty",
+          "reason",
+          "supplierId",
+          "uom"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "damaged",
+              "expired",
+              "near_expiry"
+            ]
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/shelf-returns.ts"
       },
       "PostInventoryStockoutImpactReply": {
         "type": "object",
@@ -322528,6 +322791,78 @@
         },
         "additionalProperties": true
       },
+      "ShelfReturnDebitNote": {
+        "type": "object",
+        "required": [
+          "debitNoteRef",
+          "number",
+          "supplierId",
+          "returnId",
+          "returnNumber",
+          "productId",
+          "quantityMinor",
+          "valueMinor",
+          "reason",
+          "raisedAt",
+          "gstTreatment",
+          "nettedInBalance"
+        ],
+        "properties": {
+          "debitNoteRef": {
+            "type": "string"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "returnId": {
+            "type": "string"
+          },
+          "returnNumber": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "productId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "raisedAt": {
+            "type": "string"
+          },
+          "gstTreatment": {
+            "type": "string",
+            "const": "not_decided"
+          },
+          "nettedInBalance": {
+            "type": "boolean",
+            "const": false
+          }
+        },
+        "additionalProperties": true
+      },
       "ShiftAssignment": {
         "type": "object",
         "required": [
@@ -326755,6 +327090,143 @@
         },
         "additionalProperties": true
       },
+      "StoredShelfReturn": {
+        "type": "object",
+        "required": [
+          "returnId",
+          "productId",
+          "locationId",
+          "quantityMinor",
+          "uom",
+          "supplierId",
+          "reason",
+          "valueMinor",
+          "currency",
+          "valueSource",
+          "raisedBy",
+          "approvedBy",
+          "requiredApproval",
+          "at",
+          "movementId",
+          "ewbNo",
+          "ewbThresholdMinor",
+          "debitNote"
+        ],
+        "properties": {
+          "returnId": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "damaged",
+              "expired",
+              "near_expiry"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "const": "INR"
+          },
+          "valueSource": {
+            "type": "string",
+            "enum": [
+              "cost_unknown",
+              "stock_cost"
+            ]
+          },
+          "unitCostMinor": {
+            "type": "number"
+          },
+          "raisedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "requiredApproval": {
+            "type": "boolean"
+          },
+          "at": {
+            "type": "string"
+          },
+          "movementId": {
+            "type": "string"
+          },
+          "ewbNo": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "ewbThresholdMinor": {
+            "type": "number"
+          },
+          "debitNote": {
+            "type": "object",
+            "required": [
+              "debitNoteRef",
+              "valueMinor",
+              "gstTreatment"
+            ],
+            "properties": {
+              "debitNoteRef": {
+                "type": "string"
+              },
+              "number": {
+                "type": "string"
+              },
+              "valueMinor": {
+                "type": "number"
+              },
+              "gstTreatment": {
+                "type": "string",
+                "const": "not_decided"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
       "StoredSignature": {
         "type": "object",
         "required": [
@@ -327378,6 +327850,8 @@
           "openings",
           "doorDebitNotes",
           "doorDebitNotesTotal",
+          "shelfReturnDebitNotes",
+          "shelfReturnDebitNotesTotal",
           "totals",
           "asAt"
         ],
@@ -327460,6 +327934,33 @@
               "nettedInBalance": {
                 "type": "boolean",
                 "const": false
+              }
+            },
+            "additionalProperties": true
+          },
+          "shelfReturnDebitNotes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShelfReturnDebitNote"
+            }
+          },
+          "shelfReturnDebitNotesTotal": {
+            "type": "object",
+            "required": [
+              "valueMinor",
+              "nettedInBalance",
+              "why"
+            ],
+            "properties": {
+              "valueMinor": {
+                "type": "number"
+              },
+              "nettedInBalance": {
+                "type": "boolean",
+                "const": false
+              },
+              "why": {
+                "type": "string"
               }
             },
             "additionalProperties": true
