@@ -66,7 +66,10 @@ export function applyProposalStep(po: StoredPurchaseOrder, s: ProposalStepRecord
   const step: ProposalStep = { step: s.step, by: s.by, at: s.at, reason: s.reason };
   const next: StoredPurchaseOrder = { ...po, status: STATUS_AFTER[s.step], proposalSteps: [...(po.proposalSteps ?? []), step] };
   if (s.step !== 'resubmitted' || s.lines === undefined) return next;
-  const { routedToOwner: _old, budgetCheck: _oldBudget, ...rest } = next;
+  // The resubmitted order is re-valued: the old owner routing and budget check are dropped, and set again below if given.
+  const rest: StoredPurchaseOrder = { ...next };
+  delete (rest as { routedToOwner?: unknown }).routedToOwner;
+  delete (rest as { budgetCheck?: unknown }).budgetCheck;
   return {
     ...rest, lines: s.lines, totalMinor: s.totalMinor ?? po.totalMinor,
     ...(s.budgetCheck === undefined ? {} : { budgetCheck: s.budgetCheck }),
