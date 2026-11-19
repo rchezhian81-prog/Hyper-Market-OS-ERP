@@ -85,6 +85,8 @@
   const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
   const t = (key) => WORDS[lang()][key] ?? WORDS.en[key];
   const byId = (id) => document.getElementById(id);
+  /** Batch 18a: the box's Sign out bar once it has been moved into the menu (the menu is redrawn on a language switch). */
+  let keptOfficeBar = null;
 
   // ── The badge's place in the header: reuse what a page already has, create what it lacks ──────────
   function badgeElements() {
@@ -626,6 +628,21 @@
     if (more) scroller.append(more.section); // after the daily list, which the box always sends first
     if (branch) panel.append(branch);
     panel.append(personCard(nav));
+    // Batch 18a: the box's Sign out bar moves into the menu, under the person — part of the menu, never floating over the
+    // page (it used to sit fixed at the bottom right and covered the page's own boxes). On a phone the menu is a drawer and
+    // the avatar at the top right offers the same Sign out (it presses this button).
+    const boxBar = byId('sre-office-bar') ?? keptOfficeBar; // kept: the menu is redrawn (a language switch) and takes it along
+    if (boxBar) {
+      keptOfficeBar = boxBar;
+      boxBar.removeAttribute('style');
+      boxBar.classList.add('sre-office-bar-in-menu');
+      boxBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 0;padding:0 8px;color:var(--on-rail);font-size:14px';
+      const name = boxBar.querySelector('span');
+      if (name) name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
+      const press = boxBar.querySelector('button');
+      if (press) { press.removeAttribute('style'); press.className = 'sre-sign-out'; press.style.cssText = 'color:var(--on-rail);border-color:var(--rail-line);flex:none'; }
+      panel.append(boxBar);
+    }
     // Round 4c: "Sign out" inside the product's own menu, under the person — where the box drew no Sign out bar of its
     // own (the hosted copy: the front signed the person in, and its door ends the session). A plain same-origin POST.
     const out = window.sreSignOut && typeof window.sreSignOut.action === 'string' && window.sreSignOut.action.startsWith('/') ? window.sreSignOut.action : null;

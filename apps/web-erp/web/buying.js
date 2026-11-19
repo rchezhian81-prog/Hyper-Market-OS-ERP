@@ -934,7 +934,8 @@ el('budget-save').addEventListener('click', async () => {
 // shown in its own words, and the report read again so what is shown is what head office kept.
 
 const oo = window.buyingOpenOrders ?? null;
-const ot = (k) => (oo === null ? k : oo.words(lang, k));
+// Batch 18a: with no live model (a sample page), the tab's own words — never the placeholder key.
+const ot = (k) => (oo !== null ? oo.words(lang, k) : window.buyingWords !== undefined ? window.buyingWords.openOrders(lang, k) : k);
 let ooLast = null;
 
 function ooSay(node, out, good) { node.className = `otb-status ${out.result === 'ok' ? 'good' : 'err'}`; node.textContent = oo.outcomeWords(lang, out, good); }
@@ -1092,7 +1093,7 @@ el('orders-read').addEventListener('click', () => { void readOrders(); });
 // (`window.buyingReorder`, apps/web-erp/src/replenishment-session.ts). Opening the tab writes nothing.
 
 const rp = window.buyingReorder ?? null;
-const rt = (k) => (rp === null ? k : rp.words(lang, k));
+const rt = (k) => (rp !== null ? rp.words(lang, k) : window.buyingWords !== undefined ? window.buyingWords.reorder(lang, k) : k);
 let rpParams = null;
 let rpProposal = null;
 const RP_FIELDS = ['maxLevel', 'reorderPoint', 'safetyStock', 'leadTimeDays', 'minOrderQty', 'orderMultiple', 'avgDailyDemand'];
