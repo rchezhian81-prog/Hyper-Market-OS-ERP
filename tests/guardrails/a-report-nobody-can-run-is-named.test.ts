@@ -344,7 +344,9 @@ describe('a figure about today is about today', () => {
     // against a nought nobody put in. And a future-dated sale from a lane with a wrong clock must
     // not become "the day before" — hence strictly earlier, not merely "the next one down".
     const cmp = code(MODEL).slice(code(MODEL).indexOf("case 'day_on_day'"));
-    expect(cmp).toMatch(/d\.tradingDay < config\.tradingDay/);
+    // Batch 18b · O1: the day compared is today, or the ONE past day the person chose — still strictly earlier days only.
+    expect(cmp).toMatch(/const theDay = period\.todayOnly \? config\.tradingDay : period\.covered!\.from;/);
+    expect(cmp).toMatch(/d\.tradingDay < theDay/);
     expect(cmp).toMatch(/no earlier trading day/);
     expect(code(ENTRY), 'the day list is defaulted somewhere else').not.toMatch(/dayTotals: \(\) => data\?\.dayTotals \?\? \[\{/);
   });

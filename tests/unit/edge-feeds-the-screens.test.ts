@@ -1106,3 +1106,51 @@ describe('the products nobody can sell: one judgement for the till and for the p
     expect(unsellablePayload(input({ pack: fullPack({ products: known([catalogue[0]!]) }) }))).toMatchObject({ rows: [], sellableCount: 1 });
   });
 });
+
+/**
+ * **Batch 18b · O1 / O3 (M29-FR-02): the reporting payload for a past day, week or month, and each department's items.**
+ * The store computer works the figures out from its own sales log for the period the page asked for, says exactly which
+ * days they cover, and never invents what it does not hold (an earlier day's buying cost, an earlier day's limits).
+ */
+describe('batch 18b — reports for a period, and the items inside each department', () => {
+  const day = (tradingDay: string, id: string, lines: LoggedSale['lines'], total: number): LoggedSale => sale({ id, tradingDay, committedAt: `${tradingDay}T06:00:00.000Z`, total, lines });
+  const log = [
+    day('2026-08-01', 'A', [{ productId: 'p1', quantityMinor: 2, uom: 'ea', lineTotalMinor: 290_00 }], 290_00),
+    day('2026-08-03', 'B', [{ productId: 'p2', quantityMinor: 1_500, uom: 'kg', lineTotalMinor: 120_00 }], 120_00),
+    day(DAY, 'C', [{ productId: 'p1', quantityMinor: 1, uom: 'ea', lineTotalMinor: 145_00 }, { productId: 'p2', quantityMinor: 850, uom: 'kg', lineTotalMinor: 68_00 }], 213_00),
+  ];
+  const asked = (from: string, to: string) => ({ ok: true as const, period: { from, to } });
+  const COST = 'Not known for this period — the store computer keeps only today\'s average buying cost, not the cost on each earlier day';
+
+  it('today (no period asked): only today\'s bills, with margin, and the items inside each department', () => {
+    const p = reportingPayload(input({ sales: log }))!;
+    expect(p['period']).toMatchObject({ todayOnly: true, covered: { from: DAY, to: DAY }, heldFrom: '2026-08-01' });
+    expect((p['sales'] as unknown[]).length).toBe(1);
+    const items = p['salesByItem'] as Record<string, Record<string, unknown>[]>;
+    expect(items['grocery']).toEqual([{ productId: 'p1', name: 'Toor dal 1kg', items: 1, grams: 0, takenMinor: 145_00, linesWithNoMoney: 0, marginMinor: 38_10, marginBps: 2_759 }]);
+    // D-057's rule, item by item: tomato has no GST rate in the pack, so its margin is "Not known", with why.
+    expect(items['produce']).toEqual([{ productId: 'p2', name: 'Tomato', items: 0, grams: 850, takenMinor: 68_00, linesWithNoMoney: 0, marginNotKnown: 'Not known — 1 line had no GST rate' }]);
+  });
+
+  it('a past week: the bills of those days only, the departments money and kg, margin and limits "Not known for this period"', () => {
+    const p = reportingPayload(input({ sales: log, reportPeriod: asked('2026-08-01', '2026-08-04') }))!;
+    expect(p['period']).toEqual({ asked: { from: '2026-08-01', to: '2026-08-04' }, covered: { from: '2026-08-01', to: '2026-08-04' }, todayOnly: false, heldFrom: '2026-08-01' });
+    expect((p['sales'] as { saleId: string; cogsMinor?: number }[]).map((s) => [s.saleId, s.cogsMinor])).toEqual([['A', undefined], ['B', undefined]]);
+    expect(p['salesByCategory']).toEqual({
+      grocery: { items: 2, grams: 0, takenMinor: 290_00, linesWithNoMoney: 0, marginNotKnown: COST },
+      produce: { items: 0, grams: 1_500, takenMinor: 120_00, linesWithNoMoney: 0, marginNotKnown: COST },
+    });
+    expect((p['salesByItem'] as Record<string, Record<string, unknown>[]>)['produce']![0]).toMatchObject({ name: 'Tomato', grams: 1_500, takenMinor: 120_00, marginNotKnown: COST });
+    expect(p['exceptionsNotKnown']).toMatch(/^Not known for this period — the store computer judges these against today's limits only/);
+  });
+
+  it('a period before the first day held is not known; one starting before it is cut to the days held and says so; a bad period reports today', () => {
+    expect(reportingPayload(input({ sales: log, reportPeriod: asked('2026-07-01', '2026-07-31') }))!['period'])
+      .toMatchObject({ covered: null, notKnownWhy: 'this store computer holds sales only from 2026-08-01' });
+    const cut = reportingPayload(input({ sales: log, reportPeriod: asked('2026-07-25', '2026-08-31') }))!;
+    expect(cut['period']).toMatchObject({ covered: { from: '2026-08-01', to: DAY }, notKnownBefore: '2026-08-01', stopsAtToday: true });
+    expect((cut['sales'] as unknown[]).length).toBe(3);
+    const bad = reportingPayload(input({ sales: log, reportPeriod: { ok: false, why: 'the period ends before it starts' } }))!;
+    expect(bad['period']).toMatchObject({ todayOnly: true, refused: 'the period ends before it starts' });
+  });
+});

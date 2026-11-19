@@ -60,6 +60,19 @@ const WORDS = {
     // UI-3: what a report covers, and its chart
     covers: 'Store {store} · trading day {day} · read from the store computer at {time}', notToldStore: 'not told',
     chartBy: 'By', chartTaken: 'Taken', chartUnits: 'Items sold', chartToday: 'today',
+    // Batch 18b · O1 / O3: the period picker, what a report covers, and a department's items
+    periodLabel: 'Period', p_today: 'Today', p_yesterday: 'Yesterday', p_this_week: 'This week (Monday to today)', p_last_week: 'Last week (Monday to Sunday)',
+    p_this_month: 'This month', p_last_month: 'Last month', p_custom: 'From – to (choose the days)', periodFrom: 'From', periodTo: 'To', periodShow: 'Show',
+    periodToday: 'today, {day}', periodRange: '{from} to {to}', periodOne: '{day}',
+    coversPeriod: 'Store {store} · {period} · read from the store computer at {time}',
+    periodNotKnownBefore: 'Not known before {day} — this store computer holds sales from that day, so the figures start there.',
+    periodStopsAtToday: 'The period runs past today; the figures stop at today.',
+    periodNotKnown: 'Not known for this period — {why}.',
+    periodRefused: 'The period asked for could not be read ({why}). These are today\'s figures.',
+    periodBadDates: 'Choose both days as day/month/year, the first on or before the second.',
+    periodShowing: 'Showing: {period}',
+    itemsIn: 'Items in {dept}', itemCol: 'Item', itemsCol: 'Items', weighedCol: 'Weighed', takenCol: 'Taken', marginCol: 'Margin', marginPctCol: 'Margin %',
+    itemsLabel: 'Each item in this department', noItems: 'This store computer did not send the items for this department.',
   },
   ta: {
     title: 'அறிக்கைகள்',
@@ -88,6 +101,18 @@ const WORDS = {
     notFed: 'இந்தக் கடை என்ன பதிவு செய்கிறது என்று இந்தப் பக்கத்திற்குச் சொல்லப்படவில்லை, எனவே எந்த அறிக்கைகள் இயங்கும் என்று தெரியாது. எதுவும் தயார் என்றோ சரி என்றோ காட்டப்படவில்லை.',
     covers: 'கடை {store} · வணிக நாள் {day} · கடை கணினியிலிருந்து படித்த நேரம் {time}', notToldStore: 'சொல்லப்படவில்லை',
     chartBy: 'வாரியாக', chartTaken: 'வசூல்', chartUnits: 'விற்ற பொருட்கள்', chartToday: 'இன்று',
+    periodLabel: 'காலம்', p_today: 'இன்று', p_yesterday: 'நேற்று', p_this_week: 'இந்த வாரம் (திங்கள் முதல் இன்று வரை)', p_last_week: 'கடந்த வாரம் (திங்கள் முதல் ஞாயிறு வரை)',
+    p_this_month: 'இந்த மாதம்', p_last_month: 'கடந்த மாதம்', p_custom: 'தேதி முதல் – வரை (நாட்களைத் தேர்வு செய்க)', periodFrom: 'முதல்', periodTo: 'வரை', periodShow: 'காட்டு',
+    periodToday: 'இன்று, {day}', periodRange: '{from} முதல் {to} வரை', periodOne: '{day}',
+    coversPeriod: 'கடை {store} · {period} · கடை கணினியிலிருந்து படித்த நேரம் {time}',
+    periodNotKnownBefore: '{day} க்கு முன் தெரியவில்லை — இந்தக் கடை கணினியில் அந்த நாளிலிருந்துதான் விற்பனை உள்ளது, எனவே எண்கள் அங்கிருந்து தொடங்குகின்றன.',
+    periodStopsAtToday: 'காலம் இன்றைக்குப் பின்னும் நீள்கிறது; எண்கள் இன்றுடன் நிற்கின்றன.',
+    periodNotKnown: 'இந்தக் காலத்திற்குத் தெரியவில்லை — {why}.',
+    periodRefused: 'கேட்ட காலத்தைப் படிக்க முடியவில்லை ({why}). இவை இன்றைய எண்கள்.',
+    periodBadDates: 'இரண்டு நாட்களையும் நாள்/மாதம்/ஆண்டு எனத் தேர்வு செய்க; முதலாவது இரண்டாவதற்கு முன் அல்லது அதே நாள்.',
+    periodShowing: 'காட்டப்படுவது: {period}',
+    itemsIn: '{dept} இல் உள்ள பொருட்கள்', itemCol: 'பொருள்', itemsCol: 'பொருட்கள்', weighedCol: 'எடை', takenCol: 'வசூல்', marginCol: 'லாப வரம்பு', marginPctCol: 'லாப வரம்பு %',
+    itemsLabel: 'இந்தத் துறையின் ஒவ்வொரு பொருளும்', noItems: 'இந்தத் துறையின் பொருட்களைக் கடை கணினி அனுப்பவில்லை.',
   },
 };
 let lang = 'en';
@@ -251,7 +276,7 @@ function paintCards(ready, blocked, backlog) {
     { label: t('cardBacklog'), value: backlog, note: t('cardNote'), icon: 'list-plus' },
   ]);
 }
-document.addEventListener('sre:chrome', () => { paintCards(...cardCounts); if (openReportId !== null) { const o = session.run(openReportId); if (o.ok) renderReport(o); } });
+document.addEventListener('sre:chrome', () => { paintPeriod(); paintCards(...cardCounts); if (openReportId !== null) { const o = session.run(openReportId); if (o.ok) renderReport(o); } });
 /** The report finder: every word typed must be in a report's name or what it answers; the list says when none match. */
 function findReports() {
   const words = el('find-report').value.trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
@@ -312,8 +337,107 @@ const shopTime = (at) => (at ? window.sreShopDay?.dateTimeOf(at) || at : '');
 const fillIn = (text, values) => Object.entries(values).reduce((w, [k, v]) => w.split(`{${k}}`).join(String(v)), text);
 function coversLine() {
   const d = window.reportingData ?? {};
+  // Batch 18b · O1: EXACTLY the period the figures cover, and what is not known in it.
+  if (real !== undefined && typeof session.period === 'function') {
+    return fillIn(t('coversPeriod'), { store: d.storeName || d.branchId || d.storeId || t('notToldStore'), period: periodWords(session.period()), time: shopTime(d.now) || t('notToldStore') });
+  }
   return fillIn(t('covers'), { store: d.storeName || d.branchId || d.storeId || t('notToldStore'), day: d.tradingDay || t('notToldStore'), time: shopTime(d.now) || t('notToldStore') });
 }
+
+// ── Batch 18b · O1 (M29-FR-02): Reports for a past day, week or month ─────────────────────────────────────────────────
+// The picker asks the store computer for the period in the page's own address (`?period=last_week&from=…&to=…`); the store
+// computer works the figures out from its own sales log (no internet needed) and says exactly which days they cover. The
+// week runs Monday to Sunday (OB-869).
+const PRESETS = ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'custom'];
+const dayWords = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso ?? '') ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : (iso ?? ''));
+const isoOf = (d) => d.toISOString().slice(0, 10);
+const dayAt = (iso) => new Date(`${iso}T00:00:00Z`);
+const addDays = (iso, n) => { const d = dayAt(iso); d.setUTCDate(d.getUTCDate() + n); return isoOf(d); };
+/** A preset's days, from the shop's own today (the trading day the store computer served). */
+function presetDays(preset, today) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today ?? '')) return null;
+  const weekday = (dayAt(today).getUTCDay() + 6) % 7; // Monday 0 … Sunday 6
+  const monday = addDays(today, -weekday);
+  const first = `${today.slice(0, 8)}01`;
+  const lastMonthEnd = addDays(first, -1);
+  switch (preset) {
+    case 'today': return { from: today, to: today };
+    case 'yesterday': return { from: addDays(today, -1), to: addDays(today, -1) };
+    case 'this_week': return { from: monday, to: today };
+    case 'last_week': return { from: addDays(monday, -7), to: addDays(monday, -1) };
+    case 'this_month': return { from: first, to: today };
+    case 'last_month': return { from: `${lastMonthEnd.slice(0, 8)}01`, to: lastMonthEnd };
+    default: return null;
+  }
+}
+const PAGE_QUERY = new URLSearchParams(location.search);
+const askedPreset = () => (PRESETS.includes(PAGE_QUERY.get('period') ?? '') ? PAGE_QUERY.get('period') : (PAGE_QUERY.get('from') ? 'custom' : 'today'));
+function periodWords(cover) {
+  if (!cover) return '';
+  const preset = askedPreset();
+  const named = preset !== 'custom' && preset !== 'today' ? ` (${t(`p_${preset}`)})` : '';
+  const parts = [];
+  if (cover.todayOnly) parts.push(fillIn(t('periodToday'), { day: dayWords(cover.asked.from) }));
+  else {
+    const span = cover.covered ?? cover.asked;
+    parts.push(`${span.from === span.to ? fillIn(t('periodOne'), { day: dayWords(span.from) }) : fillIn(t('periodRange'), { from: dayWords(span.from), to: dayWords(span.to) })}${named}`);
+  }
+  if (cover.refused) parts.push(fillIn(t('periodRefused'), { why: cover.refused }));
+  if (cover.covered === null) parts.push(fillIn(t('periodNotKnown'), { why: cover.notKnownWhy ?? '' }));
+  if (cover.notKnownBefore) parts.push(fillIn(t('periodNotKnownBefore'), { day: dayWords(cover.notKnownBefore) }));
+  if (cover.stopsAtToday) parts.push(t('periodStopsAtToday'));
+  return parts.join(' ');
+}
+function paintPeriod() {
+  const host = el('period-bar');
+  if (!host) return;
+  host.hidden = real === undefined;
+  if (real === undefined) return;
+  el('period-label').textContent = t('periodLabel');
+  const pick = el('period-pick');
+  const chosen = pick.dataset.painted === '1' ? pick.value : askedPreset();
+  pick.replaceChildren(...PRESETS.map((p) => { const o = document.createElement('option'); o.value = p; o.textContent = t(`p_${p}`); return o; }));
+  pick.value = chosen;
+  pick.dataset.painted = '1';
+  el('period-show').textContent = t('periodShow');
+  const custom = el('period-custom');
+  custom.hidden = pick.value !== 'custom';
+  const o = office();
+  const today = window.reportingData?.tradingDay ?? '';
+  const asked = session.period?.()?.asked ?? { from: today, to: today };
+  for (const [id, key, value] of [['period-from', 'periodFrom', PAGE_QUERY.get('from') ?? asked.from], ['period-to', 'periodTo', PAGE_QUERY.get('to') ?? asked.to]]) {
+    const holder = el(`${id}-host`);
+    if (holder.dataset.painted === '1') continue;
+    if (o && typeof o.dateField === 'function') {
+      holder.replaceChildren(o.dateField({ id, label: { en: WORDS.en[key], ta: WORDS.ta[key] }, max: today || undefined, value }));
+      holder.dataset.painted = '1';
+    } else if (!el(id)) {
+      const l = document.createElement('label'); l.htmlFor = id; l.textContent = t(key);
+      const i = document.createElement('input'); i.type = 'date'; i.id = id; i.className = 'sre-input'; i.value = value; if (today) i.max = today;
+      holder.replaceChildren(l, i);
+    }
+  }
+  el('period-says').textContent = fillIn(t('periodShowing'), { period: periodWords(session.period?.()) });
+}
+function chosenDays() {
+  const pick = el('period-pick').value;
+  if (pick !== 'custom') return presetDays(pick, window.reportingData?.tradingDay ?? '');
+  const o = office();
+  const read = (id) => (o && typeof o.dateOf === 'function' ? o.dateOf(id) : null) ?? (el(id)?.value || null);
+  const from = read('period-from');
+  const to = read('period-to');
+  return from && to && from <= to ? { from, to } : null;
+}
+function showPeriod() {
+  const pick = el('period-pick').value;
+  if (pick === 'today') { location.search = ''; return; }
+  const days = chosenDays();
+  if (days === null) { el('period-says').textContent = t('periodBadDates'); return; }
+  const q = new URLSearchParams({ period: pick, from: days.from, to: days.to });
+  location.search = `?${q.toString()}`;
+}
+el('period-pick').addEventListener('change', () => { el('period-custom').hidden = el('period-pick').value !== 'custom'; });
+el('period-show').addEventListener('click', showPeriod);
 
 /**
  * The reports whose point is a comparison or a figure over time get a chart, drawn from the report's OWN rows (never a
@@ -373,8 +497,11 @@ function renderReport(outcome) {
     const keys = [];
     for (const row of outcome.rows) for (const key of Object.keys(row)) if (!keys.includes(key)) keys.push(key);
     const numeric = (k) => outcome.rows.every((r) => r[k] === undefined || r[k] === null || r[k] === '' || Number.isFinite(Number(r[k])));
+    // Batch 18b · O3 (M29-FR-02 drill-through): "What is selling, by department" opens a department to show each item.
+    const drill = outcome.report.id === 'units_by_category' && typeof session.departmentItems === 'function' && outcome.rows.some((r) => r.takenMinor !== undefined);
     o.table(el('report-rows'), {
       id: 'report', label: t('rowsLabel'), pageSize: 25, rows: outcome.rows,
+      ...(drill ? { rowData: (r) => ({ department: r.department }), drawer: { title: (r) => fillIn(t('itemsIn'), { dept: r.department }), body: (r) => departmentItemsBody(r.department) } } : {}),
       // D-057: a column holding money (…Minor) is shown in rupees, sorted by its number; known columns read as words.
       columns: keys.map((k) => ({
         key: k, label: columnLabel(k), sort: numeric(k) ? 'number' : 'text', align: numeric(k) || /Minor$/.test(k) ? 'end' : undefined,
@@ -410,6 +537,33 @@ function renderReport(outcome) {
     table.append(tr);
   }
   el('report-rows').replaceChildren(table);
+}
+
+/** Batch 18b · O3: one department's items — quantity, kg, rupees and margin ("Not known" where an item has no cost, D-057). */
+const kgOf = (grams) => `${Math.trunc(grams / 1000)}.${String(grams % 1000).padStart(3, '0')} kg`;
+function departmentItemsBody(department) {
+  const box = document.createElement('div');
+  box.className = 'dept-items';
+  const covers = document.createElement('p'); covers.className = 'report-covers'; covers.textContent = coversLine();
+  box.append(covers);
+  const items = session.departmentItems(department);
+  const o = office();
+  if (!Array.isArray(items) || o === null) { box.append(emptyLine(t('noItems'))); return box; }
+  const host = document.createElement('div');
+  box.append(host);
+  o.table(host, {
+    id: 'dept-items', label: { en: WORDS.en.itemsLabel, ta: WORDS.ta.itemsLabel }, pageSize: 25, sortable: true, rows: items,
+    rowKey: (i) => i.productId, rowData: (i) => ({ product: i.productId }),
+    columns: [
+      { key: 'name', label: { en: WORDS.en.itemCol, ta: WORDS.ta.itemCol }, sort: 'text', value: (i) => i.name },
+      { key: 'items', label: { en: WORDS.en.itemsCol, ta: WORDS.ta.itemsCol }, sort: 'number', align: 'end', value: (i) => i.items },
+      { key: 'grams', label: { en: WORDS.en.weighedCol, ta: WORDS.ta.weighedCol }, sort: 'number', align: 'end', value: (i) => i.grams, render: (i) => (i.grams === 0 ? '—' : kgOf(i.grams)) },
+      { key: 'takenMinor', label: { en: WORDS.en.takenCol, ta: WORDS.ta.takenCol }, sort: 'number', align: 'end', value: (i) => i.takenMinor, render: (i) => inr(i.takenMinor) },
+      { key: 'marginMinor', label: { en: WORDS.en.marginCol, ta: WORDS.ta.marginCol }, sort: 'number', align: 'end', value: (i) => (i.marginMinor === undefined ? null : i.marginMinor), render: (i) => (i.marginMinor === undefined ? (/^Not known for this period/.test(i.marginNotKnown ?? '') ? 'Not known for this period' : (i.marginNotKnown ?? 'Not known')) : inr(i.marginMinor)) },
+      { key: 'marginBps', label: { en: WORDS.en.marginPctCol, ta: WORDS.ta.marginPctCol }, sort: 'number', align: 'end', value: (i) => (i.marginBps === undefined ? null : i.marginBps), render: (i) => (i.marginBps === undefined ? '—' : `${(i.marginBps / 100).toFixed(1)}%`) },
+    ],
+  });
+  return box;
 }
 
 /** D-057: the column headings a person reads (English and Tamil); any other key is shown as the report names it. */
@@ -487,6 +641,7 @@ function paintChrome() {
   el('backlog-title').textContent = t('whatNext');
   el('backlog-lead').textContent = t('backlogLead');
   el('sample').textContent = t('sampleData');
+  paintPeriod();
   renderFreshness();
   renderCatalogue();
   findReports();

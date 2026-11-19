@@ -561,6 +561,48 @@ export function dataExportRoutes(deps: DataExportDeps): readonly Route[] {
       },
     },
     {
+      // Batch 18b · B1 (M30-FR-02 · P-06 · hard rule #6): a list DOWNLOADED from an office screen ("Download to Excel") is
+      // an export too, so it is written to the same append-only ledger as every other export — who, which list, how many
+      // rows, which columns were redacted for them. The file was built in the person's browser from rows they could
+      // already see (with the export engine's personal-data rule), so the record names only what they took, never the rows.
+      // Every member of staff may record their OWN download (`identity.self.read`, the word every role holds for itself);
+      // the person recorded is always the caller, never a name in the body. A download made with head office out of reach
+      // arrives later with its own time (`downloadedAt`); a replay of its key is the same record.
+      api: 'API-03', method: 'POST', path: '/v1/exports/screen-lists',
+      permission: 'identity.self.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const text = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim() !== '' && v.length <= max;
+        const texts = (v: unknown): v is string[] => Array.isArray(v) && v.length <= 200 && v.every((x) => typeof x === 'string' && x.length <= 200);
+        const rowCount = b['rowCount'];
+        const downloadedAt = b['downloadedAt'];
+        if (!text(b['screen'], 200) || !text(b['list'], 200) || !text(b['label'], 200) || typeof rowCount !== 'number' || !Number.isSafeInteger(rowCount) || rowCount < 0
+          || !texts(b['columns']) || !texts(b['redactedColumns']) || typeof downloadedAt !== 'string' || Number.isNaN(Date.parse(downloadedAt))) {
+          throw apiError(400, {
+            code: 'list_download_unreadable',
+            whatHappened: 'A list download is recorded as { screen, list, label, rowCount, columns[], redactedColumns[], downloadedAt }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the record in that shape. Nothing was recorded.',
+          });
+        }
+        const at = deps.now();
+        const audit: ExportAudit = {
+          userId: ctx.userId,
+          domain: `screen-list:${(b['screen'] as string).trim()}#${(b['list'] as string).trim()}`,
+          branchId: ctx.branchId,
+          at,
+          rowCount,
+          redactedColumns: b['redactedColumns'] as string[],
+          screenList: {
+            screen: (b['screen'] as string).trim(), list: (b['list'] as string).trim(), label: (b['label'] as string).trim(),
+            columns: b['columns'] as string[], downloadedAt,
+          },
+        };
+        await deps.recordExport(ctx.tenantId, audit, `screen-list-${ctx.userId}-${ctx.idempotencyKey ?? `${audit.domain}-${downloadedAt}`}`);
+        return { status: 201, body: { recorded: true, audit } };
+      },
+    },
+    {
       // LOG — the export audit trail, newest first: who took what, when, how many rows, what was redacted.
       api: 'API-03', method: 'GET', path: '/v1/exports',
       permission: 'export.read',

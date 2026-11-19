@@ -65,6 +65,8 @@ function paintAp() {
         { key: 'differenceMinor', label: both('difference'), sort: 'number', align: 'end', value: (s) => api.rupees(s.differenceMinor) },
         { key: 'unposted', label: both('unposted'), sort: 'number', align: 'end', value: (s) => s.unposted.length },
         { key: 'agrees', label: both('state'), sort: 'text', value: (s) => (s.agrees ? t('agrees') : t('differs')), render: (s) => agreeChip(s.agrees) },
+        // Batch 18b · B2 (M31-FR-02): the supplier's statement of account on an A4 page, printed or saved as a PDF.
+        ...(window.srePrint ? [{ key: 'statement', label: { en: 'Statement', ta: 'கணக்கு அறிக்கை' }, sort: false, render: (s) => statementButton(s.supplierId) }] : []),
       ],
       empty: { title: t('apNone'), detail: t('apNoneDetail') },
     });
@@ -193,4 +195,15 @@ else {
   $('reload').addEventListener('click', () => { void loadAll(); });
   $('post').addEventListener('click', () => { void post(); });
   void loadAll();
+}
+
+// ── Batch 18b · B2 (M31-FR-02): Print the supplier's statement of account ──────────────────────────────────────────────
+function statementButton(supplierId) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sre-btn sre-btn-quiet print-statement';
+  b.dataset.supplier = supplierId;
+  b.textContent = document.documentElement.lang === 'ta' ? 'அறிக்கை அச்சிடு' : 'Print statement';
+  b.addEventListener('click', () => { void window.srePrint.openPrint({ kind: 'supplier_statement', id: supplierId }); });
+  return b;
 }

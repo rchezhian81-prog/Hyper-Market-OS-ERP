@@ -178,6 +178,9 @@ function receiptNode(r) {
   }
   if (r.valueIncomplete) { const s = document.createElement('span'); s.className = 'value-incomplete'; s.textContent = t('valueIncomplete'); facts.append(s); }
   li.append(facts);
+  // Batch 18b · R1 (M31-FR-02): Print the GRN — an A4 page from head office's print view, printed or saved as a PDF.
+  const printer = printGrnButton(r);
+  if (printer !== null) li.append(printer);
   // R9-A · OB-534: the supplier bill — matched (which bill, what cost, by whom), or the "Match the bill" button.
   if (r.billMatch && (r.billMatch.matched.length > 0 || r.billMatch.canMatch || r.billMatch.receivedByYou)) li.append(billBox(r));
 
@@ -457,4 +460,22 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */
   });
+}
+
+// ── Batch 18b · R1 (M31-FR-02 · M07-FR-01): Print GRN ───────────────────────────────────────────────────────────────────
+// The bundle's print sheet (`window.srePrint`) lays the receipt out on an A4 page — the shop and its GSTIN, the GRN number,
+// the date, the supplier and its GSTIN, every line with its rate and GST rate, the total and the signature lines — and the
+// browser prints it or saves it as a PDF. A copy is kept on this computer once read, so it prints again offline.
+const PRINT_WORDS = { en: { print: 'Print GRN', printFor: 'Print GRN {n}' }, ta: { print: 'GRN அச்சிடு', printFor: 'GRN {n} அச்சிடு' } };
+function printGrnButton(r) {
+  if (!window.srePrint || r.grnId === 'sample') return null;
+  const w = PRINT_WORDS[lang] ?? PRINT_WORDS.en;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sre-btn print-grn';
+  b.dataset.grn = r.grnId;
+  worded(b, 'file-text', w.print);
+  b.setAttribute('aria-label', w.printFor.replace('{n}', r.number));
+  b.addEventListener('click', () => { void window.srePrint.openPrint({ kind: 'goods_receipt', id: r.grnId }); });
+  return b;
 }

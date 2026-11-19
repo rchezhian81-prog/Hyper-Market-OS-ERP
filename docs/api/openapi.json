@@ -23570,6 +23570,177 @@
         }
       }
     },
+    "/v1/documents/print/goods-receipts/{grnId}": {
+      "get": {
+        "operationId": "getDocumentsPrintGoodsReceiptsByGrnId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.goodsreceipt.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.goodsreceipt.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDocumentsPrintGoodsReceiptsByGrnIdReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/documents/print/purchase-orders/{poId}": {
+      "get": {
+        "operationId": "getDocumentsPrintPurchaseOrdersByPoId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.commitment.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.commitment.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDocumentsPrintPurchaseOrdersByPoIdReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/documents/print/supplier-statements/{supplierId}": {
+      "get": {
+        "operationId": "getDocumentsPrintSupplierStatementsBySupplierId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.commitment.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "supplierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.commitment.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDocumentsPrintSupplierStatementsBySupplierIdReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/documents/retention/documents": {
       "get": {
         "operationId": "getDocumentsRetentionDocuments",
@@ -24278,6 +24449,79 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/exports/screen-lists": {
+      "post": {
+        "operationId": "postExportsScreenLists",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.self.read",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostExportsScreenListsRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostExportsScreenListsReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.self.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -132121,6 +132365,48 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/platform/src/documents.ts"
       },
+      "GetDocumentsPrintGoodsReceiptsByGrnIdReply": {
+        "type": "object",
+        "required": [
+          "view"
+        ],
+        "properties": {
+          "view": {
+            "$ref": "#/components/schemas/PrintView"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/document-print.ts"
+      },
+      "GetDocumentsPrintPurchaseOrdersByPoIdReply": {
+        "type": "object",
+        "required": [
+          "view"
+        ],
+        "properties": {
+          "view": {
+            "$ref": "#/components/schemas/PrintView"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/document-print.ts"
+      },
+      "GetDocumentsPrintSupplierStatementsBySupplierIdReply": {
+        "type": "object",
+        "required": [
+          "view"
+        ],
+        "properties": {
+          "view": {
+            "$ref": "#/components/schemas/PrintView"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/document-print.ts"
+      },
       "GetDocumentsRetentionDocumentsReply": {
         "type": "object",
         "required": [
@@ -190212,6 +190498,68 @@
             "type": "string"
           },
           "to": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/data-export.ts"
+      },
+      "PostExportsScreenListsReply": {
+        "type": "object",
+        "required": [
+          "recorded",
+          "audit"
+        ],
+        "properties": {
+          "recorded": {
+            "type": "boolean"
+          },
+          "audit": {
+            "$ref": "#/components/schemas/ExportAudit"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/data-export.ts"
+      },
+      "PostExportsScreenListsRequest": {
+        "type": "object",
+        "required": [
+          "columns",
+          "downloadedAt",
+          "label",
+          "list",
+          "redactedColumns",
+          "rowCount",
+          "screen"
+        ],
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "downloadedAt": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "list": {
+            "type": "string"
+          },
+          "redactedColumns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rowCount": {
+            "type": "integer"
+          },
+          "screen": {
             "type": "string"
           }
         },
@@ -291242,6 +291590,37 @@
               }
             },
             "additionalProperties": true
+          },
+          "screenList": {
+            "type": "object",
+            "required": [
+              "screen",
+              "list",
+              "label",
+              "columns",
+              "downloadedAt"
+            ],
+            "properties": {
+              "screen": {
+                "type": "string"
+              },
+              "list": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "downloadedAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true
@@ -310330,6 +310709,271 @@
             "type": "string"
           },
           "deviceId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PrintFact": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "approvedBy",
+              "asAt",
+              "deliverTo",
+              "purchaseOrder",
+              "receivedBy",
+              "reference",
+              "warehouse"
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PrintLineView": {
+        "type": "object",
+        "required": [
+          "productId",
+          "name",
+          "hsn",
+          "quantityMinor",
+          "uom",
+          "rateMinor",
+          "ratePer",
+          "gstRateBps",
+          "valueMinor"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "hsn": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "rateMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "ratePer": {
+            "type": "number"
+          },
+          "gstRateBps": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "valueMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "PrintParty": {
+        "type": "object",
+        "required": [
+          "name",
+          "gstin",
+          "address"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "legalName": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "gstin": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "address": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "PrintStatementAmounts": {
+        "type": "object",
+        "required": [
+          "invoicedMinor",
+          "debitNotesMinor",
+          "paidMinor",
+          "withheldMinor",
+          "owedMinor"
+        ],
+        "properties": {
+          "invoicedMinor": {
+            "type": "number"
+          },
+          "debitNotesMinor": {
+            "type": "number"
+          },
+          "paidMinor": {
+            "type": "number"
+          },
+          "withheldMinor": {
+            "type": "number"
+          },
+          "owedMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PrintView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "documentNumber",
+          "date",
+          "shop",
+          "supplier",
+          "facts",
+          "lines",
+          "totalMinor",
+          "currency",
+          "readAt"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "goods_receipt",
+              "purchase_order",
+              "supplier_statement"
+            ]
+          },
+          "documentNumber": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "shop": {
+            "$ref": "#/components/schemas/PrintParty"
+          },
+          "supplier": {
+            "$ref": "#/components/schemas/PrintParty"
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrintFact"
+            }
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrintLineView"
+            }
+          },
+          "totalMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "currency": {
+            "type": "string"
+          },
+          "statement": {
+            "$ref": "#/components/schemas/PrintStatementAmounts"
+          },
+          "readAt": {
             "type": "string"
           }
         },

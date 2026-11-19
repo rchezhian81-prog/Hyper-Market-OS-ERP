@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2513,
+  "testFiles": 2518,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2718,7 +2718,7 @@
       "id": "M29",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 20,
+        "unit": 22,
         "integration": 19,
         "realDb": 9,
         "browser": 7,
@@ -2728,6 +2728,8 @@
       },
       "files": {
         "unit": [
+          "tests/unit/batch18b-print-view-and-report-period.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/edge-today-figures.test.ts",
           "tests/unit/erp-reporting-session.test.ts",
           "tests/unit/owner-alerts-inbox.test.ts",
@@ -2805,16 +2807,17 @@
       "id": "M30",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
-        "integration": 14,
-        "realDb": 7,
-        "browser": 6,
-        "connected": 4,
+        "unit": 14,
+        "integration": 15,
+        "realDb": 8,
+        "browser": 7,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/batch18b-list-download.test.ts",
           "tests/unit/data-export-routes.test.ts",
           "tests/unit/data-io-export-hands-a-file.test.ts",
           "tests/unit/data-io-period-export.test.ts",
@@ -2833,6 +2836,7 @@
           "tests/integration/ai-mapping-quality.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
+          "tests/integration/batch18b-print-views-and-list-download-records.test.ts",
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
           "tests/integration/data-export.test.ts",
           "tests/integration/data-import.test.ts",
@@ -2847,6 +2851,7 @@
         ],
         "realDb": [
           "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
+          "tests/integration/batch18b-print-views-and-list-download-records.test.ts",
           "tests/integration/every-business-domain-exports.test.ts",
           "tests/integration/every-domain-imports-with-a-dry-run-and-an-undo.test.ts",
           "tests/integration/existing-products-are-changed-by-file-and-the-change-can-be-undone.test.ts",
@@ -2856,6 +2861,7 @@
         ],
         "browser": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
+          "tests/e2e/batch18b-download-a-list-and-print-a-po-and-a-grn.e2e.ts",
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/data-io-delivery.e2e.ts",
           "tests/e2e/data-io-update-and-undo-on-the-production-api.e2e.ts",
@@ -2864,6 +2870,7 @@
         ],
         "connected": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
+          "tests/e2e/batch18b-download-a-list-and-print-a-po-and-a-grn.e2e.ts",
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/data-io-update-and-undo-on-the-production-api.e2e.ts",
           "tests/e2e/w5-reports-cash-and-imports-sections-on-postgresql.e2e.ts"
@@ -2878,16 +2885,17 @@
       "id": "M31",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
-        "integration": 14,
-        "realDb": 7,
-        "browser": 5,
-        "connected": 3,
+        "unit": 9,
+        "integration": 15,
+        "realDb": 8,
+        "browser": 6,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/batch18b-print-view-and-report-period.test.ts",
           "tests/unit/cert-in-capacity-and-suppression.test.ts",
           "tests/unit/documents-templates.test.ts",
           "tests/unit/messaging-budget.test.ts",
@@ -2900,6 +2908,7 @@
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
           "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
+          "tests/integration/batch18b-print-views-and-list-download-records.test.ts",
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/do-not-contact-frequency-cert-in-and-capacity.test.ts",
           "tests/integration/document-issue.test.ts",
@@ -2916,6 +2925,7 @@
         "realDb": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
           "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
+          "tests/integration/batch18b-print-views-and-list-download-records.test.ts",
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/do-not-contact-frequency-cert-in-and-capacity.test.ts",
           "tests/integration/documents-issue-from-their-records.test.ts",
@@ -2923,6 +2933,7 @@
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "browser": [
+          "tests/e2e/batch18b-download-a-list-and-print-a-po-and-a-grn.e2e.ts",
           "tests/e2e/document-template-publish-delivery.e2e.ts",
           "tests/e2e/r4c-the-do-not-contact-list.e2e.ts",
           "tests/e2e/w3-a-document-past-its-keeping-time-is-disposed-on-the-retention-page.e2e.ts",
@@ -2930,6 +2941,7 @@
           "tests/e2e/w4-m31-documents-and-messages-on-postgresql.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/batch18b-download-a-list-and-print-a-po-and-a-grn.e2e.ts",
           "tests/e2e/w3-a-document-past-its-keeping-time-is-disposed-on-the-retention-page.e2e.ts",
           "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts",
           "tests/e2e/w4-m31-documents-and-messages-on-postgresql.e2e.ts"
@@ -4910,10 +4922,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 3,
-        "integration": 14,
-        "realDb": 8,
-        "browser": 6,
-        "connected": 5,
+        "integration": 15,
+        "realDb": 9,
+        "browser": 7,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -4927,6 +4939,7 @@
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/ai-owner-and-purchase-agents.test.ts",
           "tests/integration/an-amendment-is-judged-on-the-order-as-it-stands.test.ts",
+          "tests/integration/batch18b-print-views-and-list-download-records.test.ts",
           "tests/integration/demand-forecast.test.ts",
           "tests/integration/order-proposal.test.ts",
           "tests/integration/purchase-orders.test.ts",
@@ -4942,6 +4955,7 @@
         "realDb": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/an-amendment-is-judged-on-the-order-as-it-stands.test.ts",
+          "tests/integration/batch18b-print-views-and-list-download-records.test.ts",
           "tests/integration/replenishment-parameters-are-stored-per-store-and-drive-the-proposal.test.ts",
           "tests/integration/replenishment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -4950,6 +4964,7 @@
           "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "browser": [
+          "tests/e2e/batch18b-download-a-list-and-print-a-po-and-a-grn.e2e.ts",
           "tests/e2e/buying-po-delivery.e2e.ts",
           "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
@@ -4958,6 +4973,7 @@
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/batch18b-download-a-list-and-print-a-po-and-a-grn.e2e.ts",
           "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",

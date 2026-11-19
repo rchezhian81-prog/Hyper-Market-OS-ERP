@@ -17,6 +17,8 @@
 // screen is committed locally and queued, and the sync agent drains it. Nothing in this file calls
 // the network in a path a person waits on.
 
+import { listFile, listFileName, isPersonalKey, maySeePersonal, recordDownload, flushPending } from './list-download';
+import { openPrint } from './print-documents-browser';
 import { createReceiptPrefixSession, type ReceiptPrefixSession, type ReceiptPrefixesRead } from './receipt-prefix-session';
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
@@ -96,7 +98,7 @@ import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, g
 import { createScaleRulesSession, scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, SCALE_VALUE_KINDS, type ScaleRulesSession } from './scale-label-rules-session';
 import {
   createReportingSession,
-  type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
+  type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession, type ReportCover, type ItemSales,
 } from './reporting-session';
 import { figureNameIn } from '../../../services/reporting/src/index';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/index';
@@ -596,6 +598,12 @@ export interface ReportingData {
   readonly categoryNames?: Readonly<Record<string, string>>;
   /** D-057: per department — items, weighed grams, the money its lines took. */
   readonly salesByCategory?: Readonly<Record<string, { readonly items: number; readonly grams: number; readonly takenMinor: number; readonly linesWithNoMoney: number; readonly marginMinor?: number; readonly marginBps?: number; readonly marginNotKnown?: string }>>;
+  /** Batch 18b · O1: the period the figures cover (absent from an older store computer: today). */
+  readonly period?: ReportCover;
+  /** Batch 18b · O3: each department's items. */
+  readonly salesByItem?: Readonly<Record<string, readonly ItemSales[]>>;
+  /** Batch 18b · O1: why the things-to-look-at are not known for this period. */
+  readonly exceptionsNotKnown?: string;
 }
 
 /**
@@ -6926,6 +6934,9 @@ export function reportingPortsFromData(data: ReportingData | undefined): Reporti
     // report needs to know the difference: with no map it shows department ids and says so.
     categoryNames: () => data?.categoryNames,
     salesByCategory: () => data?.salesByCategory,
+    period: () => data?.period,
+    salesByItem: () => data?.salesByItem,
+    exceptionsNotKnown: () => data?.exceptionsNotKnown,
   };
 }
 
@@ -7958,3 +7969,10 @@ if (browserWindow !== undefined) {
 // The words have ONE source — `refusal-words.ts` — so the chrome (plain JS, no bundler) reads them from this bundle, which
 // every office page loads; a guardrail keeps the chrome delegating here rather than carrying a copy that could drift.
 (globalThis as { sreRefusalWords?: unknown }).sreRefusalWords = Object.freeze({ refusalWords: refusalWordsOf, whatHappenedWords, nextSafeActionWords, causeOf, headOfficeSaid });
+
+// Batch 18b · B1 (M30-FR-02 · P-06): the chrome's one register writes its "Download to Excel" file with this tested code — the
+// CSV with its byte-order mark, the export engine's personal-data rule, and the record in head office's export ledger.
+(globalThis as { sreListDownload?: unknown }).sreListDownload = Object.freeze({ listFile, listFileName, isPersonalKey, maySeePersonal, recordDownload, flushPending });
+// Batch 18b · R1 / P1 / B2 (M31-FR-02 · WF-03): a document's print layout (A4), from head office's print view, kept on this
+// computer once read so it prints again with the internet off.
+(globalThis as { srePrint?: unknown }).srePrint = Object.freeze({ openPrint });

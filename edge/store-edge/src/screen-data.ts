@@ -57,6 +57,7 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tenderPartsOf, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
+import { coverPeriod, salesIn, COST_NOT_KNOWN_FOR_PERIOD, LIMITS_NOT_KNOWN_FOR_PERIOD, type PeriodAsk } from './report-period';
 import { departmentMargin, marginNotKnownWhy, type MarginLine } from '../../../packages/reporting/src/department-margin';
 import type { OldErpBillSale } from '../../../packages/tender/src/old-erp-bill-number';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
@@ -99,6 +100,11 @@ export type ScreenName = (typeof SCREENS)[number];
 export interface ScreenInput {
   readonly pack: StorePack;
   readonly sales: readonly LoggedSale[];
+  /**
+   * Batch 18b · O1 (M29-FR-02): the period the Reports page asked for in its own address (`?from=…&to=…`); absent or
+   * `null` → today. Read by the reporting payload only.
+   */
+  readonly reportPeriod?: PeriodAsk;
   /**
    * The refunds and exchanges on this box's returns log, parsed (any shape the till wrote). Absent on a box that holds
    * none. The owner's takings are counted net of them — the day book's own rule (`refundLegs`), never a second one.
@@ -2418,8 +2424,12 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
 
   // **TODAY's** sales, reduced to reporting facts. The log is never rotated, so this was the whole
   // history — "Sales by day: Taken ₹2,245" on a day the shop took ₹145, with nothing saying so.
-  const today = salesOn(input.sales, input.tradingDay);
+  // Batch 18b · O1 (M29-FR-02): or the PERIOD the page asked for — exactly the days this box holds within it, said.
+  const asked = input.reportPeriod ?? null;
+  const cover = coverPeriod(asked !== null && asked.ok ? asked.period : null, input.tradingDay, input.sales);
+  const today = cover.todayOnly ? salesOn(input.sales, input.tradingDay) : salesIn(input.sales, cover.covered);
   payload['tradingDay'] = input.tradingDay;
+  payload['period'] = { ...cover, ...(asked !== null && !asked.ok ? { refused: asked.why } : {}) };
   // D-057: the report names the store as people say it, not by its code.
   if (input.pack.policies.known && typeof input.pack.policies.value.branchName === 'string' && input.pack.policies.value.branchName !== '') payload['storeName'] = input.pack.policies.value.branchName;
   if (today.undated > 0) payload['undatedSales'] = today.undated;
@@ -2439,7 +2449,8 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
     // quoting different margins for the same day.
     const lines = sale.lines;
     let cogs = 0;
-    let costable = lines !== undefined && lines.length > 0;
+    // Batch 18b · O1: a bill on an earlier day is costed at that day's cost, which this box does not keep — no cost, said.
+    let costable = cover.todayOnly && lines !== undefined && lines.length > 0;
     if (lines !== undefined) {
       for (const line of lines) {
         const unit = costOf.get(line.productId);
@@ -2494,6 +2505,9 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
   // `unitCostMinor`, OB-39 "B"). A department with any line that has no cost reads "Not known — N lines had no cost".
   const taxOf = new Map(products.filter((p) => p.taxBps !== undefined).map((p) => [p.productId, p.taxBps!] as const));
   const marginLinesOf: Record<string, MarginLine[]> = {};
+  // Batch 18b · O3 (M29-FR-02 drill-through): the same lines, item by item inside each department.
+  const nameOf = new Map(products.map((p) => [p.productId, p.name] as const));
+  const itemsOf: Record<string, Map<string, { name: string; items: number; grams: number; takenMinor: number; linesWithNoMoney: number; lines: MarginLine[] }>> = {};
   const unitsByCategory: Record<string, number> = {};
   const salesByCategory: Record<string, { items: number; grams: number; takenMinor: number; linesWithNoMoney: number; marginMinor?: number; marginBps?: number; marginNotKnown?: string }> = {};
   let unitsWithNoCategory = 0;
@@ -2510,10 +2524,17 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
       if (typeof line.lineTotalMinor === 'number' && Number.isSafeInteger(line.lineTotalMinor)) held.takenMinor += line.lineTotalMinor; else held.linesWithNoMoney += 1;
       salesByCategory[key] = held;
       const unitCost = costOf.get(line.productId);
-      (marginLinesOf[key] ??= []).push({
+      const marginLine: MarginLine = {
         grossMinor: typeof line.lineTotalMinor === 'number' && Number.isSafeInteger(line.lineTotalMinor) ? line.lineTotalMinor : undefined,
         taxBps: taxOf.get(line.productId), costMinor: unitCost === undefined ? undefined : lineCostMinor(unitCost, line),
-      });
+      };
+      (marginLinesOf[key] ??= []).push(marginLine);
+      const perItem = (itemsOf[key] ??= new Map());
+      const item = perItem.get(line.productId) ?? { name: nameOf.get(line.productId) ?? line.productId, items: 0, grams: 0, takenMinor: 0, linesWithNoMoney: 0, lines: [] };
+      if (line.uom === 'kg' || line.uom === 'L') item.grams += line.quantityMinor; else item.items += line.uom === 'ea' || line.uom === undefined ? line.quantityMinor : 1;
+      if (marginLine.grossMinor !== undefined) item.takenMinor += marginLine.grossMinor; else item.linesWithNoMoney += 1;
+      item.lines.push(marginLine);
+      perItem.set(line.productId, item);
       if (category === undefined) { unitsWithNoCategory += units; continue; }
       unitsByCategory[category] = (unitsByCategory[category] ?? 0) + units;
     }
@@ -2522,12 +2543,26 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
     // Every department here had at least one line, so it has its margin lines (both are filled in the same loop above).
     const lines = marginLinesOf[key];
     if (lines === undefined) continue;
+    // Batch 18b · O1: margin rests on the average buying cost this box holds TODAY — for any other period it is not known.
+    if (!cover.todayOnly) { held.marginNotKnown = COST_NOT_KNOWN_FOR_PERIOD; continue; }
     const m = departmentMargin(lines);
     const why = marginNotKnownWhy(m);
     if (why === undefined) { held.marginMinor = m.marginMinor!; if (m.marginBps !== null) held.marginBps = m.marginBps; } else held.marginNotKnown = why;
   }
   payload['unitsByCategory'] = unitsByCategory;
   payload['salesByCategory'] = salesByCategory;
+  // Batch 18b · O3: each department's items — quantity, kg, rupees, and margin by the D-057 rule (an item with any line that
+  // has no cost reads "Not known — N lines had no cost"; any period but today: not known for this period). Most money first.
+  payload['salesByItem'] = Object.fromEntries(Object.entries(itemsOf).map(([dept, items]) => [dept, [...items.entries()].map(([productId, it]) => {
+    const row: Record<string, unknown> = { productId, name: it.name, items: it.items, grams: it.grams, takenMinor: it.takenMinor, linesWithNoMoney: it.linesWithNoMoney };
+    if (!cover.todayOnly) row['marginNotKnown'] = COST_NOT_KNOWN_FOR_PERIOD;
+    else {
+      const m = departmentMargin(it.lines);
+      const why = marginNotKnownWhy(m);
+      if (why === undefined) { row['marginMinor'] = m.marginMinor!; if (m.marginBps !== null) row['marginBps'] = m.marginBps; } else row['marginNotKnown'] = why;
+    }
+    return row;
+  }).sort((a, b) => (b['takenMinor'] as number) - (a['takenMinor'] as number) || String(a['name']).localeCompare(String(b['name'])))]));
   // Counted, not folded into a department. A product the catalogue does not place is a catalogue
   // problem, and hiding it inside "Grocery" is how it stays one.
   if (unitsWithNoCategory > 0) payload['unitsWithNoCategory'] = unitsWithNoCategory;
@@ -2543,6 +2578,8 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
     ? (input.pack.lossPreventionRules.value as readonly LpRule[])
     : undefined;
   const day = exceptionsFor(activityFrom(today.sales), rules);
+  // Batch 18b · O1: the limits are today's — an earlier period's things-to-look-at are not known here, and say so.
+  if (!cover.todayOnly) payload['exceptionsNotKnown'] = LIMITS_NOT_KNOWN_FOR_PERIOD;
   payload['exceptionRulesKnown'] = day.rulesKnown;
   payload['exceptions'] = day.exceptions.map((e) => ({
     what: `${e.kind.replace(/_/g, ' ')} by ${e.cashierId}: ${e.observed} against a limit of ${e.limit}`,
