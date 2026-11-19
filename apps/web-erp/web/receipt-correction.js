@@ -17,7 +17,7 @@ function build() {
     (() => { const d = mk('div', { class: 'sre-field' }); d.append(mk('label', { for: 'grc-ref', id: 'grc-l-ref', class: 'sre-field-label' }), mk('input', { id: 'grc-ref', class: 'sre-input', autocomplete: 'off' })); return d; })(),
     mk('button', { id: 'grc-open', type: 'button', class: 'sre-btn sre-btn-secondary' }),
     mk('p', { id: 'grc-state', role: 'status' }),
-    mk('table', { id: 'grc-lines', class: 'lines' }),
+    mk('div', { id: 'grc-lines' }), // U5: the lines are the shared register (sreOffice.table), never a plain table
     (() => { const d = mk('div', { class: 'sre-field' }); d.append(mk('label', { for: 'grc-line', id: 'grc-l-line', class: 'sre-field-label' }), mk('select', { id: 'grc-line', class: 'sre-input' })); return d; })(),
     (() => { const d = mk('div', { class: 'sre-field' }); d.append(mk('label', { for: 'grc-right', id: 'grc-l-right', class: 'sre-field-label' }), mk('input', { id: 'grc-right', class: 'sre-input', type: 'number', min: '0', step: '1', inputmode: 'numeric', autocomplete: 'off' })); return d; })(),
     (() => { const d = mk('div', { class: 'sre-field' }); d.append(mk('label', { for: 'grc-why', id: 'grc-l-why', class: 'sre-field-label' }), mk('input', { id: 'grc-why', class: 'sre-input', autocomplete: 'off', maxlength: '300' })); return d; })(),
@@ -31,22 +31,39 @@ function build() {
 
 const $ = (id) => document.getElementById(id);
 
+// The receipt's lines — as saved and as they stand now — in the shared register (U5), one page, no search or sort.
+let linesReg = null;
+/** The session's own words for a key, in both languages, so the register repaints them on the language switch. */
+const pair = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
+function linesRegister() {
+  if (linesReg && linesReg.connected()) return linesReg;
+  const host = $('grc-lines');
+  if (!host || !window.sreOffice) return null;
+  linesReg = window.sreOffice.table(host, {
+    id: 'grc-lines-register', label: pair('line'), search: false, pageSize: 200,
+    rowKey: (l) => l.lineId, rowData: (l) => ({ line: l.lineId }),
+    columns: [
+      { key: 'line', label: pair('line'), value: (l) => `${l.lineId} · ${l.productId}` },
+      { key: 'receivedMinor', label: pair('received'), align: 'end', value: (l) => String(l.receivedMinor) },
+      { key: 'nowMinor', label: pair('now'), align: 'end', value: (l) => String(l.nowMinor) },
+    ],
+    rows: [],
+  });
+  return linesReg;
+}
+
 function paint() {
   $('grc-h').textContent = w('heading'); $('grc-lede').textContent = w('lede');
   $('grc-l-ref').textContent = w('receipt'); $('grc-open').textContent = w('open');
   $('grc-l-line').textContent = w('line'); $('grc-l-right').textContent = w('right'); $('grc-l-why').textContent = w('why');
   $('grc-save').textContent = w('save'); $('grc-ask').textContent = w('ask'); $('grc-list-h').textContent = w('corrections');
-  const table = $('grc-lines'); const sel = $('grc-line'); const list = $('grc-list');
-  if (view === null) { table.replaceChildren(); sel.replaceChildren(); list.replaceChildren(); return; }
-  const head = mk('tr'); for (const k of ['line', 'received', 'now']) head.append(mk('th', {}, k === 'line' ? w('line') : w(k))); table.replaceChildren(head);
+  const sel = $('grc-line'); const list = $('grc-list');
+  const reg = linesRegister();
+  if (view === null) { if (reg) reg.setRows([]); sel.replaceChildren(); list.replaceChildren(); return; }
   const keep = sel.value;
   sel.replaceChildren(...view.lines.map((l) => mk('option', { value: l.lineId }, `${l.lineId} · ${l.productId}`)));
   if (keep) sel.value = keep;
-  for (const l of view.lines) {
-    const tr = mk('tr', { 'data-line': l.lineId });
-    tr.append(mk('td', {}, `${l.lineId} · ${l.productId}`), mk('td', { class: 'num' }, String(l.receivedMinor)), mk('td', { class: 'num' }, String(l.nowMinor)));
-    table.append(tr);
-  }
+  if (reg) reg.setRows(view.lines);
   list.replaceChildren(...(view.corrections.length === 0 ? [mk('li', {}, w('none'))] : view.corrections.map((c) => {
     const li = mk('li', { 'data-correction': c.correctionId }, `${c.documentNumber} · ${c.lineId} · ${c.wasMinor} → ${c.nowMinor} · ₹${(c.valueMinor / 100).toFixed(2)} · ${w('by')} ${c.requestedBy} · ${w('approved')} ${c.approvedBy} · “${c.reason}”`);
     for (const e of c.exceptions) li.append(mk('div', { class: 'exception' }, `${w('exception')} ${e}`));
