@@ -160,6 +160,7 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       // Stock, orders and purchasing (2b-vi-b-3).
       stock_write_off: { en: 'Write off stock (a material loss)', ta: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)' },
       stock_adjustment_up: { en: 'Correct stock upward', ta: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்' },
+      goods_receipt_correction: { en: 'Correct a saved goods receipt (a wrongly keyed quantity)', ta: 'சேமித்த சரக்கு வரவைத் திருத்துதல் (தவறாகப் பதிந்த அளவு)' }, // R2 · batch 18c
       order_refund: { en: 'Refund an online order', ta: 'ஆன்லைன் ஆர்டருக்குப் பணத்தைத் திருப்பித் தருதல்' },
       service_compensation: { en: 'Give a customer compensation above the desk\'s own limit', ta: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்' },
       supplier_invoice_check: { en: 'Check a supplier bill', ta: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்' },
