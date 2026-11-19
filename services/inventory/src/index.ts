@@ -62,7 +62,10 @@ export type MovementKind =
   | 'produced'
   /** OB-44 "A": an opening receipt reversed inside the cutover window — the same quantity out at the receipt's own cost
    *  (never cost of goods sold). Only the opening-reversal route posts it, with a named person and a second approver. */
-  | 'opening_reversed';
+  | 'opening_reversed'
+  /** R2 (batch 18c · OB-873): a saved goods receipt corrected DOWN (a quantity keyed too high) — the difference out at the
+   *  receipt line's own cost, a reversal of a purchase (never cost of goods sold). Only the receipt-correction route posts it. */
+  | 'receipt_corrected_out';
 
 /**
  * Who owns a lot of stock on the store's shelves (M27-FR-02, M08 ownership field). Absent on a
@@ -75,13 +78,15 @@ export type StockOwnership = 'own' | 'concession' | 'consignment' | 'customer_pr
 /** What each kind does to on-hand. Declared, never inferred from a sign on the quantity. */
 export const EFFECT_ON_HAND: Readonly<Record<MovementKind, 1 | -1>> = {
   received: 1, returned: 1, transferred_in: 1, counted: 1, adjusted: 1, produced: 1,
-  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1, consumed_in_production: -1, opening_reversed: -1,
+  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1, consumed_in_production: -1, opening_reversed: -1, receipt_corrected_out: -1,
 };
 
 /** Batch 2 · FUL-01: the kinds only the production routes post — never accepted on the plain movements route. */
 export const PRODUCTION_ONLY_KINDS: readonly MovementKind[] = ['consumed_in_production', 'produced'];
 /** OB-44: the kind only the cutover opening-reversal posts — never accepted on the plain movements route. */
-export const REVERSAL_ONLY_KINDS: readonly MovementKind[] = ['opening_reversed'];
+export const REVERSAL_ONLY_KINDS: readonly MovementKind[] = ['opening_reversed', 'receipt_corrected_out'];
+/** The kinds that take a receipt back out at the receipt's own cost (valuation treats them as a receipt reversal). */
+export const isReceiptReversalKind = (kind: MovementKind): boolean => kind === 'opening_reversed' || kind === 'receipt_corrected_out';
 
 /**
  * An issue whose VALUE moves on rather than being spent (valuation's `isTransferOut`): stock sent to another of our own

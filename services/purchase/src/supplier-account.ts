@@ -281,6 +281,27 @@ export function doorDebitNotesFrom(versions: readonly DoorCheckInForAccount[]): 
   return out.sort((a, b) => (a.raisedAt < b.raisedAt ? -1 : a.raisedAt > b.raisedAt ? 1 : a.debitNoteRef < b.debitNoteRef ? -1 : 1));
 }
 
+/**
+ * S1 (batch 18c · OB-872): the debit note issued when expired, near-expiry or damaged SHELF stock went back to this supplier
+ * (its `SDN` number, its `RTS` return). Valued at the stock's own cost, before GST. OB-874 C (owner, 19 Nov 2026, in
+ * writing): it is SHOWN on the account but NOT taken off what is owed until the supplier accepts it — said in words, "waiting
+ * for the supplier to accept" (P-08).
+ */
+export interface ShelfReturnDebitNote {
+  readonly debitNoteRef: string;
+  readonly number: string | null;
+  readonly supplierId: string;
+  readonly returnId: string;
+  readonly returnNumber: string | null;
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly valueMinor: number;
+  readonly reason: string;
+  readonly raisedAt: string;
+  readonly gstTreatment: 'not_decided';
+  readonly nettedInBalance: false;
+}
+
 export interface SupplierAccountTotals {
   readonly invoicedMinor: number;
   /** Σ matched payable — what the shop has agreed it owes. */
@@ -320,6 +341,9 @@ export interface SupplierAccountStatement extends PayablesAccount {
   /** R3 · D-11 · OB-196 — the numbered debit notes raised at the DSD door; shown, not netted (see `DoorDebitNote`). */
   readonly doorDebitNotes: readonly DoorDebitNote[];
   readonly doorDebitNotesTotal: { readonly valueMinor: number; readonly notesWithValueUnknown: number; readonly nettedInBalance: false };
+  /** S1 (batch 18c): debit notes for shelf stock returned to this supplier — shown, not netted, until the GST treatment is decided. */
+  readonly shelfReturnDebitNotes: readonly ShelfReturnDebitNote[];
+  readonly shelfReturnDebitNotesTotal: { readonly valueMinor: number; readonly nettedInBalance: false; readonly why: string };
   readonly totals: SupplierAccountTotals;
   readonly asAt: string;
 }
@@ -348,6 +372,8 @@ export interface SupplierAccountInput {
   readonly doorDebitNotes?: readonly DoorDebitNote[];
   /** OB-725 — every APPROVED claim credit (all suppliers). Optional for callers that have none. */
   readonly claimCredits?: readonly SupplierClaimCredit[];
+  /** S1 (batch 18c) — every shelf-return debit note (all suppliers). Optional for callers that have none. */
+  readonly shelfReturnDebitNotes?: readonly ShelfReturnDebitNote[];
   readonly asAt: string;
 }
 
@@ -445,7 +471,13 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const openings = (input.openings ?? []).filter((o) => o.supplierId === input.supplierId);
   const openingMinor = openings.filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0); // OB-44: a reversed opening is not owed
   const doorDebitNotes = (input.doorDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId);
+  const shelfReturnDebitNotes = (input.shelfReturnDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId);
   return {
+    shelfReturnDebitNotes,
+    shelfReturnDebitNotesTotal: {
+      valueMinor: shelfReturnDebitNotes.reduce((s, d) => s + d.valueMinor, 0), nettedInBalance: false,
+      why: 'Waiting for the supplier to accept. Shown here, but not taken off what is owed until the supplier accepts it (owner\'s decision OB-874).',
+    },
     supplierId: input.supplierId, currency: 'INR',
     invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments, claimCredits, openings,
     doorDebitNotes,
@@ -475,6 +507,7 @@ export function foldAllSupplierAccounts(input: Omit<SupplierAccountInput, 'suppl
     ...input.invoices.map((i) => i.supplierId), ...input.orders.map((o) => o.supplierId), ...(input.payments ?? []).map((p) => p.supplierId),
     ...(input.openings ?? []).map((o) => o.supplierId), ...(input.doorDebitNotes ?? []).map((d) => d.supplierId), // OB-196
     ...(input.claimCredits ?? []).map((c) => c.supplierId), // OB-725
+    ...(input.shelfReturnDebitNotes ?? []).map((d) => d.supplierId), // S1 (batch 18c)
   ])].sort();
   const accounts = supplierIds.map((supplierId) => foldSupplierAccount({ ...input, supplierId }));
   const known = new Set(input.orders.map((o) => o.poId));
@@ -509,17 +542,19 @@ export interface SupplierAccountDeps {
   readonly doorDebitNotes?: (tenantId: string) => Promise<readonly DoorDebitNote[]> | readonly DoorDebitNote[];
   /** OB-725 — the supplier claims the accountant approved as credits. Optional: a stub has none. */
   readonly claimCredits?: (tenantId: string) => Promise<readonly SupplierClaimCredit[]> | readonly SupplierClaimCredit[];
+  /** S1 (batch 18c) — the debit notes issued for shelf stock returned to suppliers. Optional: a stub has none. */
+  readonly shelfReturnDebitNotes?: (tenantId: string) => Promise<readonly ShelfReturnDebitNote[]> | readonly ShelfReturnDebitNote[];
   readonly now: () => string;
 }
 
 /** The registers the account folds from, read once — shared by the account routes, the master (SP-7c) and finance. */
 export async function accountRegisters(deps: SupplierAccountDeps, tenantId: string): Promise<Omit<SupplierAccountInput, 'supplierId'>> {
-  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits] = await Promise.all([
+  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, shelfReturnDebitNotes] = await Promise.all([
     deps.invoices(tenantId), deps.latestMatches(tenantId), deps.purchaseOrders(tenantId), deps.receipts(tenantId),
     deps.payments(tenantId), deps.debitNoteIssues(tenantId), deps.openingBalances?.(tenantId) ?? [], deps.doorDebitNotes?.(tenantId) ?? [],
-    deps.claimCredits?.(tenantId) ?? [],
+    deps.claimCredits?.(tenantId) ?? [], deps.shelfReturnDebitNotes?.(tenantId) ?? [],
   ]);
-  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, asAt: deps.now() };
+  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, shelfReturnDebitNotes, asAt: deps.now() };
 }
 const registers = accountRegisters;
 
@@ -555,7 +590,8 @@ export function supplierAccountRoutes(deps: SupplierAccountDeps): readonly Route
         const supplierId = (ctx.params['supplierId'] ?? '').trim();
         const regs = await registers(deps, ctx.tenantId);
         const known = regs.invoices.some((i) => i.supplierId === supplierId) || regs.orders.some((o) => o.supplierId === supplierId)
-          || (regs.payments ?? []).some((p) => p.supplierId === supplierId) || (regs.openings ?? []).some((o) => o.supplierId === supplierId);
+          || (regs.payments ?? []).some((p) => p.supplierId === supplierId) || (regs.openings ?? []).some((o) => o.supplierId === supplierId)
+          || (regs.shelfReturnDebitNotes ?? []).some((d) => d.supplierId === supplierId); // S1 (batch 18c)
         if (!known) throw notFound(`supplier ${supplierId}`);
         return { status: 200, body: foldSupplierAccount({ ...regs, supplierId }) };
       },

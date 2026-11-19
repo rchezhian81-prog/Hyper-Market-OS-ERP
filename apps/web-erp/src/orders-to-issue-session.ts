@@ -14,9 +14,9 @@
 // Holds no rule of its own beyond that; DOM-free and tested.
 
 import { createOpenToBuySession } from './open-to-buy-session';
-import type { Answer, HeadOfficeCall } from './supplier-bills-session';
+import { bodyKey, type Answer, type HeadOfficeCall } from './supplier-bills-session';
 import {
-  mayIssueOrders, ordersWaitingToIssue,
+  mayIssueOrders, ordersWaitingToIssue, ordersSentBackTo,
   type OrderWaitingToIssue, type WaitingOrderViewer,
 } from '../../../packages/purchasing/src/orders-waiting-to-issue';
 
@@ -34,6 +34,14 @@ export const ORDERS_TO_ISSUE_WORDS = Object.freeze({
     reason: 'Why this order is approved (required)', overReason: 'Why it may go over budget', issue: 'Issue this order',
     needReason: 'Write why this order is approved first.', issued: 'Issued — the order goes to the supplier.', issuedOver: 'Issued over budget — the reason is on record.',
     refused: 'Head office did not issue it:',
+    // P2 (batch 18c · OB-871): reject, send back, withdraw, resubmit — before the order is issued.
+    decideReason: 'Your reason or note (required for every button)', sendBack: 'Send back to raiser', reject: 'Reject',
+    withdraw: 'Withdraw my order', withdrawReason: 'Why you are taking it back (required)', needNote: 'Write your reason or note first.',
+    rejected: 'Rejected — the order has ended. The reason is on record.', sentBack: 'Sent back — the person who raised it can change it and resubmit it.',
+    withdrawn: 'Withdrawn — the order has ended. The reason is on record.', resubmitted: 'Resubmitted — it waits for a second person again.',
+    notDone: 'Head office did not do it:', sentBackHeading: 'Orders sent back to you', sentBackNone: 'No order has been sent back to you.',
+    sentBackBy: 'Sent back by', note: 'Note', resubmitNote: 'What you changed (required)', resubmit: 'Resubmit the order',
+    resubmittedBy: 'Resubmitted with changes',
   },
   ta: {
     heading: 'வழங்கக் காத்திருக்கும் கொள்முதல் ஆணைகள்', reading: 'தலைமை அலுவலகத்தில் காத்திருக்கும் கொள்முதல் ஆணைகளைப் படிக்கிறது…',
@@ -44,6 +52,13 @@ export const ORDERS_TO_ISSUE_WORDS = Object.freeze({
     reason: 'இந்த ஆணைக்கு ஏன் ஒப்புதல் (கட்டாயம்)', overReason: 'ஏன் பட்ஜெட்டை மீறலாம்', issue: 'இந்த ஆணையை வழங்கு',
     needReason: 'முதலில் இந்த ஆணைக்கு ஏன் ஒப்புதல் என்று எழுதுங்கள்.', issued: 'வழங்கப்பட்டது — ஆணை விநியோகஸ்தருக்குச் செல்கிறது.', issuedOver: 'பட்ஜெட்டை மீறி வழங்கப்பட்டது — காரணம் பதிவில் உள்ளது.',
     refused: 'தலைமை அலுவலகம் வழங்கவில்லை:',
+    decideReason: 'உங்கள் காரணம் அல்லது குறிப்பு (ஒவ்வொரு பொத்தானுக்கும் கட்டாயம்)', sendBack: 'உருவாக்கியவருக்குத் திருப்பி அனுப்பு', reject: 'நிராகரி',
+    withdraw: 'என் ஆணையைத் திரும்பப் பெறு', withdrawReason: 'ஏன் திரும்பப் பெறுகிறீர்கள் (கட்டாயம்)', needNote: 'முதலில் உங்கள் காரணம் அல்லது குறிப்பை எழுதுங்கள்.',
+    rejected: 'நிராகரிக்கப்பட்டது — ஆணை முடிந்தது. காரணம் பதிவில் உள்ளது.', sentBack: 'திருப்பி அனுப்பப்பட்டது — உருவாக்கியவர் மாற்றி மீண்டும் சமர்ப்பிக்கலாம்.',
+    withdrawn: 'திரும்பப் பெறப்பட்டது — ஆணை முடிந்தது. காரணம் பதிவில் உள்ளது.', resubmitted: 'மீண்டும் சமர்ப்பிக்கப்பட்டது — இரண்டாவது நபருக்காக மீண்டும் காத்திருக்கிறது.',
+    notDone: 'தலைமை அலுவலகம் செய்யவில்லை:', sentBackHeading: 'உங்களுக்குத் திருப்பி அனுப்பப்பட்ட ஆணைகள்', sentBackNone: 'எந்த ஆணையும் உங்களுக்குத் திருப்பி அனுப்பப்படவில்லை.',
+    sentBackBy: 'திருப்பி அனுப்பியவர்', note: 'குறிப்பு', resubmitNote: 'நீங்கள் என்ன மாற்றினீர்கள் (கட்டாயம்)', resubmit: 'ஆணையை மீண்டும் சமர்ப்பி',
+    resubmittedBy: 'மாற்றங்களுடன் மீண்டும் சமர்ப்பிக்கப்பட்டது',
   },
 } as const);
 
@@ -61,7 +76,7 @@ export function rupeesText(minor: number): string {
 }
 
 export type OrdersRead =
-  | { readonly state: 'read'; readonly orders: readonly OrderWaitingToIssue[] }
+  | { readonly state: 'read'; readonly orders: readonly OrderWaitingToIssue[]; readonly sentBack: readonly OrderWaitingToIssue[] }
   | { readonly state: 'not_your_role' }
   | { readonly state: 'unreachable' };
 
@@ -70,13 +85,28 @@ export type IssueOutcome =
   | { readonly kind: 'not_yours' }
   | { readonly kind: 'issued'; readonly overBudget: boolean }
   | { readonly kind: 'refused'; readonly whatHappened: string }
-  | { readonly kind: 'lost_link' };
+  | { readonly kind: 'lost_link' }
+  // P2 (batch 18c)
+  | { readonly kind: 'needs_note' }
+  | { readonly kind: 'stepped'; readonly step: 'rejected' | 'sent_back' | 'withdrawn' | 'resubmitted' }
+  | { readonly kind: 'not_done'; readonly whatHappened: string };
+
+/** P2: a line as the raiser changed it — the quantity in the item's smallest steps, and a price in paise when changed. */
+export interface ResubmitLine { readonly productId: string; readonly orderedQty: number; readonly unitCostMinor?: number }
 
 export interface OrdersToIssueSession {
   readonly mayIssue: boolean;
   read(): Promise<OrdersRead>;
   /** Issue a waiting order — on an explicit click only, with the approver's written reason. */
   issue(order: Pick<OrderWaitingToIssue, 'poId' | 'raisedByViewer'>, reason: string, overBudgetReason?: string): Promise<IssueOutcome>;
+  /** P2: the second person rejects a waiting order (it ends) — explicit click, written reason. */
+  reject(order: Pick<OrderWaitingToIssue, 'poId' | 'raisedByViewer'>, reason: string): Promise<IssueOutcome>;
+  /** P2: the second person sends a waiting order back to its raiser with a note. */
+  sendBack(order: Pick<OrderWaitingToIssue, 'poId' | 'raisedByViewer'>, note: string): Promise<IssueOutcome>;
+  /** P2: the raiser takes back their own waiting (or sent-back) order. */
+  withdraw(order: Pick<OrderWaitingToIssue, 'poId' | 'raisedByViewer'>, reason: string): Promise<IssueOutcome>;
+  /** P2: the raiser resubmits an order sent back to them, with what they changed. */
+  resubmit(order: Pick<OrderWaitingToIssue, 'poId' | 'raisedByViewer'>, note: string, lines: readonly ResubmitLine[]): Promise<IssueOutcome>;
   /** The words an outcome is shown in. */
   outcomeWords(lang: Lang, outcome: IssueOutcome): string;
 }
@@ -101,6 +131,15 @@ export function createOrdersToIssueSession(
   const mayIssue = mayIssueOrders(viewer);
   // The Budget tab's own issue path — the one way an order is issued (no second door).
   const issuer = createOpenToBuySession(call, { permissions: viewer.permissions ?? [] });
+  // P2 (batch 18c): one POST per step, on an explicit click only; a blank reason sends nothing.
+  const step = async (poId: string, path: string, kind: 'rejected' | 'sent_back' | 'withdrawn' | 'resubmitted', body: { readonly reason: string; readonly lines?: readonly ResubmitLine[] }): Promise<IssueOutcome> => {
+    if (body.reason === '') return { kind: 'needs_note' };
+    const got = await call({ method: 'POST', path: `/v1/purchase/orders/${encodeURIComponent(poId)}/${path}`, body, idempotencyKey: bodyKey(`${path}-${poId}-${Date.now().toString(36)}`, body) }); // a later cycle (sent back twice) is a new step
+    if (got === 'unreachable') return { kind: 'lost_link' };
+    if (got.status < 300) return { kind: 'stepped', step: kind };
+    const e = (got.body as { error?: { whatHappened?: unknown } } | null)?.error;
+    return { kind: 'not_done', whatHappened: typeof e?.whatHappened === 'string' ? e.whatHappened : `head office answered ${got.status}` };
+  };
   return {
     mayIssue,
     read: async () => {
@@ -119,8 +158,18 @@ export function createOrdersToIssueSession(
         const cat = await call({ method: 'GET', path: '/v1/catalogue/products' });
         if (cat !== 'unreachable' && cat.status < 300) for (const [id, name] of namesFrom(cat.body, 'products', 'productId')) if (!products.has(id)) products.set(id, name);
       }
-      return { state: 'read', orders: ordersWaitingToIssue(got.body, viewer, { products, suppliers }) };
+      return { state: 'read', orders: ordersWaitingToIssue(got.body, viewer, { products, suppliers }), sentBack: ordersSentBackTo(got.body, viewer, { products, suppliers }) };
     },
+    reject: async (order, reason) => {
+      if (order.raisedByViewer) return { kind: 'not_yours' };
+      return step(order.poId, 'rejection', 'rejected', { reason: reason.trim() });
+    },
+    sendBack: async (order, note) => {
+      if (order.raisedByViewer) return { kind: 'not_yours' };
+      return step(order.poId, 'send-back', 'sent_back', { reason: note.trim() });
+    },
+    withdraw: async (order, reason) => step(order.poId, 'withdrawal', 'withdrawn', { reason: reason.trim() }),
+    resubmit: async (order, note, lines) => step(order.poId, 'resubmission', 'resubmitted', { reason: note.trim(), lines: lines.map((l) => ({ ...l })) }),
     issue: async (order, reason, overBudgetReason) => {
       if (order.raisedByViewer) return { kind: 'not_yours' };
       if (reason.trim() === '') return { kind: 'needs_reason' };
@@ -137,6 +186,9 @@ export function createOrdersToIssueSession(
         case 'issued': return outcome.overBudget ? w('issuedOver') : w('issued');
         case 'refused': return `${w('refused')} ${outcome.whatHappened}`;
         case 'lost_link': return w('unreachable');
+        case 'needs_note': return w('needNote');
+        case 'stepped': return w(outcome.step === 'sent_back' ? 'sentBack' : outcome.step);
+        case 'not_done': return `${w('notDone')} ${outcome.whatHappened}`;
       }
     },
   };

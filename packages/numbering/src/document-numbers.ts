@@ -43,6 +43,8 @@ export type DocumentNumberKind =
   | 'sale_bill' | 'till_return'
   // Numbered by the store computer, one range per store (the prefix's last digit is the store number):
   | 'goods_receipt' | 'stock_count' | 'write_off' | 'transfer_out' | 'return_to_supplier' | 'floor_indent' | 'money_receipt'
+  // R2 (batch 18c · OB-873, decided under OB-801): a correction of a saved goods receipt, `GRC1/26-27/00001`.
+  | 'goods_receipt_correction'
   // Company-wide (head office — whose API runs on the store computer, ADR-0032):
   | 'purchase_order' | 'supplier_payment' | 'supplier_advance' | 'supplier_debit_note'
   | 'customer_credit_note' | 'customer_debit_note' | 'business_invoice';
@@ -69,6 +71,7 @@ export const DOCUMENT_KINDS: Readonly<Record<DocumentNumberKind, DocumentKindRul
   return_to_supplier: { kind: 'return_to_supplier', scope: 'store', letters: 'RTS', words: 'Return to supplier' },
   floor_indent: { kind: 'floor_indent', scope: 'store', letters: 'IND', words: 'Floor indent' },
   money_receipt: { kind: 'money_receipt', scope: 'store', letters: 'RCT', words: 'Money received (receipt)' },
+  goods_receipt_correction: { kind: 'goods_receipt_correction', scope: 'store', letters: 'GRC', words: 'Goods receipt correction' },
   purchase_order: { kind: 'purchase_order', scope: 'company', letters: 'PO', words: 'Purchase order' },
   supplier_payment: { kind: 'supplier_payment', scope: 'company', letters: 'SPAY', words: 'Supplier payment' },
   supplier_advance: { kind: 'supplier_advance', scope: 'company', letters: 'SADV', words: 'Supplier advance' },

@@ -35,7 +35,7 @@ const WORDS = {
     reasonLabel: 'Why (supplier notice, complaint, test result)', start: 'Start the recall',
     startNote: 'This stops the item being sold at every till, including with the internet down.',
     listTitle: 'Recalls in this shop',
-    dispose: 'THROW AWAY — past its date', markdown: 'Mark it down — sells until',
+    dispose: 'THROW AWAY — past its date', markdown: 'Mark it down — sells until', returnToSupplier: 'Return to supplier',
     daysLeft: 'days left', daysAgo: 'days past its date', units: 'units',
     nothingExpiring: 'Nothing is close to its date among the {n} batches on record.',
     noBatchesYet: 'No batches are on record yet, so nothing can be close to its date — this is not a shop with nothing expiring.',
@@ -71,7 +71,7 @@ const WORDS = {
     reasonLabel: 'ஏன் (சப்ளையர் அறிவிப்பு, புகார், சோதனை முடிவு)', start: 'திரும்பப் பெறுதலைத் தொடங்கு',
     startNote: 'இது எல்லா பில்லிங் கவுன்டரிலும் விற்பனையை நிறுத்தும் — இணையம் இல்லாவிட்டாலும்.',
     listTitle: 'இந்தக் கடையில் திரும்பப் பெறுதல்கள்',
-    dispose: 'தூக்கி எறி — தேதி முடிந்தது', markdown: 'விலை குறை — இந்த தேதி வரை விற்கும்',
+    dispose: 'தூக்கி எறி — தேதி முடிந்தது', markdown: 'விலை குறை — இந்த தேதி வரை விற்கும்', returnToSupplier: 'விநியோகஸ்தருக்குத் திருப்பு',
     daysLeft: 'நாட்கள் உள்ளன', daysAgo: 'நாட்கள் தேதி முடிந்தது', units: 'அலகுகள்',
     nothingExpiring: 'பதிவில் உள்ள {n} தொகுதிகளில் எதுவும் தேதி நெருங்கவில்லை.',
     noBatchesYet: 'இன்னும் எந்தத் தொகுதியும் பதிவில் இல்லை, எனவே எதுவும் தேதி நெருங்க முடியாது — இது காலாவதி ஏதும் இல்லாத கடை அல்ல.',
@@ -269,6 +269,14 @@ function renderExpiry() {
         pick.addEventListener('click', () => { window.expiryMarkdownPick(item, quantityOf(item)); });
         row.append(pick);
       }
+      // S1 (batch 18c · OB-872): expired or near-expiry stock can go back to the supplier — opens the Return to supplier box
+      // on the Quarantine page with this batch filled in; nothing is sent until the person presses the button there.
+      const back = document.createElement('a');
+      back.className = 'return-to-supplier sre-btn sre-btn-quiet';
+      back.textContent = t('returnToSupplier');
+      const q = new URLSearchParams({ return: '1', product: item.productId, batch: item.batchId, qty: String(item.qty), reason: item.status === 'expired' ? 'expired' : 'near_expiry', ...(window.expiryData?.storeId ? { place: window.expiryData.storeId } : {}) });
+      back.href = `/quarantine?${q.toString()}`;
+      row.append(back);
       return row;
     })));
 }

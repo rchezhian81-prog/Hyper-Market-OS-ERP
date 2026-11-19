@@ -6786,6 +6786,7 @@
               "counted",
               "opening_reversed",
               "produced",
+              "receipt_corrected_out",
               "received",
               "returned",
               "returned_to_supplier",

@@ -39,6 +39,7 @@ import { ConcurrencyConflictError } from '../../../packages/persistence/src/even
 import { segregationConflict } from '../../../packages/purchasing/src/segregation';
 import { segregationRefusal, type SegregationPort } from './segregation-of-duties';
 import { shopClock, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { proposalStepRoutes, type ProposalStep, type ProposalStepRecord } from './purchase-order-proposal-steps';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 /** OB-847: what a numbered save answers — the document's format-A number (absent on a record saved before it). */
@@ -61,7 +62,13 @@ export interface StoredPurchaseOrder {
   readonly lines: readonly PurchaseOrderLineInput[];
   readonly totalMinor: number;
   readonly currency: CurrencyCode;
-  readonly status: 'proposed' | 'issued';
+  /**
+   * P2 (batch 18c · M06-FR-02 · OB-871): before it is issued an order may be SENT BACK to its raiser (who changes it and
+   * resubmits it), REJECTED by the second person, or WITHDRAWN by its raiser. Rejected and withdrawn are final.
+   */
+  readonly status: 'proposed' | 'issued' | 'sent_back' | 'rejected' | 'withdrawn';
+  /** P2: every step taken on the order before it was issued — who, when and why (absent when none). */
+  readonly proposalSteps?: readonly ProposalStep[];
   /** The approver, once issued — always someone other than the requisitioner (§28). */
   readonly approvedBy: string | null;
   readonly issuedAt: string | null;
@@ -166,7 +173,14 @@ export interface PurchaseOrderDeps {
   /** Record the issue decision (the approver + reason). Idempotent on the PO id. */
   readonly issue: (tenantId: string, poId: string, approvedBy: string, issuedAt: string, reason: string, key: string,
     /** WF-03 (round 10): issue only while this write guard (the month's open-to-buy) still holds — else `ConcurrencyConflictError`. */
-    budgetGuard?: { readonly key: string; readonly expectedVersion: number }) => Promise<void> | void;
+    budgetGuard?: { readonly key: string; readonly expectedVersion: number },
+    /** P2 (batch 18c): the order's own guard version read before the order — the issue lands only on the order as judged. */
+    orderVersion?: number) => Promise<void> | void;
+  /**
+   * P2 (batch 18c · OB-871): record a step on an order before it is issued — rejected, sent back, withdrawn, resubmitted —
+   * pinned to the order's guard version read before the order (else `ConcurrencyConflictError`). Optional on a bare stub.
+   */
+  readonly recordProposalStep?: (tenantId: string, step: ProposalStepRecord, orderVersion?: number) => Promise<void> | void;
   /** Set a supplier's block state. Append-only; latest wins. */
   readonly setSupplierBlocked: (tenantId: string, supplierId: string, blocked: boolean, reason: string, by: string, at: string, key: string) => Promise<void> | void;
   /** Amend an issued PO's lines (approved). Append-only — the prior lines stay on the ledger (hard rule #2). */
@@ -488,6 +502,8 @@ async function rejudgeReleaseAtIssue(deps: PurchaseOrderDeps, tenantId: string, 
 
 export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
   return [
+    // P2 (batch 18c · OB-871): reject, send back, withdraw and resubmit an order before it is issued.
+    ...proposalStepRoutes(deps),
     {
       // Propose a purchase order. Body: { number?, supplierId, lines[] each { productId, orderedQty,
       // unitCost{minor,currency} } }. The requisitioner is the authenticated buyer. Idempotent on the
@@ -669,10 +685,20 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         const poId = (ctx.params['poId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const reason = isStr(b['reason']) ? b['reason'].trim() : '';
+        // P2 (batch 18c): the order's guard, read BEFORE the order — a reject / send back since then refuses this issue.
+        const orderVersionAtRead = deps.orderVersion === undefined ? undefined : await deps.orderVersion(ctx.tenantId, poId);
         const po = await deps.order(ctx.tenantId, poId);
         if (po === undefined) throw notFound(`purchase order ${poId}`);
         if (po.status === 'issued') {
           return { status: 200, body: { order: po, openCommitment: openOf(po), alreadyIssued: true } };
+        }
+        if (po.status !== 'proposed') {
+          throw apiError(409, {
+            code: 'purchase_order_not_waiting',
+            whatHappened: `Purchase order ${po.documentNumber ?? po.number} was ${po.status === 'sent_back' ? 'sent back to the person who raised it' : po.status === 'rejected' ? 'rejected' : 'withdrawn by the person who raised it'}, so it cannot be issued${po.status === 'sent_back' ? ' until they resubmit it' : ''}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Refresh the page to see where the order stands. Nothing was issued.',
+          });
         }
         if (reason === '') {
           throw apiError(422, {
@@ -757,10 +783,11 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         const releaseAtIssue = po.blanketAgreementId === undefined ? undefined : await rejudgeReleaseAtIssue(deps, ctx.tenantId, po);
         const issuedAt = deps.now();
         try {
-          if (releaseAtIssue === undefined) await deps.issue(ctx.tenantId, poId, ctx.userId, issuedAt, reason, ctx.idempotencyKey ?? poId, budgetGuard);
+          if (releaseAtIssue === undefined) await deps.issue(ctx.tenantId, poId, ctx.userId, issuedAt, reason, ctx.idempotencyKey ?? poId, budgetGuard, orderVersionAtRead);
           else await deps.blanket!.issue(ctx.tenantId, poId, ctx.userId, issuedAt, reason, releaseAtIssue.guard, budgetGuard);
         } catch (err) {
           if (err instanceof ConcurrencyConflictError && releaseAtIssue !== undefined && err.key === releaseAtIssue.guard.key) throw concurrentChange(`blanket agreement ${po.blanketAgreementId ?? ''} (another release was raised or issued against it a moment ago)`);
+          if (err instanceof ConcurrencyConflictError && err.key.startsWith('purchase-order:')) throw concurrentChange(`purchase order ${po.documentNumber ?? poId} (someone else decided or changed it a moment ago)`);
           if (err instanceof ConcurrencyConflictError) throw concurrentChange(`${period}'s purchase budget (another order was issued against it a moment ago)`);
           throw err;
         }
