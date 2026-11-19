@@ -30,6 +30,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner decisions needed (money / tax, batched):** (a) the GST on a debit note for shelf stock returned (until then the note is shown, not taken off what is owed); (b) whether correcting a receipt after that month's GST return was filed needs the CA first. Options are in the final report.
 - **Not done:** the receipt-correction box is not yet linked from each receipt's own row (batches 18a/18b are changing that page; link it after they merge); no paper/PDF of a return-to-supplier note yet.
 
+## Where things stand — 19 November 2026
+- **Batch 17 merged (#962), 19 Nov**: one language at a time (OB-855), the menu stays put, a truthful status badge, one form layout. Store PC release follows from main.
+- **Waiting on the owner (asked 19 Nov):**
+  - OB-860: supplier bank details, security and money;
+  - OB-861: a paid service to read supplier bills, money;
+  - OB-862: give the till its lane code automatically, tax;
+  - his picks from the missing-options list (28 items: R1–R7, T1–T2, P1–P3, S1–S5, A1–A3, O1–O3, B1–B3). Recommended first: B1, R1, P1, O1, R2, P2, A1, S1, R3, R4, O3, B3.
+- **Batch 17 not done:**
+  - the store computer's own system pages (About, Licence, Update, Head office sign-in, Handheld seal) still show both languages together;
+  - the sign-in page does not remember the language choice;
+  - the "tab / lead" placeholder on Buying;
+  - the Sign out bar overlaps the page corner.
+
+## Where things stand — end of 18 November 2026 session
+- **Released:**
+  - store PC **1.0.2242**: batches 14, 15 and 16 and remote access (OB-840), and the image fix plus OB-843 for the picomatch advisory;
+  - store PC **1.0.2246**: document numbers (OB-844–854).
+- **Owner, in the store:**
+  - install 1.0.2246 (Software update page, tills closed);
+  - check that a bill reads `1L01/26-27/00001`, and that Store setup → Document numbers lists every till;
+  - type the town on Store setup;
+  - set reorder levels on Buying → Reorder;
+  - ask the CA to confirm OB-845, OB-853 and OB-854 in writing;
+  - when ready, buy the web address for remote access (runbook `docs/runbooks/remote-access-for-the-owner.md`);
+  - the Bpal exports for the full load (`docs/runbooks/bpal-full-load-export-sheet.md`).
+- **Open, mine:**
+  - the stock-count review screen still shows the old id for counts made outside a plan;
+  - no dedicated tests yet for the TRF and RTS numbers and the batch write-offs at API level;
+  - the remote relay has not yet run on a real server.
+- **Dated:** OB-843 (picomatch accepted for the development tools) ends 18 Dec 2026. A guardrail fails then, or as soon as a fixed picomatch is in the lockfile.
 ## Batch 17 (19 Nov 2026) · one language at a time, the menu stays, the badge, bill numbers, one form layout (D-067 – D-071 · OB-855 – OB-859)
 - **Owner reported (store PC 1.0.2246, goods receipt, as the owner):** English and Tamil together everywhere; the left menu closes by itself and jumps to the top; a red "Store computer not answering" on the store computer itself; ragged forms and different fonts and buttons; he could not see the new bill numbers.
 - **Done (branch `claude/batch-17-ui`):**
