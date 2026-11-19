@@ -316,15 +316,21 @@ function orderNode(o) {
   }
   li.append(head, facts, table);
   if (o.overBudget) { const why = document.createElement('div'); why.className = 'summary-line over-budget'; why.textContent = ow('overBudget'); li.append(why); }
+  // P2 (batch 18c): an order resubmitted after it was sent back says so, with what the raiser changed.
+  if (o.lastStep && o.lastStep.step === 'resubmitted') {
+    const re = document.createElement('div'); re.className = 'facts resubmitted'; re.textContent = `${ow('resubmittedBy')}: “${o.lastStep.reason}” (${o.lastStep.by})`; li.append(re);
+  }
   if (o.raisedByViewer || !orders.mayIssue) {
     const note = document.createElement('div'); note.className = 'facts not-yours'; note.textContent = o.raisedByViewer ? ow('yours') : ow('notYours');
     li.append(note);
+    // P2: the raiser may take their own waiting order back, with a reason.
+    if (o.raisedByViewer) li.append(withdrawBox(o));
     return li;
   }
   const box = document.createElement('div'); box.className = 'decide';
   const inputId = `issue-reason-${o.poId}`;
   const field = document.createElement('div'); field.className = 'sre-field';
-  const label = document.createElement('label'); label.htmlFor = inputId; label.className = 'sre-field-label'; label.textContent = ow('reason');
+  const label = document.createElement('label'); label.htmlFor = inputId; label.className = 'sre-field-label'; label.textContent = ow('decideReason');
   const input = document.createElement('input'); input.type = 'text'; input.id = inputId; input.className = 'issue-reason sre-input'; input.autocomplete = 'off'; input.maxLength = 300; input.required = true;
   field.append(label, input);
   box.append(field);
@@ -351,8 +357,114 @@ function orderNode(o) {
     } finally { go.disabled = false; }
   });
   buttons.append(go);
+  // P2 (batch 18c): send it back to the raiser with a note, or reject it with a reason — on an explicit click only.
+  for (const [cls, key, run] of [['send-back', 'sendBack', () => orders.sendBack(o, input.value)], ['reject', 'reject', () => orders.reject(o, input.value)]]) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = `act ${cls} sre-btn sre-btn-secondary`; b.textContent = ow(key); b.dataset.po = o.poId;
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { await stepDone(o, await run(), status, input); } finally { b.disabled = false; }
+    });
+    buttons.append(b);
+  }
   box.append(buttons, status);
   li.append(box);
+  return li;
+}
+
+// P2 (batch 18c): show a step's outcome; on success the lists are read again from head office.
+async function stepDone(o, outcome, status, input) {
+  status.textContent = orders.outcomeWords(lang, outcome);
+  if (outcome.kind === 'needs_note') { input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
+  if (outcome.kind === 'stepped') {
+    paintResult({ tone: 'ok', icon: '✓', label: `${o.number}: ${status.textContent}`, announcement: '' });
+    await readOrders();
+  }
+}
+
+function reasonField(id, key, cls) {
+  const field = document.createElement('div'); field.className = 'sre-field';
+  const label = document.createElement('label'); label.htmlFor = id; label.className = 'sre-field-label'; label.textContent = ow(key);
+  const input = document.createElement('input'); input.type = 'text'; input.id = id; input.className = `${cls} sre-input`; input.autocomplete = 'off'; input.maxLength = 300; input.required = true;
+  field.append(label, input);
+  return { field, input };
+}
+
+function withdrawBox(o) {
+  const box = document.createElement('div'); box.className = 'decide';
+  const { field, input } = reasonField(`withdraw-reason-${o.poId}`, 'withdrawReason', 'withdraw-reason');
+  const status = document.createElement('p'); status.className = 'step-status'; status.setAttribute('role', 'status'); status.id = `withdraw-status-${o.poId}`;
+  const buttons = document.createElement('div'); buttons.className = 'buttons';
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'act withdraw sre-btn sre-btn-secondary'; b.textContent = ow('withdraw'); b.dataset.po = o.poId;
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await stepDone(o, await orders.withdraw(o, input.value), status, input); } finally { b.disabled = false; }
+  });
+  buttons.append(b);
+  box.append(field, buttons, status);
+  return box;
+}
+
+// P2 (batch 18c): an order sent back to the person looking — the note, each line with its quantity (and its price, when
+// it is a plain per-unit price) to change, then Resubmit with what was changed; or Withdraw. A quantity of 0 drops the item.
+const UNIT_STEPS = { kg: 1000, g: 1, l: 1000, ml: 1, ea: 1 };
+function sentBackNode(o) {
+  const li = document.createElement('li');
+  li.className = 'row tone-degraded';
+  li.dataset.po = o.poId;
+  const head = document.createElement('div'); head.className = 'head';
+  const headline = document.createElement('span'); headline.className = 'headline'; headline.textContent = `${o.number} · ${o.supplierName}`;
+  const value = document.createElement('span'); value.className = 'value'; value.textContent = rupees(o.totalMinor);
+  head.append(headline, value);
+  const facts = document.createElement('div'); facts.className = 'facts';
+  if (o.lastStep) facts.append(fact(ow('sentBackBy'), o.lastStep.by), fact(ow('note'), `“${o.lastStep.reason}”`));
+  const table = document.createElement('table'); table.className = 'lines';
+  const thead = document.createElement('tr');
+  for (const [k, num] of [['item', false], ['qty', true], ['price', true]]) { const th = document.createElement('th'); th.textContent = ow(k); if (num) th.className = 'num'; thead.append(th); }
+  table.append(thead);
+  const edits = [];
+  for (const l of o.lines) {
+    const tr = document.createElement('tr'); tr.dataset.product = l.productId;
+    const name = document.createElement('td'); name.textContent = l.name;
+    const steps = UNIT_STEPS[l.uom] ?? 1;
+    const q = document.createElement('input'); q.type = 'number'; q.min = '0'; q.step = steps > 1 ? '0.001' : '1'; q.className = 'qty sre-input'; q.value = String(l.orderedQty / steps);
+    q.setAttribute('aria-label', `${ow('qty')} — ${l.name}`);
+    const qtd = document.createElement('td'); qtd.className = 'num'; qtd.append(q);
+    const ptd = document.createElement('td'); ptd.className = 'num';
+    let p = null;
+    if (l.per > 1) ptd.textContent = `${rupees(l.unitCostMinor)} ${ow('perUnit')} ${l.per} ${l.uom}`;
+    else {
+      p = document.createElement('input'); p.type = 'number'; p.min = '0'; p.step = '0.01'; p.className = 'price sre-input'; p.value = (l.unitCostMinor / 100).toFixed(2);
+      p.setAttribute('aria-label', `${ow('price')} — ${l.name}`);
+      ptd.append(p);
+    }
+    tr.append(name, qtd, ptd);
+    table.append(tr);
+    edits.push({ l, q, p, steps });
+  }
+  const box = document.createElement('div'); box.className = 'decide';
+  const { field, input } = reasonField(`resubmit-note-${o.poId}`, 'resubmitNote', 'resubmit-note');
+  const status = document.createElement('p'); status.className = 'step-status'; status.setAttribute('role', 'status'); status.id = `resubmit-status-${o.poId}`;
+  const buttons = document.createElement('div'); buttons.className = 'buttons';
+  const re = document.createElement('button'); re.type = 'button'; re.className = 'act resubmit sre-btn sre-btn-primary'; re.textContent = ow('resubmit'); re.dataset.po = o.poId;
+  re.addEventListener('click', async () => {
+    re.disabled = true;
+    try {
+      const lines = edits.map(({ l, q, p, steps }) => {
+        const qty = Math.max(0, Math.round(Number(q.value || '0') * steps));
+        const price = p === null ? undefined : Math.max(0, Math.round(Number(p.value || '0') * 100));
+        return { productId: l.productId, orderedQty: qty, ...(price === undefined || price === l.unitCostMinor ? {} : { unitCostMinor: price }) };
+      });
+      await stepDone(o, await orders.resubmit(o, input.value, lines), status, input);
+    } finally { re.disabled = false; }
+  });
+  const wd = document.createElement('button'); wd.type = 'button'; wd.className = 'act withdraw sre-btn sre-btn-secondary'; wd.textContent = ow('withdraw'); wd.dataset.po = o.poId;
+  wd.addEventListener('click', async () => {
+    wd.disabled = true;
+    try { await stepDone(o, await orders.withdraw(o, input.value), status, input); } finally { wd.disabled = false; }
+  });
+  buttons.append(re, wd);
+  box.append(field, buttons, status);
+  li.append(head, facts, table, box);
   return li;
 }
 
@@ -366,6 +478,13 @@ function paintOrders() {
   if (ordersRead.state !== 'read') { state.textContent = ow(ordersRead.state === 'not_your_role' ? 'notYourRole' : 'unreachable'); el('orders').replaceChildren(); return; }
   state.textContent = ordersRead.orders.length === 0 ? ow('none') : '';
   el('orders').replaceChildren(...ordersRead.orders.map(orderNode));
+  // P2 (batch 18c): orders sent back to the person looking.
+  const back = ordersRead.sentBack ?? [];
+  el('sent-back-heading').textContent = ow('sentBackHeading');
+  el('sent-back').setAttribute('aria-label', ow('sentBackHeading'));
+  el('sent-back-heading').hidden = back.length === 0; // shown only when something came back (P-03)
+  el('sent-back-state').textContent = '';
+  el('sent-back').replaceChildren(...back.map(sentBackNode));
 }
 
 async function readOrders() {

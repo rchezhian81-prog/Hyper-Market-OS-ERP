@@ -85,12 +85,14 @@ export async function foldBlanketAgreements(store: EventStore, tenantId: string)
 }
 
 const asRelease = (po: StoredPurchaseOrder): BlanketRelease & { readonly number: string; readonly requisitionedBy: string; readonly approvedBy: string | null } => ({
-  poId: po.poId, number: po.number, status: po.status, lines: po.lines, cancelledByProduct: po.cancelledByProduct,
+  poId: po.poId, number: po.number, status: po.status === 'issued' ? 'issued' : 'proposed', lines: po.lines, cancelledByProduct: po.cancelledByProduct,
   requisitionedBy: po.requisitionedBy, approvedBy: po.approvedBy,
 });
 
 async function releasesOf(store: EventStore, tenantId: string, agreementId: string) {
-  return [...(await foldPurchaseOrders(store, tenantId)).values()].filter((p) => p.blanketAgreementId === agreementId).map(asRelease);
+  return [...(await foldPurchaseOrders(store, tenantId)).values()].filter((p) => p.blanketAgreementId === agreementId)
+    // P2 (batch 18c): a rejected or withdrawn release spends none of the agreement's ceiling; one sent back still waits.
+    .filter((p) => p.status !== 'rejected' && p.status !== 'withdrawn').map(asRelease);
 }
 
 export function blanketAgreementsAdapter(input: Base): BlanketOrderDeps {

@@ -102008,6 +102008,90 @@
         }
       }
     },
+    "/v1/purchase/orders/{poId}/rejection": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdRejection",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.approve",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdRejectionRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdRejectionReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/purchase/orders/{poId}/related-party": {
       "get": {
         "operationId": "getPurchaseOrdersByPoIdRelatedParty",
@@ -102139,6 +102223,258 @@
           },
           "403": {
             "description": "Not \"purchase.relatedparty.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/orders/{poId}/resubmission": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdResubmission",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.propose",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdResubmissionRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdResubmissionReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.propose\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/orders/{poId}/send-back": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdSendBack",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.approve",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdSendBackRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdSendBackReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/orders/{poId}/withdrawal": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdWithdrawal",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.propose",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdWithdrawalRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdWithdrawalReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.propose\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -164362,8 +164698,17 @@
                 "type": "string",
                 "enum": [
                   "issued",
-                  "proposed"
+                  "proposed",
+                  "rejected",
+                  "sent_back",
+                  "withdrawn"
                 ]
+              },
+              "proposalSteps": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProposalStep"
+                }
               },
               "approvedBy": {
                 "anyOf": [
@@ -164557,8 +164902,17 @@
                   "type": "string",
                   "enum": [
                     "issued",
-                    "proposed"
+                    "proposed",
+                    "rejected",
+                    "sent_back",
+                    "withdrawn"
                   ]
+                },
+                "proposalSteps": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProposalStep"
+                  }
                 },
                 "approvedBy": {
                   "anyOf": [
@@ -250590,6 +250944,69 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/purchase-orders.ts"
       },
+      "PostPurchaseOrdersByPoIdRejectionReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "order",
+              "already"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              },
+              "already": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "order"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdRejectionRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderedQty": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "unitCostMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
       "PostPurchaseOrdersByPoIdRelatedPartyApprovalReply200": {
         "anyOf": [
           {
@@ -250672,6 +251089,195 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/related-party-order-guard.ts"
+      },
+      "PostPurchaseOrdersByPoIdResubmissionReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "order",
+              "already"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              },
+              "already": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "order"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdResubmissionRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderedQty": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "unitCostMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdSendBackReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "order",
+              "already"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              },
+              "already": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "order"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdSendBackRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderedQty": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "unitCostMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdWithdrawalReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "order",
+              "already"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              },
+              "already": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "order"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdWithdrawalRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderedQty": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "unitCostMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
       },
       "PostPurchaseRebateClaimsAnswerPeriodReply": {
         "type": "object",
@@ -311746,6 +312352,36 @@
         },
         "additionalProperties": true
       },
+      "ProposalStep": {
+        "type": "object",
+        "required": [
+          "step",
+          "by",
+          "at",
+          "reason"
+        ],
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "rejected",
+              "resubmitted",
+              "sent_back",
+              "withdrawn"
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "Provenance": {
         "type": "object",
         "required": [
@@ -325200,8 +325836,17 @@
             "type": "string",
             "enum": [
               "issued",
-              "proposed"
+              "proposed",
+              "rejected",
+              "sent_back",
+              "withdrawn"
             ]
+          },
+          "proposalSteps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalStep"
+            }
           },
           "approvedBy": {
             "anyOf": [

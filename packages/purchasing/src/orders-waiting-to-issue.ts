@@ -21,6 +21,8 @@ export interface WaitingOrderLine {
   readonly name: string;
   /** The quantity in the item's own unit ("12", "2.500 kg"). */
   readonly quantity: string;
+  /** P2 (batch 18c): the ordered quantity as head office holds it (in the item's smallest steps — grams for kg). */
+  readonly orderedQty: number;
   /** The agreed price in paise per whole unit (or per `per` units). */
   readonly unitCostMinor: number;
   readonly per: number;
@@ -44,6 +46,16 @@ export interface OrderWaitingToIssue {
   readonly overBudget: boolean;
   /** True when the person looking raised it — they may not issue it themselves (§28). */
   readonly raisedByViewer: boolean;
+  /** P2 (batch 18c): the last step taken on it before now (sent back, resubmitted), with who, when and why. */
+  readonly lastStep?: OrderStep;
+}
+
+/** P2 (batch 18c): one step on an order before it was issued — as head office's `proposalSteps` holds it. */
+export interface OrderStep {
+  readonly step: 'rejected' | 'sent_back' | 'withdrawn' | 'resubmitted';
+  readonly by: string;
+  readonly at: string;
+  readonly reason: string;
 }
 
 export interface WaitingOrderViewer {
@@ -76,7 +88,7 @@ function lineOf(raw: unknown, names: WaitingOrderNames): WaitingOrderLine | null
   if (productId === '' || qty <= 0) return null;
   const name = names.products?.get(productId);
   return {
-    productId, name: name !== undefined && name.trim() !== '' ? name : productId, quantity: quantityLabel(qty, uom),
+    productId, name: name !== undefined && name.trim() !== '' ? name : productId, quantity: quantityLabel(qty, uom), orderedQty: qty,
     unitCostMinor, per, uom, valueMinor: valueAtCost(qty, uom, { minor: unitCostMinor, per }),
   };
 }
@@ -86,10 +98,34 @@ function lineOf(raw: unknown, names: WaitingOrderNames): WaitingOrderLine | null
  * issue those), over-budget first among the rest (P-03), then oldest first. An unreadable row is left out, never half-shown.
  */
 export function ordersWaitingToIssue(body: unknown, viewer: WaitingOrderViewer, names: WaitingOrderNames = {}): readonly OrderWaitingToIssue[] {
+  return ordersIn(body, viewer, names, 'proposed').sort((a, b) => Number(a.raisedByViewer) - Number(b.raisedByViewer)
+    || Number(b.overBudget) - Number(a.overBudget)
+    || (a.raisedAt < b.raisedAt ? -1 : a.raisedAt > b.raisedAt ? 1 : 0));
+}
+
+/**
+ * P2 (batch 18c · M06-FR-02): the orders a second person SENT BACK to the person looking — each with the note it came back
+ * with — for them to change and resubmit, or withdraw. Oldest first. Nobody named → none.
+ */
+export function ordersSentBackTo(body: unknown, viewer: WaitingOrderViewer, names: WaitingOrderNames = {}): readonly OrderWaitingToIssue[] {
+  if (viewer.userId === null) return [];
+  return ordersIn(body, viewer, names, 'sent_back').filter((o) => o.raisedByViewer)
+    .sort((a, b) => (a.raisedAt < b.raisedAt ? -1 : a.raisedAt > b.raisedAt ? 1 : 0));
+}
+
+const STEPS = new Set(['rejected', 'sent_back', 'withdrawn', 'resubmitted']);
+function lastStepOf(raw: unknown): OrderStep | undefined {
+  const steps = Array.isArray(raw) ? raw as unknown[] : [];
+  const last = steps[steps.length - 1];
+  if (!isRec(last) || !STEPS.has(str(last['step'])) || str(last['by']) === '') return undefined;
+  return { step: str(last['step']) as OrderStep['step'], by: str(last['by']), at: str(last['at']), reason: str(last['reason']) };
+}
+
+function ordersIn(body: unknown, viewer: WaitingOrderViewer, names: WaitingOrderNames, status: string): OrderWaitingToIssue[] {
   const orders = isRec(body) && Array.isArray(body['orders']) ? body['orders'] as unknown[] : [];
   const out: OrderWaitingToIssue[] = [];
   for (const raw of orders) {
-    if (!isRec(raw) || raw['status'] !== 'proposed') continue;
+    if (!isRec(raw) || raw['status'] !== status) continue;
     const poId = str(raw['poId']);
     const raisedBy = str(raw['requisitionedBy']);
     if (poId === '' || raisedBy === '') continue;
@@ -103,11 +139,10 @@ export function ordersWaitingToIssue(body: unknown, viewer: WaitingOrderViewer, 
       lines: (Array.isArray(raw['lines']) ? raw['lines'] as unknown[] : []).map((l) => lineOf(l, names)).filter((l): l is WaitingOrderLine => l !== null),
       overBudget: check?.['overBudget'] === true,
       raisedByViewer: viewer.userId !== null && viewer.userId === raisedBy,
+      ...((): { lastStep?: OrderStep } => { const l = lastStepOf(raw['proposalSteps']); return l === undefined ? {} : { lastStep: l }; })(),
     });
   }
-  return out.sort((a, b) => Number(a.raisedByViewer) - Number(b.raisedByViewer)
-    || Number(b.overBudget) - Number(a.overBudget)
-    || (a.raisedAt < b.raisedAt ? -1 : a.raisedAt > b.raisedAt ? 1 : 0));
+  return out;
 }
 
 /**

@@ -224,6 +224,7 @@ import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBala
 import type { DisplayFundingDeps, DisplayFundingJournal } from '../../finance/src/display-funding';
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
+import { applyProposalStep, type ProposalStepRecord } from '../../purchase/src/purchase-order-proposal-steps';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
 import { withLandedCost, type StockCostAdjustment } from '../../inventory/src/landed-cost'; // OB-288 P3 (M07-FR-04)
 import type { StoreReplenishmentFacts } from '../../inventory/src/replenishment';
@@ -7994,6 +7995,11 @@ export async function foldPurchaseOrders(store: EventStore, tenantId: string): P
       const r = payloadOf<{ poId: string; receivedByProduct: Record<string, number> }>(e);
       const cur = byId.get(r.poId);
       if (cur !== undefined) byId.set(r.poId, { ...cur, receivedByProduct: mergeQty(cur.receivedByProduct, r.receivedByProduct) });
+    } else if (type === 'PurchaseOrderProposalStep') {
+      // P2 (batch 18c): rejected / sent back / withdrawn / resubmitted before it was issued.
+      const st = payloadOf<ProposalStepRecord>(e);
+      const cur = byId.get(st.poId);
+      if (cur !== undefined) byId.set(st.poId, applyProposalStep(cur, st));
     }
   }
   return byId;
@@ -8051,7 +8057,7 @@ export function purchaseOrdersAdapter(input: {
       }) }],
     })),
 
-    issue: async (tenantId, poId, approvedBy, issuedAt, reason, _key, budgetGuard) => {
+    issue: async (tenantId, poId, approvedBy, issuedAt, reason, _key, budgetGuard, orderVersion) => {
       const event = makeEvent({
         id: `po-${poId}-issued`,
         type: 'PurchaseOrderIssued',
@@ -8062,8 +8068,23 @@ export function purchaseOrdersAdapter(input: {
         payload: { poId, approvedBy, issuedAt, reason },
       });
       // WF-03 (round 10): under the month's open-to-buy guard when a budget governs the order (two approvals: one lands).
-      if (budgetGuard === undefined) await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, event);
+      // P2 (batch 18c): and pinned to the order's own guard as the route judged it, so an order rejected, sent back or
+      // withdrawn a moment ago is never also issued.
+      if (orderVersion !== undefined) await appendMovingOrder(input.store, tenantId, poId, [{ stream: PURCHASE_ORDERS_STREAM, event }], budgetGuard, orderVersion);
+      else if (budgetGuard === undefined) await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, event);
       else await input.store.appendBatch(tenantId, [{ stream: PURCHASE_ORDERS_STREAM, event }], { guard: budgetGuard });
+    },
+
+    // P2 (batch 18c · OB-871): a step before the order is issued — one event, pinned to the order's guard.
+    recordProposalStep: async (tenantId, step, orderVersion) => {
+      await appendMovingOrder(input.store, tenantId, step.poId, [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
+        id: `po-${step.poId}-step-${step.stepId}`,
+        type: 'PurchaseOrderProposalStep',
+        occurredAt: step.at,
+        idempotencyKey: `po-${tenantId}-${step.poId}-step-${step.stepId}`,
+        source: 'api/purchase',
+        payload: step,
+      }) }], undefined, orderVersion);
     },
 
     orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),

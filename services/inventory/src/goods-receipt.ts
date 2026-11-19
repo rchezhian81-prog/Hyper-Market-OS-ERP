@@ -536,7 +536,8 @@ export interface PoReceiptPosting {
 
 /** The purchase order as head office holds it, for a receipt to be measured against and folded into (SP-6). */
 export interface PurchaseOrderForReceipt {
-  readonly status: 'proposed' | 'issued';
+  /** P2 (batch 18c): an order sent back, rejected or withdrawn before it was issued folds nothing, like a proposed one. */
+  readonly status: 'proposed' | 'issued' | 'sent_back' | 'rejected' | 'withdrawn';
   readonly orderedByProduct: Readonly<Record<string, number>>;
   /** SF-02 — what earlier receipts already received against it, per product (absent = nothing yet). */
   readonly receivedByProduct?: Readonly<Record<string, number>>;

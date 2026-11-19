@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1748 | 1007 | 1007 | 196 | 453 |
+| 13 | 1752 | 1011 | 1011 | 196 | 453 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -290,8 +290,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/orders/:poId/approval` | `purchase.order.approve` | core | yes |
 | POST | `/v1/purchase/orders/:poId/cancellations` | `purchase.order.approve` | core | yes |
 | POST | `/v1/purchase/orders/:poId/receipts` | `purchase.order.receive` | core | yes |
+| POST | `/v1/purchase/orders/:poId/rejection` | `purchase.order.approve` | core | yes |
 | GET | `/v1/purchase/orders/:poId/related-party` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/orders/:poId/related-party-approval` | `purchase.relatedparty.approve` | core | yes |
+| POST | `/v1/purchase/orders/:poId/resubmission` | `purchase.order.propose` | core | yes |
+| POST | `/v1/purchase/orders/:poId/send-back` | `purchase.order.approve` | core | yes |
+| POST | `/v1/purchase/orders/:poId/withdrawal` | `purchase.order.propose` | core | yes |
 | GET | `/v1/purchase/price-variance` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/rebate-claims` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/rebate-claims/:claimId/document` | `purchase.commitment.read` | core | — |

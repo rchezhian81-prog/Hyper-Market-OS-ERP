@@ -45,8 +45,8 @@ describe('the orders waiting for their second person, read one way for every scr
     const a = list.find((o) => o.poId === 'PO-A')!;
     expect(a).toMatchObject({ supplierName: 'Sri Foods', raisedBy: 'u-manager', totalMinor: 266_400, raisedByViewer: false, overBudget: false });
     expect(a.lines).toEqual([
-      { productId: 'prod-biscuit', name: 'Marie biscuits 200 g', quantity: '48', unitCostMinor: 3_000, per: 1, uom: 'ea', valueMinor: 144_000 },
-      { productId: 'prod-rice', name: 'Ponni rice', quantity: '25.500 kg', unitCostMinor: 4_800, per: 1, uom: 'kg', valueMinor: 122_400 },
+      { productId: 'prod-biscuit', name: 'Marie biscuits 200 g', quantity: '48', orderedQty: 48, unitCostMinor: 3_000, per: 1, uom: 'ea', valueMinor: 144_000 },
+      { productId: 'prod-rice', name: 'Ponni rice', quantity: '25.500 kg', orderedQty: 25_500, unitCostMinor: 4_800, per: 1, uom: 'kg', valueMinor: 122_400 },
     ]);
     // A name nobody gave → the code, never a guess.
     expect(list.find((o) => o.poId === 'PO-B')!.lines[0]!.name).toBe('prod-oil');
