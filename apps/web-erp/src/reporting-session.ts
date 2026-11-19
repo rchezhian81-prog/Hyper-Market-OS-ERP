@@ -109,7 +109,47 @@ export interface ReportingPorts {
    * lines took (what the till charged on each line). Absent on an older store computer: the report is then units only.
    */
   salesByCategory?(): Readonly<Record<string, DepartmentSales>> | undefined;
+  /** Batch 18b · O1 (M29-FR-02): the period the store computer's figures cover. Absent (an older store computer): today. */
+  period?(): ReportCover | undefined;
+  /** Batch 18b · O3 (M29-FR-02 drill-through): each department's items, keyed as `salesByCategory` ('' = in no department). */
+  salesByItem?(): Readonly<Record<string, readonly ItemSales[]>> | undefined;
+  /** Batch 18b · O1: why the things-to-look-at are not known for this period (the limits are today's). */
+  exceptionsNotKnown?(): string | undefined;
 }
+
+/** Batch 18b · O1: what a report covers, exactly, as the store computer worked it out (edge/store-edge/src/report-period.ts). */
+export interface ReportCover {
+  readonly asked: { readonly from: string; readonly to: string };
+  /** The days the figures cover; `null` when the store computer holds none of them. */
+  readonly covered: { readonly from: string; readonly to: string } | null;
+  readonly todayOnly: boolean;
+  readonly heldFrom: string | null;
+  readonly notKnownBefore?: string;
+  readonly stopsAtToday?: true;
+  readonly notKnownWhy?: string;
+  /** The page asked for a period the store computer could not read (then it reported today). */
+  readonly refused?: string;
+}
+
+/** Batch 18b · O3: one item inside a department — items, grams weighed, money taken, margin or why it is not known. */
+export interface ItemSales {
+  readonly productId: string;
+  readonly name: string;
+  readonly items: number;
+  readonly grams: number;
+  readonly takenMinor: number;
+  readonly linesWithNoMoney: number;
+  readonly marginMinor?: number;
+  readonly marginBps?: number;
+  readonly marginNotKnown?: string;
+}
+
+/** Batch 18b · O1: the reasons a figure is not known for a period other than today. */
+export const NOW_ONLY_FOR_PERIOD = 'Not known for this period — this report shows how things stand now; the store computer keeps no record of it for earlier days';
+export const COST_FOR_PERIOD = 'Not known for this period — the store computer keeps only today\'s average buying cost, not the cost on each earlier day';
+export const ONE_DAY_FOR_PERIOD = 'Not known for this period — this report compares one day with the day before it; choose a single day';
+/** The reports that are worked out from the period's sales (the others are about now). */
+const FROM_SALES: ReadonlySet<string> = new Set(['sales_by_day', 'sales_by_hour', 'sales_by_cashier', 'tender_mix', 'basket', 'margin', 'day_on_day', 'units_by_category', 'exceptions']);
 
 /** D-057: one department's day — items, weighed grams, the money its lines took. */
 export interface DepartmentSales {
@@ -248,6 +288,12 @@ export interface ReportingSession {
 
   /** Write a report out, with the permission check, branch scope and PII redaction of M30-FR-02. */
   export(reportId: string): ExportResult | { readonly ok: false; readonly detail: string };
+
+  /** Batch 18b · O1: the period these figures cover (today, when the store computer did not say). */
+  period(): ReportCover;
+
+  /** Batch 18b · O3: the items inside one department of "What is selling, by department" (by the name the report shows). */
+  departmentItems(department: string): readonly ItemSales[] | undefined;
 }
 
 export function createReportingSession(
@@ -318,8 +364,29 @@ export function createReportingSession(
     };
   };
 
+  // Batch 18b · O1: the period the figures cover — today unless the store computer says otherwise.
+  const cover = (): ReportCover => ports.period?.() ?? {
+    asked: { from: config.tradingDay, to: config.tradingDay }, covered: { from: config.tradingDay, to: config.tradingDay }, todayOnly: true, heldFrom: null,
+  };
+  const departmentName = (id: string): string => (id === '' ? 'In no department' : ports.categoryNames()?.[id] ?? id);
+
   /** The figures and rows for a report this shop CAN produce. */
   const produce = (reportId: string): { figures: Figure[]; rows: Record<string, string>[] } => {
+    // Batch 18b · O1: a period this store computer holds no sales for has no figures — each says why, never a nought.
+    const period = cover();
+    if (period.covered === null && FROM_SALES.has(reportId)) {
+      return { figures: [at('This period', undefined, 'count', `Not known for this period — ${period.notKnownWhy ?? 'this store computer holds no sales for it'}`)], rows: [] };
+    }
+    if (!period.todayOnly && (reportId === 'sync_health' || reportId === 'data_freshness')) {
+      return { figures: [at(reportId === 'sync_health' ? 'Not sent yet' : 'Minutes since head office last spoke to this shop', undefined, 'count', NOW_ONLY_FOR_PERIOD)], rows: [] };
+    }
+    if (!period.todayOnly && reportId === 'margin') {
+      return { figures: [at('Margin', undefined, 'minor_currency', COST_FOR_PERIOD), at('Margin %', undefined, 'basis_points', COST_FOR_PERIOD)], rows: [] };
+    }
+    const exceptionsNotKnown = ports.exceptionsNotKnown?.();
+    if (reportId === 'exceptions' && !period.todayOnly) {
+      return { figures: [at('Things to look at', undefined, 'count', exceptionsNotKnown ?? NOW_ONLY_FOR_PERIOD)], rows: [] };
+    }
     const sales = ports.sales();
     const { facts, uncostable } = costableFacts();
     const summary = salesSummary(facts, config.currency);
@@ -425,10 +492,16 @@ export function createReportingSession(
         // there is worse than no comparison — a box installed yesterday would report the shop as
         // having doubled overnight, against a zero nobody put there.
         const days = ports.dayTotals();
-        const today = days.find((d) => d.tradingDay === config.tradingDay);
+        // Batch 18b · O1: for a period other than today, ONE chosen day against the day before it; a longer period has no
+        // single "day before" and says so.
+        if (!period.todayOnly && (period.covered === null || period.covered.from !== period.covered.to)) {
+          return { figures: [at('Up or down', undefined, 'minor_currency', ONE_DAY_FOR_PERIOD)], rows: [] };
+        }
+        const theDay = period.todayOnly ? config.tradingDay : period.covered!.from;
+        const today = days.find((d) => d.tradingDay === theDay);
         // Days strictly BEFORE today, so a box holding only future-dated junk cannot become the
         // thing today is measured against.
-        const previous = days.filter((d) => d.tradingDay < config.tradingDay)[0];
+        const previous = days.filter((d) => d.tradingDay < theDay)[0];
         const why = today === undefined
           ? 'the shop has taken nothing today yet, so there is nothing to compare'
           : previous === undefined
@@ -437,8 +510,8 @@ export function createReportingSession(
         const change = why === undefined ? today!.totalMinor - previous!.totalMinor : undefined;
         return {
           figures: [
-            at('Today', today?.totalMinor, 'minor_currency',
-              today === undefined ? 'the shop has taken nothing today yet' : undefined),
+            at(period.todayOnly ? 'Today' : theDay, today?.totalMinor, 'minor_currency',
+              today === undefined ? (period.todayOnly ? 'the shop has taken nothing today yet' : 'the shop took nothing on this day') : undefined),
             at(previous === undefined ? 'The day before' : `${previous.tradingDay}`,
               previous?.totalMinor, 'minor_currency',
               previous === undefined ? 'this store box holds no earlier trading day' : undefined),
@@ -460,7 +533,7 @@ export function createReportingSession(
         // kg — largest money first; a weighed line is its weight, never "1 item".
         const sales = ports.salesByCategory?.();
         if (sales !== undefined) {
-          const name = (id: string): string => (id === '' ? 'In no department' : names?.[id] ?? id);
+          const name = departmentName;
           const byMoney = Object.entries(sales).sort((a, b) => b[1].takenMinor - a[1].takenMinor || a[0].localeCompare(b[0]));
           const incomplete = (d: DepartmentSales): string | undefined =>
             d.linesWithNoMoney === 0 ? undefined : `${d.linesWithNoMoney} line(s) came from a till that did not write what it charged, so this department's money is not complete`;
@@ -565,6 +638,15 @@ export function createReportingSession(
     backlog: () => whatWouldUnlockMost(ports.records(), PRODUCED),
 
     freshness: () => freshness(ports.lastSyncedAt(), config.now, config.staleAfterMinutes * 60),
+
+    period: cover,
+
+    departmentItems: (department) => {
+      const byItem = ports.salesByItem?.();
+      if (byItem === undefined) return undefined;
+      const key = Object.keys(byItem).find((k) => departmentName(k) === department);
+      return key === undefined ? undefined : byItem[key];
+    },
 
     run: (reportId) => {
       const entry = entries().find((e) => e.report.id === reportId);

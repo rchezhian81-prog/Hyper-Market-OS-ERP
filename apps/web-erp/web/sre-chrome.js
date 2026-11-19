@@ -1433,6 +1433,13 @@
       typeCodeInstead: 'Type the code instead', useThisCode: 'Use this code', choose: 'Choose…', clearPick: 'Clear', nothingChosen: 'Nothing chosen yet',
       dateHint: 'Day / month / year, for example 31/10/2026', dateBad: 'That is not a real date. Write it as day/month/year, for example 31/10/2026.', dateTooEarly: 'That is before {d}.', dateTooLate: 'That is after {d}.',
       refused: 'Head office refused:', refusedPlain: 'it did not accept what was sent', nothingChangedWord: 'Nothing was changed.', tryAgainTell: 'Try again; if it keeps happening, tell the manager.',
+      // Batch 18b · B1: the list's download
+      download: 'Download to Excel', downloadHint: 'Save exactly the rows shown here (your search and filters, every page) as a file Excel opens',
+      downloaded: 'Downloaded {n} row(s) to {file}.', downloadRedacted: 'Personal data removed (you are not allowed to see it): {c}.',
+      downloadRecorded: 'Head office has a record of this download.', downloadWaiting: 'Head office cannot be reached, so the record of this download is kept on this computer and sent when it answers ({n} waiting).',
+      downloadRefused: 'Head office did not take the record of this download; it is kept on this computer ({n} waiting). Tell the manager.',
+      downloadNotKept: 'This computer could not keep the record of this download. Tell the manager.',
+      downloadNothing: 'There are no rows to download.', downloadNoRead: 'The list could not be read in full, so nothing was downloaded. Try again.',
     },
     ta: {
       search: 'இந்தப் பட்டியலில் தேடு', filterAll: 'அனைத்தும்', columns: 'நெடுவரிசைகள்', columnsShown: 'காட்ட வேண்டிய நெடுவரிசைகள்', open: 'திற', close: 'மூடு',
@@ -1465,6 +1472,12 @@
       typeCodeInstead: 'அதற்குப் பதிலாகக் குறியீட்டைத் தட்டச்சு செய்க', useThisCode: 'இந்தக் குறியீட்டைப் பயன்படுத்து', choose: 'தேர்ந்தெடு…', clearPick: 'அழி', nothingChosen: 'இன்னும் எதுவும் தேர்ந்தெடுக்கப்படவில்லை',
       dateHint: 'நாள் / மாதம் / ஆண்டு, எடுத்துக்காட்டாக 31/10/2026', dateBad: 'அது உண்மையான தேதி அல்ல. நாள்/மாதம்/ஆண்டு என எழுதவும், எடுத்துக்காட்டாக 31/10/2026.', dateTooEarly: 'அது {d} க்கு முன்.', dateTooLate: 'அது {d} க்குப் பின்.',
       refused: 'தலைமை அலுவலகம் மறுத்தது:', refusedPlain: 'அனுப்பியதை அது ஏற்கவில்லை', nothingChangedWord: 'எதுவும் மாற்றப்படவில்லை.', tryAgainTell: 'மீண்டும் முயலவும்; தொடர்ந்தால் மேலாளரிடம் சொல்லவும்.',
+      download: 'Excel கோப்பாகப் பதிவிறக்கு', downloadHint: 'இங்கே காட்டப்படும் வரிசைகளை மட்டும் (உங்கள் தேடல், வடிகட்டி, எல்லாப் பக்கங்களும்) Excel திறக்கும் கோப்பாகச் சேமி',
+      downloaded: '{n} வரிசை(கள்) {file} கோப்பில் பதிவிறக்கப்பட்டன.', downloadRedacted: 'தனிப்பட்ட தகவல் நீக்கப்பட்டது (பார்க்க உங்களுக்கு அனுமதி இல்லை): {c}.',
+      downloadRecorded: 'இந்தப் பதிவிறக்கத்தின் பதிவு தலைமை அலுவலகத்தில் உள்ளது.', downloadWaiting: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இந்தப் பதிவிறக்கத்தின் பதிவு இந்தக் கணினியில் வைக்கப்பட்டு, அது பதில் சொல்லும்போது அனுப்பப்படும் ({n} காத்திருக்கின்றன).',
+      downloadRefused: 'இந்தப் பதிவிறக்கத்தின் பதிவைத் தலைமை அலுவலகம் ஏற்கவில்லை; அது இந்தக் கணினியில் வைக்கப்பட்டுள்ளது ({n} காத்திருக்கின்றன). மேலாளரிடம் சொல்லவும்.',
+      downloadNotKept: 'இந்தப் பதிவிறக்கத்தின் பதிவை இந்தக் கணினியால் வைக்க முடியவில்லை. மேலாளரிடம் சொல்லவும்.',
+      downloadNothing: 'பதிவிறக்க வரிசைகள் இல்லை.', downloadNoRead: 'பட்டியலை முழுமையாகப் படிக்க முடியவில்லை, எனவே எதுவும் பதிவிறக்கப்படவில்லை. மீண்டும் முயலவும்.',
     },
   };
   const ow = (key) => OFFICE_WORDS[lang()][key] ?? OFFICE_WORDS.en[key];
@@ -2690,7 +2703,116 @@
       }
       choose.append(sum, box);
       bar.append(choose);
+      // Batch 18b · B1 (M30-FR-02 · P-06 · NFR-12): ONE download for every list — exactly the rows this person sees (their
+      // search and filters, every page), the columns they chose, in screen order. Built in this browser by the tested code
+      // the bundle carries (`list-download.ts`), so it works with the internet off. Without that code: no button (never a
+      // file that skipped the personal-data rule).
+      if (window.sreListDownload && opts.download !== false) {
+        const down = document.createElement('button');
+        down.type = 'button';
+        down.className = 'sre-btn sre-with-icon sre-datatable-download';
+        down.id = `${id}-download`;
+        const sheet = icon('file-text', 18);
+        if (sheet) down.append(sheet);
+        down.append(document.createTextNode(ow('download')));
+        down.title = ow('downloadHint');
+        down.addEventListener('click', () => { void downloadList(down); });
+        bar.append(down);
+      }
+      const told = document.createElement('p');
+      told.className = 'sre-datatable-download-status';
+      told.id = `${id}-download-status`;
+      told.setAttribute('role', 'status');
+      told.textContent = saidNow();
+      told.hidden = downloadSaid.length === 0;
+      bar.append(told);
       return bar;
+    }
+
+    // ── Batch 18b · B1: the download ──────────────────────────────────────────────────────────────────────────────
+    // What the download said, as word keys — redrawn in the reader's language when the page switches (OB-855).
+    let downloadSaid = [];
+    const saidNow = () => downloadSaid.map(([key, values]) => fill(ow(key), Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typeof v === 'number' ? new Intl.NumberFormat(lang() === 'ta' ? 'ta-IN' : 'en-IN').format(v) : v])))).join(' ');
+    /** A cell exactly as the screen shows it: the drawn words where the column draws them, else its value. A button or
+     *  a box in a cell is the page's action, not data — it is left out (and a column of only actions is not written). */
+    function cellText(col, row) {
+      if (typeof col.render === 'function') {
+        const v = col.render(row);
+        if (v instanceof Node) {
+          const ACTIONS = 'button, input, select, textarea, details, a.sre-btn';
+          if (v instanceof Element && v.matches(ACTIONS)) return { action: true, text: '' };
+          const copy = v.cloneNode(true);
+          let hadAction = false;
+          if (copy instanceof Element || copy instanceof DocumentFragment) for (const c of copy.querySelectorAll(ACTIONS)) { hadAction = true; c.remove(); }
+          const text = (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
+          if (text === '' && hadAction) return { action: true, text: '' };
+          return { action: false, text: text === '' ? ow('notKnown') : text };
+        }
+        if (v === null || v === undefined || v === '') return { action: false, text: ow('notKnown') };
+        return { action: false, text: said(v) };
+      }
+      const t = textOf(col, row);
+      return { action: false, text: t === '' ? ow('notKnown') : t };
+    }
+    /** Every row the person sees: a loader-fed list is read page by page from head office with the same search and sort. */
+    async function rowsToWrite() {
+      if (!loader) return visibleRows();
+      const out = [];
+      const size = 500;
+      for (let page = 0; page < 200; page += 1) {
+        let res;
+        try { res = await loader({ page, size, search: state.query.trim(), sort: state.sort, dir: state.dir === 1 ? 'asc' : 'desc' }); } catch { res = null; }
+        if (!res || !Array.isArray(res.rows)) return null;
+        out.push(...res.rows);
+        const total = Number.isFinite(res.total) ? res.total : out.length;
+        if (out.length >= total || res.rows.length === 0) break;
+      }
+      return out;
+    }
+    async function downloadList(button) {
+      const tool = window.sreListDownload;
+      const say = (parts) => { downloadSaid = parts; const p = byId(`${id}-download-status`); if (p) { p.textContent = saidNow(); p.hidden = parts.length === 0; } };
+      if (!tool) return;
+      button.disabled = true;
+      try {
+        const rows = await rowsToWrite();
+        if (rows === null) { say([['downloadNoRead', {}]]); return; }
+        if (rows.length === 0) { say([['downloadNothing', {}]]); return; }
+        const cols = shown();
+        const cells = rows.map((row) => cols.map((col) => cellText(col, row)));
+        const keep = cols.map((_, j) => !cells.every((r) => r[j].action));
+        const columns = cols.filter((_, j) => keep[j]).map((col) => ({ key: col.key, label: said(col.label), personal: col.personal === true || tool.isPersonalKey(col.key) }));
+        const lines = cells.map((r) => r.filter((_, j) => keep[j]).map((c) => c.text));
+        const viewer = me();
+        const file = tool.listFile(columns, lines, tool.maySeePersonal(viewer.permissions));
+        const day = window.sreShopDay?.today?.() ?? '';
+        const englishLabel = typeof opts.label === 'object' && opts.label !== null ? (opts.label.en ?? said(opts.label)) : said(opts.label);
+        const name = tool.listFileName(englishLabel || id, day);
+        const blob = new Blob([file.text], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        a.hidden = true;
+        document.body.append(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        const parts = [['downloaded', { n: file.rowCount, file: name }]];
+        if (file.redactedColumns.length > 0) parts.push(['downloadRedacted', { c: file.redactedColumns.join(', ') }]);
+        say([...parts]);
+        const record = {
+          key: (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') ? globalThis.crypto.randomUUID() : `dl-${id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          screen: location.pathname, list: id, label: englishLabel || id, rowCount: file.rowCount,
+          columns: columns.map((c) => c.label), redactedColumns: file.redactedColumns, downloadedAt: new Date().toISOString(),
+        };
+        let storage;
+        try { storage = window.localStorage; } catch { storage = undefined; }
+        const told = await tool.recordDownload(record, storage, typeof window.fetch === 'function' ? window.fetch.bind(window) : undefined);
+        if (told.outcome === 'recorded' && told.waiting === 0) parts.push(['downloadRecorded', {}]);
+        else if (!told.kept) parts.push(['downloadNotKept', {}]);
+        else parts.push([told.outcome === 'refused' ? 'downloadRefused' : 'downloadWaiting', { n: told.waiting }]);
+        say(parts);
+        root.dataset.downloadRows = String(file.rowCount);
+      } finally { button.disabled = false; }
     }
 
     function paintBody() {
@@ -2839,6 +2961,14 @@
     if (out.result === 'refused' && (out.status === 401 || out.status === 403)) return 'denied';
     return 'error';
   }
+
+  // Batch 18b · B1: a download recorded while head office could not be reached is sent once it answers (P-08; never dropped).
+  setTimeout(() => {
+    try {
+      const tool = window.sreListDownload;
+      if (tool && typeof window.fetch === 'function') void tool.flushPending(window.localStorage, window.fetch.bind(window));
+    } catch { /* storage refused: the next download says so */ }
+  }, 1500);
 
   window.sreOffice = Object.freeze({
     table: officeTable, state: officeState, cards: officeCards, chip: officeChip, field: officeField, check: officeCheck,

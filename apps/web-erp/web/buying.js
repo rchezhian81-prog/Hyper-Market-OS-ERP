@@ -978,6 +978,9 @@ function orderBox(order) {
   }
   wrap.append(table);
   box.append(wrap);
+  // Batch 18b · P1 (M31-FR-02 · WF-03): print the issued order, or save it as a PDF to send to the supplier.
+  const printer = printPoButton(order);
+  if (printer !== null) box.append(printer);
   if (!oo.session.may.change) return box;
 
   // Change the order: every line's new quantity (in its unit) and price per unit.
@@ -1406,4 +1409,22 @@ if ('serviceWorker' in navigator) {
 function supplierLabel(id) {
   const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
   return hit ? hit.name : id;
+}
+
+// ── Batch 18b · P1 (M31-FR-02 · WF-03 "PO → acknowledgement"): Print / save the purchase order as a PDF ─────────────────
+// The bundle's print sheet (`window.srePrint`) lays the issued order out on an A4 page — the shop and its GSTIN, the order's
+// number (PO/26-27/00001), the date, the supplier and its GSTIN, every line with its rate and GST rate, the total and the
+// signature lines — and the browser prints it or saves it as a PDF. A copy is kept on this computer once read.
+const PO_PRINT_WORDS = { en: { print: 'Print / save as PDF', printFor: 'Print purchase order {n}' }, ta: { print: 'அச்சிடு / PDF ஆகச் சேமி', printFor: 'கொள்முதல் ஆணை {n} அச்சிடு' } };
+function printPoButton(order) {
+  if (!window.srePrint) return null;
+  const w = PO_PRINT_WORDS[lang] ?? PO_PRINT_WORDS.en;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sre-btn print-po';
+  b.dataset.po = order.poId;
+  b.textContent = w.print;
+  b.setAttribute('aria-label', w.printFor.replace('{n}', order.documentNumber || order.number));
+  b.addEventListener('click', () => { void window.srePrint.openPrint({ kind: 'purchase_order', id: order.poId }); });
+  return b;
 }
