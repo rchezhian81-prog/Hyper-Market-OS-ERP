@@ -89,10 +89,15 @@ const WORDS = {
     linesFromOrder: 'The order\'s items are filled in with what is due. Change "Arrived" where fewer came, and write any damaged, the batch and the expiry date.',
     dueWord: 'due', receivedLabel: 'Arrived', damagedLabel: 'Damaged', batchLabel: 'Batch number', expiryLabel: 'Expiry (best before)',
     mfgShort: 'Month of manufacture', tempShort: 'Temperature °C',
+    qcFailLabel: 'Failed quality check / refused at the door', mrpLabel: 'MRP on the pack (₹)', qcFailWord: 'failed the check', mrpWord: 'MRP ₹',
+    needMrp: 'MRP on the pack must be an amount in rupees above 0, with at most 2 decimals (for example 120 or 99.50).',
+    needQcFail: '"Failed quality check" must be a whole number, 0 or more.',
     shortBy: 'Short by {n}', moreBy: '{n} more than due', damagedWord: 'damaged', batchWord: 'batch', expWord: 'expires',
     lineProblems: 'Nothing was saved. Check these lines:',
     lp_expiry_not_a_date: 'the expiry is not a real date', lp_damaged_not_whole: 'damaged must be a whole number',
     lp_damaged_more_than_arrived: 'more damaged than arrived', lp_batch_and_expiry_needed: 'this item needs its batch number and expiry date',
+    lp_qc_failed_not_whole: '"failed quality check" must be a whole number', lp_set_aside_more_than_arrived: 'damaged and failed the check add up to more than arrived',
+    lp_mrp_not_an_amount: 'the MRP is not an amount above 0',
     needArrived: 'Arrived must be a whole number, 0 or more.',
     saveDelivery: 'Save the delivery', remove: 'Remove',
     needNumber: 'Give the delivery note a number first.', needLines: 'Add at least one item first.',
@@ -193,10 +198,15 @@ const WORDS = {
     linesFromOrder: 'ஆர்டரின் பொருட்கள் வர வேண்டிய அளவுடன் நிரப்பப்பட்டுள்ளன. குறைவாக வந்தால் "வந்தது" என்பதை மாற்றி, சேதமானவை, பேட்ச் எண், காலாவதி தேதியை எழுதவும்.',
     dueWord: 'வர வேண்டியது', receivedLabel: 'வந்தது', damagedLabel: 'சேதமானவை', batchLabel: 'பேட்ச் எண்', expiryLabel: 'காலாவதி தேதி',
     mfgShort: 'தயாரிப்பு மாதம்', tempShort: 'வெப்பநிலை °C',
+    qcFailLabel: 'தரச் சோதனையில் தோல்வி / வாசலில் மறுக்கப்பட்டது', mrpLabel: 'பொதியில் உள்ள MRP (₹)', qcFailWord: 'சோதனையில் தோல்வி', mrpWord: 'MRP ₹',
+    needMrp: 'பொதியில் உள்ள MRP 0-க்கு மேற்பட்ட ரூபாய்த் தொகையாக, அதிகபட்சம் 2 தசம இடங்களுடன் இருக்க வேண்டும் (உதா: 120 அல்லது 99.50).',
+    needQcFail: '"தரச் சோதனையில் தோல்வி" 0 அல்லது அதற்கு மேற்பட்ட முழு எண்ணாக இருக்க வேண்டும்.',
     shortBy: '{n} குறைவு', moreBy: 'வர வேண்டியதை விட {n} அதிகம்', damagedWord: 'சேதம்', batchWord: 'பேட்ச்', expWord: 'காலாவதி',
     lineProblems: 'எதுவும் சேமிக்கப்படவில்லை. இந்த வரிகளைச் சரிபார்க்கவும்:',
     lp_expiry_not_a_date: 'காலாவதி தேதி சரியான தேதி அல்ல', lp_damaged_not_whole: 'சேதமானவை முழு எண்ணாக இருக்க வேண்டும்',
     lp_damaged_more_than_arrived: 'வந்ததை விட அதிகம் சேதம்', lp_batch_and_expiry_needed: 'இந்தப் பொருளுக்கு பேட்ச் எண்ணும் காலாவதி தேதியும் தேவை',
+    lp_qc_failed_not_whole: '"தரச் சோதனையில் தோல்வி" முழு எண்ணாக இருக்க வேண்டும்', lp_set_aside_more_than_arrived: 'சேதமும் சோதனைத் தோல்வியும் சேர்ந்து வந்ததை விட அதிகம்',
+    lp_mrp_not_an_amount: 'MRP 0-க்கு மேற்பட்ட தொகை அல்ல',
     needArrived: '"வந்தது" 0 அல்லது அதற்கு மேற்பட்ட முழு எண்ணாக இருக்க வேண்டும்.',
     noItemsYet: 'இன்னும் எந்தப் பொருளும் சேர்க்கப்படவில்லை.', saveDelivery: 'டெலிவரியைச் சேமி',
     remove: 'நீக்கு', needNumber: 'முதலில் டெலிவரி நோட்டு எண்ணைக் கொடுக்கவும்.',
@@ -1601,6 +1611,8 @@ function renderLines() {
       line.temperatureC === undefined ? '' : `${line.temperatureC} °C`,
       line.manufacturedOn === undefined ? '' : `${t('mfgWord')} ${line.manufacturedOn}`,
       line.damagedMinor ? `${line.damagedMinor} ${t('damagedWord')}` : '',
+      line.qcFailedMinor ? `${line.qcFailedMinor} ${t('qcFailWord')}` : '',
+      line.mrpMinor ? `${t('mrpWord')}${(line.mrpMinor / 100).toFixed(2)}` : '',
       line.batchId ? `${t('batchWord')} ${line.batchId}` : '',
       line.expiry ? `${t('expWord')} ${line.expiry}` : '',
     ].filter((x) => x !== '').join(' · ');
@@ -1634,6 +1646,22 @@ function renderLines() {
         if (v === '') { delete line.damagedMinor; return; }
         line.damagedMinor = Number(v);
       }, { min: '0', step: '1', inputmode: 'numeric' }),
+      // Batch 18a · R4 (M07-FR-02/03): units that failed the quality check or were refused at the door — head office
+      // quarantines them for a second person to decide (accept, return to the supplier, or claim); never on sale.
+      box('qcfail', 'qcFailLabel', 'number', line.qcFailedMinor ? String(line.qcFailedMinor) : '', (v) => {
+        if (v === '') { delete line.qcFailedMinor; return; }
+        const n = Number(v);
+        if (!Number.isInteger(n) || n < 0) { tell(t('read'), t('needQcFail')); return; }
+        line.qcFailedMinor = n;
+      }, { min: '0', step: '1', inputmode: 'numeric' }),
+      // Batch 18a · R3 (M07-FR-02): the MRP printed on the pack, in rupees — head office flags one that differs from its master.
+      box('mrp', 'mrpLabel', 'text', line.mrpMinor ? (line.mrpMinor / 100).toFixed(2) : '', (v) => {
+        const text = v.replace(/,/g, '').replace(/^₹\s*/, '');
+        if (text === '') { delete line.mrpMinor; return; }
+        if (!/^\d{1,7}(\.\d{1,2})?$/.test(text) || Number(text) <= 0) { tell(t('read'), t('needMrp')); return; }
+        const [rupees, paise = ''] = text.split('.');
+        line.mrpMinor = Number(rupees) * 100 + Number(paise.padEnd(2, '0'));
+      }, { inputmode: 'decimal', autocomplete: 'off' }),
       box('batch', 'batchLabel', 'text', line.batchId ?? '', (v) => { if (v === '') delete line.batchId; else line.batchId = v; }, { autocomplete: 'off' }),
       box('expiry', 'expiryLabel', 'date', line.expiry ?? '', (v) => { if (v === '') delete line.expiry; else line.expiry = v; }),
       ...(packedIds.includes(line.productId) ? [box('mfg', 'mfgShort', 'month', line.manufacturedOn ?? '', (v) => {
@@ -2246,6 +2274,8 @@ el('lang').addEventListener('click', () => {
   // The document says which language it speaks (3.1.1) — a screen reader and the chrome both read it here.
   document.documentElement.lang = lang;
   paintChrome();
+  // Batch 18a (OB-855): the delivery's lines being typed are redrawn in the chosen language too, keeping what was typed.
+  renderLines();
   show(view);
 });
 

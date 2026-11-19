@@ -19,6 +19,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Batch 18a (19 Nov 2026) · the till's code by itself, the store computer's own pages in one language, Receive's MRP and failed check, list search (D-072 – D-079 · OB-860 – OB-866)
+- **Owner answered (19 Nov 2026, in writing):** "OB-862 A, OB-860 A, OB-861 A".
+- **Done (branch `claude/batch-18a`):**
+  - **OB-862 A — the till's lane code by itself.** The store computer names its tills when it reports to head office; head office gives each new one the next free code (`L01`, `L02`, …), once, on the audit trail, never reused and never changed. A fresh store PC's first sale is `1L01/26-27/00001` with nobody registering anything. A restored store computer still uses the temporary `1T…` range.
+  - **OB-860 A / OB-861 A recorded** (no code change): supplier bank details stay a masked number, paid from the bank's website with the UTR recorded here; bills are typed and checked by a second person, no paid photo reading.
+  - **The store computer's own pages** (About, Licence, Software update, Head office sign-in, Handheld seal) show one language at a time, English first, with a switch; the choice is remembered on the computer. The **sign-in page** remembers it too.
+  - **Buying:** the two tab cards that said "tab" / "lead" now say "Open orders" and "Reorder".
+  - **The Sign out bar** no longer floats over the page: it sits in the menu under your name (on a phone, in the Screens list).
+  - **Receive:** each line has "MRP on the pack (₹)" and "Failed quality check / refused at the door". A different MRP is flagged for the buyer; failed units are held back for a second person to decide.
+  - **Search box** on Goods receipt review, Suppliers, Waste & write-off and Approvals.
+- **Owner, in the store:** (1) install the next store-PC update; on a fresh install sell one item — the bill reads `1L01/26-27/00001`; Tills & devices lists the till with `L01`. (2) Open About (or Licence) on the store PC — English only; press தமிழ் — Tamil only; open Software update — still Tamil. (3) Sign out and back in — the sign-in page opens in the language you last chose. (4) Buying — the last two cards read "Open orders" and "Reorder". (5) Today → Receive: type the MRP off a pack and, for a bad carton, the number that failed the check. (6) Type a supplier's name in the new search box on Suppliers.
+- **Owner decision needed (money, batched):** OB-866 — where a supplier bill's "Round off" posts (A same round-off account as sales; B a separate purchase round-off account the accountant names; C no change). A1 waits for it.
+- **Not done:** A1 (round off) — waiting for OB-866. The MRP box and the failed-check count are on Receive (office); the warehouse handheld's receive screen does not have them yet. The CA's written confirmation of OB-862 is an owner action.
+- **Next:** the owner's answer on OB-866; then the handheld's MRP box.
 ## Batch 18b (19 Nov 2026) · Download to Excel, Print PO / GRN / statement, reports for a past period (D-080 – D-085 · OB-867 – OB-870)
 - **Owner asked:** the most-needed missing options (audit of 19 Nov): B1, R1, P1, B2, O1, O3.
 - **Done (branch `claude/batch-18b`, no pull request yet):**

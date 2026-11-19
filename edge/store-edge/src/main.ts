@@ -3429,6 +3429,9 @@ export async function startEdge(
         ...(r.adapterObservedAt === undefined ? {} : { adapterObservedAt: r.adapterObservedAt }),
         attended: (tillOperators?.live() ?? []).some((s) => s.laneId === r.laneId),
       })),
+      // OB-862 A: the tills this box serves — its own lane and every lane whose devices reported here — so head office gives
+      // each its lane code the first time, and the next store pack (pulled in this same pass) carries it.
+      lanes: () => [...(settings['EDGE_LANE_ID'] === undefined ? [] : [settings['EDGE_LANE_ID']]), ...(peripheralReports?.latest() ?? []).map((r) => r.laneId)],
       // Verifier r18 item 6: the highest count GIVEN per bill-number prefix (a voided bill keeps its number) — head office
       // keeps a replaced box above it. r20 LOST-1: with each prefix, the bills under it still waiting in this box's sales and
       // refund queues; r21: with when the oldest of them was made, and the bills this box GAVE UP sending (its dead letters).

@@ -151,3 +151,17 @@ body{background:#fbf8f1}
 @media(max-width:390px){#sre-login .sl-topbar{padding:19px 15px;gap:10px}#sre-login .sl-mark{width:39px;height:39px;font-size:26px;border-radius:10px}#sre-login .sl-brand{gap:8px}#sre-login .sl-brand-name{font-size:19px}#sre-login .sl-brand-name small{font-size:12.5px;letter-spacing:1px}#sre-login .sl-language button{padding:7px 9px;min-height:44px}#sre-login .sl-main{padding:12px 14px 27px}#sre-login .sl-login-card{padding:25px 21px 21px}#sre-login .sl-login-card h1,#sre-login .sl-login-card h2{font-size:28px}#sre-login .sl-store{padding:12px 10px;gap:8px}#sre-login .sl-store .sl-mode{display:none}#sre-login input::placeholder{font-size:14px}#sre-login .sl-password{padding-right:60px!important}#sre-login .sl-reveal{min-width:48px}}
 @media(prefers-reduced-motion:reduce){#sre-login *{scroll-behavior:auto!important}}
 `;
+
+/**
+ * Batch 18a · OB-855 (owner, 19 Nov 2026: one language at a time, the choice remembered on the device): the store computer's
+ * sign-in page switches language with two radio buttons (`#sl-lang-en`, `#sl-lang-ta`) and no script of its own. This small
+ * script opens the page in the language last chosen on THIS device — the same key (`sre.lang`) the hosted sign-in and the
+ * office pages use — and remembers each press. With no script, or an empty or refused store, the page is simply English.
+ */
+export const SIGN_IN_LANGUAGE_MEMORY_SCRIPT = '<script>(function(){var K="sre.lang";'
+  + 'var en=document.getElementById("sl-lang-en"),ta=document.getElementById("sl-lang-ta");if(!en||!ta)return;'
+  + 'var set=function(v){document.documentElement.lang=v;};'
+  + 'try{if(window.localStorage.getItem(K)==="ta"){ta.checked=true;set("ta");}}catch(e){}'
+  + 'var save=function(v){set(v);try{window.localStorage.setItem(K,v);}catch(e){}};'
+  + 'en.addEventListener("change",function(){if(en.checked)save("en");});ta.addEventListener("change",function(){if(ta.checked)save("ta");});'
+  + '})();</script>';

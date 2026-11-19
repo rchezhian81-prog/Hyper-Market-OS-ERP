@@ -19,7 +19,7 @@
 //   5. **On SIGTERM, drain.** In-flight requests finish before the process goes.
 
 import { documentNumberRoutes, issuedDocumentNumbers } from '../../platform/src/document-number-issue';
-import { bankedReceiptCounts, formatAPackSection } from './adapters';
+import { bankedReceiptCounts, formatAPackSection, assignReportedLaneCodes } from './adapters';
 import { once } from 'node:events';
 import { Pool, Client } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
@@ -1445,6 +1445,8 @@ export function buildSurface(deps: {
           : [{ roleId: g.roleId, allStores: g.branchScope === 'all', platformAdministration: isPlatformAdministrationRole(role) }];
       }); },
       approvals: approvalRequestsAdapter({ store, now }),
+      // OB-862 A: a till the store computer reports gets its lane code (L01, L02, …) by itself, once, audited.
+      assignLaneCodes: (t, a) => assignReportedLaneCodes(store, t, a, auditTrail?.recordAudit),
     }),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),

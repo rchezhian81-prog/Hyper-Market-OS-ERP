@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2512,
+  "testFiles": 2518,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -651,16 +651,17 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 16,
-        "integration": 34,
-        "realDb": 12,
-        "browser": 11,
+        "unit": 17,
+        "integration": 35,
+        "realDb": 13,
+        "browser": 12,
         "connected": 3,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/b18a-receive-takes-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/unit/d017-a-delivery-is-booked-where-the-order-says.test.ts",
           "tests/unit/d029-receive-against-an-order-with-batch-expiry-and-damaged.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -685,6 +686,7 @@
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/b18a-receive-carries-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/d029-a-relayed-receipt-carries-expiry-and-damaged.test.ts",
@@ -719,6 +721,7 @@
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/b18a-receive-carries-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
@@ -730,6 +733,7 @@
         ],
         "browser": [
           "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts",
+          "tests/e2e/b18a-receive-mrp-and-failed-check-and-list-search.e2e.ts",
           "tests/e2e/fix-batch5-the-back-store-and-receiving-work-by-name.e2e.ts",
           "tests/e2e/goods-receipt-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",

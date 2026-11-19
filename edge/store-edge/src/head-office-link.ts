@@ -31,6 +31,7 @@ import { createSignInHandler, cookieOf, SESSION_COOKIE, type SignInResponse } fr
 import { verifyToken, type TokenPolicy } from '../../../services/identity/src/token';
 import { jwksKeyring, type JwksKeyring } from '../../../services/identity/src/jwks';
 import type { PublicKeyring } from '../../../services/identity/src/token';
+import { withOneLanguage } from './system-page-language';
 
 /** Where head office's sign-in and API are, and who this box is. Every value comes from the box's settings. */
 export interface HeadOfficeLinkSettings {
@@ -141,29 +142,29 @@ const PAGE_STYLE = [
 export function headOfficeSignInPage(input: { readonly problem: HeadOfficeSignInProblem; readonly next: string }): string {
   const w = HEAD_OFFICE_SIGN_IN_WORDS[input.problem];
   const again = input.problem === 'not_the_same_person'
-    ? '<form method="post" action="/office/sign-out" id="ho-sign-out"><button type="submit">Sign out <span lang="ta">· வெளியேறு</span></button></form>'
+    ? '<form method="post" action="/office/sign-out" id="ho-sign-out"><button type="submit"><span lang="en">Sign out</span><span lang="ta">வெளியேறு</span></button></form>'
     : input.problem === 'unreachable'
-    ? `<a class="go" id="ho-back" href="/manager/">Back to the store computer's own screens <span lang="ta">· கடை கணினியின் சொந்தத் திரைகளுக்குத் திரும்பு</span></a>`
-    : `<a class="go" id="ho-again" href="/login/?next=${encodeURIComponent(input.next)}">Sign in to head office <span lang="ta">· தலைமை அலுவலகத்தில் உள்நுழை</span></a>`;
-  return [
+    ? `<a class="go" id="ho-back" href="/manager/"><span lang="en">Back to the store computer's own screens</span><span lang="ta">கடை கணினியின் சொந்தத் திரைகளுக்குத் திரும்பு</span></a>`
+    : `<a class="go" id="ho-again" href="/login/?next=${encodeURIComponent(input.next)}><span lang="en">Sign in to head office</span><span lang="ta">தலைமை அலுவலகத்தில் உள்நுழை</span></a>`;
+  return withOneLanguage([
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
     '<title>Head office sign-in — store computer</title>', `<style>${PAGE_STYLE}</style></head><body><main>`,
     '<h1 id="ho-heading"><span lang="en">Head office sign-in</span><span lang="ta" class="ta">தலைமை அலுவலக உள்நுழைவு</span></h1>',
     `<div class="problem" role="alert" id="ho-problem" data-problem="${input.problem}"><p lang="en">${esc(w.en)}</p><p lang="ta" class="ta">${esc(w.ta)}</p></div>`,
     again, '</main></body></html>',
-  ].join('');
+  ].join(''));
 }
 
 /** The page the sign-in lands on: it sets the session and moves on from THIS page, so the strict cookie travels with it. */
 function landingPage(next: string): string {
   const to = esc(next);
-  return [
+  return withOneLanguage([
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta http-equiv="refresh" content="0;url=${to}">`, '<title>Signed in to head office — store computer</title>',
     `<style>${PAGE_STYLE}</style></head><body><main>`,
     '<h1 id="ho-heading"><span lang="en">Signed in to head office</span><span lang="ta" class="ta">தலைமை அலுவலகத்தில் உள்நுழைந்தீர்கள்</span></h1>',
-    `<a class="go" id="ho-continue" href="${to}">Continue <span lang="ta">· தொடர்க</span></a>`, '</main></body></html>',
-  ].join('');
+    `<a class="go" id="ho-continue" href="${to}"><span lang="en">Continue</span><span lang="ta">தொடர்க</span></a>`, '</main></body></html>',
+  ].join(''));
 }
 
 /** A session id from a Cookie header (the product's sign-in cookie), only when it is a plausible random id. */

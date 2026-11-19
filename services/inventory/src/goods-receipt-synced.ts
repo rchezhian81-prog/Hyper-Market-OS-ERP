@@ -60,7 +60,7 @@ interface RelayedReceipt {
   readonly warehouseId: string;
   readonly receivedBy: string;
   readonly receivedAt: string;
-  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly batchId: string | null; readonly temperatureC?: number; readonly manufacturedOn?: string; readonly expiry?: string; readonly damagedMinor?: number }[];
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly batchId: string | null; readonly temperatureC?: number; readonly manufacturedOn?: string; readonly expiry?: string; readonly damagedMinor?: number; readonly qcFailedMinor?: number; readonly mrpMinor?: number }[];
   readonly storeId: string | null;
   readonly source: string;
 }
@@ -89,7 +89,16 @@ function readRelayedReceipt(body: unknown): RelayedReceipt | undefined {
     if (!(expiry === undefined || expiry === null || (typeof expiry === 'string' && (expiry.trim() === '' || isCalendarDate(expiry.trim()))))) return undefined;
     const damagedMinor = l['damagedMinor'];
     if (!(damagedMinor === undefined || damagedMinor === null || (typeof damagedMinor === 'number' && Number.isInteger(damagedMinor) && damagedMinor >= 0 && damagedMinor <= (l['quantityMinor'] as number)))) return undefined;
+    // Batch 18a · R4 (M07-FR-02/03): how many failed the quality check or were refused at the door — whole, and with the
+    // damaged never more than arrived. R3: the MRP printed on the pack, in paise, above zero. Anything else is unreadable.
+    const qcFailedMinor = l['qcFailedMinor'];
+    const damagedCount = typeof damagedMinor === 'number' ? damagedMinor : 0;
+    if (!(qcFailedMinor === undefined || qcFailedMinor === null || (typeof qcFailedMinor === 'number' && Number.isInteger(qcFailedMinor) && qcFailedMinor >= 0 && qcFailedMinor + damagedCount <= (l['quantityMinor'] as number)))) return undefined;
+    const mrpMinor = l['mrpMinor'];
+    if (!(mrpMinor === undefined || mrpMinor === null || (typeof mrpMinor === 'number' && Number.isSafeInteger(mrpMinor) && mrpMinor > 0))) return undefined;
     lines.push({
+      ...(typeof qcFailedMinor === 'number' && qcFailedMinor > 0 ? { qcFailedMinor } : {}),
+      ...(typeof mrpMinor === 'number' ? { mrpMinor } : {}),
       ...(typeof expiry === 'string' && expiry.trim() !== '' ? { expiry: expiry.trim() } : {}),
       ...(typeof damagedMinor === 'number' && damagedMinor > 0 ? { damagedMinor } : {}),
       ...(typeof manufacturedOn === 'string' && manufacturedOn.trim() !== '' ? { manufacturedOn: manufacturedOn.trim() } : {}),
@@ -170,15 +179,19 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         // Fix batch 4b · D-029: a line with some units DAMAGED becomes two captured lines of the same batch — the good ones and
         // the damaged ones (quarantined by the capture engine, never sellable) — exactly as the handheld captures a good and a
         // damaged count of one product; the order's figure is then apportioned across them once (alignToOrder).
+        // Batch 18a · R4: and the units that FAILED THE QUALITY CHECK (or were refused at the door) a third line, its check
+        // failed — quarantined by the same engine, decided by a second person (accept / return to the supplier / claim).
         const split = r.lines.flatMap((l) => {
           const damaged = l.damagedMinor ?? 0;
-          const good = l.quantityMinor - damaged;
+          const failed = l.qcFailedMinor ?? 0;
+          const good = l.quantityMinor - damaged - failed;
           return [
-            ...(good > 0 ? [{ l, counted: good, condition: 'good' as const }] : []),
-            ...(damaged > 0 ? [{ l, counted: damaged, condition: 'damaged' as const }] : []),
+            ...(good > 0 ? [{ l, counted: good, condition: 'good' as const, qcFailed: false }] : []),
+            ...(damaged > 0 ? [{ l, counted: damaged, condition: 'damaged' as const, qcFailed: false }] : []),
+            ...(failed > 0 ? [{ l, counted: failed, condition: 'good' as const, qcFailed: true }] : []),
           ];
         });
-        const aligned: readonly CapturedLine[] = alignToOrder(split.map(({ l, counted, condition }, i): CapturedLine => ({
+        const aligned: readonly CapturedLine[] = alignToOrder(split.map(({ l, counted, condition, qcFailed }, i): CapturedLine => ({
           lineId: `${grnId}:${i + 1}`,
           productId: l.productId,
           // The manager's screen names no ordered figure: the order's stands in (alignToOrder), else counted (as-is).
@@ -192,6 +205,10 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           unitCost: { minor: 0, currency: 'INR' },
           // As the manager found them: good, or damaged (D-029) — damaged goes to quarantine, never on sale.
           condition,
+          // Batch 18a · R4: failed the quality check / refused at the door — quarantined pending a second person's decision.
+          ...(qcFailed ? { qc: 'failed' as const } : {}),
+          // Batch 18a · R3: the MRP printed on the pack — the capture engine compares it with head office's master MRP.
+          ...(l.mrpMinor === undefined ? {} : { mrp: { minor: l.mrpMinor, currency: 'INR' } }),
           // Wave 3 · SF-07 part 2: the reading the manager probed, judged against the product master's limits; absent → held.
           ...(l.temperatureC === undefined ? {} : { temperatureC: l.temperatureC }),
           // B4 · OB-504: the batch's month and year of manufacture, as typed off the pack (a packed product needs one).

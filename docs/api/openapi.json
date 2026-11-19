@@ -221988,8 +221988,14 @@
                 "manufacturedOn": {
                   "type": "string"
                 },
+                "mrpMinor": {
+                  "type": "integer"
+                },
                 "productId": {
                   "type": "string"
+                },
+                "qcFailedMinor": {
+                  "type": "integer"
                 },
                 "quantityMinor": {
                   "type": "integer"
@@ -259478,6 +259484,12 @@
             },
             "additionalProperties": true
           },
+          "laneCodesGiven": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "recorded": {
             "$ref": "#/components/schemas/BoxHealthRecord"
           },
@@ -259607,6 +259619,12 @@
               }
             },
             "additionalProperties": true
+          },
+          "lanes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "observedAt": {
             "type": "string"
@@ -275823,6 +275841,12 @@
           },
           "queueContradiction": {
             "type": "string"
+          },
+          "lanes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true

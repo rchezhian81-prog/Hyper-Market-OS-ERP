@@ -28,7 +28,7 @@ describe('the updater\'s latest word, on the page', () => {
     expect(html).toContain(words);
     expect(html).toMatch(new RegExp(`<h2 class="${tone}" id="progress">`));
     expect(html).toContain('what the updater said');
-    expect(html).toMatch(/id="progress">[^<]*<span lang="ta">/);
+    expect(html).toMatch(/id="progress"><span lang="en">[^<]*<\/span><span lang="ta">/); // OB-855: one language at a time
   });
 
   it('while an update runs, or a request waits, there is no button to press again', () => {
@@ -46,7 +46,7 @@ describe('the updater\'s latest word, on the page', () => {
     expect(updatePage(view)).toContain('id="updater-note"');
     expect(updatePage(view)).toContain('puts the old version back by itself if anything fails');
     const pending = updatePage({ ...view, updaterPending: true });
-    expect(pending).toMatch(/<p class="warn" id="updater-pending">The updater is not set up on this PC/);
+    expect(pending).toMatch(/<p class="warn" id="updater-pending"><span lang="en">The updater is not set up on this PC/);
   });
 
   it('escapes what the updater said; anything unreadable is "nothing to show", never a made-up state', () => {

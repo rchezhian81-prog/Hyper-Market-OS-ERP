@@ -33,6 +33,17 @@ export interface ReceiptLineInput {
    * A SHORT delivery needs no box: it is what arrived against what the order still had due, worked out by head office.
    */
   readonly damagedMinor?: number;
+  /**
+   * Batch 18a · R4 (M07-FR-02/03): how many of `quantityMinor` FAILED THE QUALITY CHECK or were refused at the door. Head office
+   * books them as their own line with the quality check failed — quarantined, never sellable, decided by a second person
+   * (accept, return to the supplier, or claim). This screen's own ledger raises none of them. 0 / absent = none.
+   */
+  readonly qcFailedMinor?: number;
+  /**
+   * Batch 18a · R3 (M07-FR-02): the MRP printed on the pack, in paise. Head office compares it with the MRP on its product
+   * master and flags a difference for the buyer before the goods reach the shelf. Absent = not typed (nothing compared).
+   */
+  readonly mrpMinor?: number;
 }
 
 /** YYYY-MM-DD that is a real calendar date. */
@@ -56,7 +67,11 @@ export type ReceiptLineProblem =
   | { readonly kind: 'expiry_not_a_date'; readonly productId: string }
   | { readonly kind: 'damaged_not_whole'; readonly productId: string }
   | { readonly kind: 'damaged_more_than_arrived'; readonly productId: string }
-  | { readonly kind: 'batch_and_expiry_needed'; readonly productId: string };
+  | { readonly kind: 'batch_and_expiry_needed'; readonly productId: string }
+  // Batch 18a · R3/R4
+  | { readonly kind: 'qc_failed_not_whole'; readonly productId: string }
+  | { readonly kind: 'set_aside_more_than_arrived'; readonly productId: string }
+  | { readonly kind: 'mrp_not_an_amount'; readonly productId: string };
 
 /**
  * Fix batch 4b · D-029: what is wrong with a delivery's lines before anything is saved — offline, the same everywhere: an
@@ -64,7 +79,7 @@ export type ReceiptLineProblem =
  * product (head office's catalogue, as the store computer holds it) with no batch or no expiry (head office refuses it too).
  */
 export function receiptLineProblems(
-  lines: readonly Pick<ReceiptLineInput, 'productId' | 'quantityMinor' | 'batchId' | 'expiry' | 'damagedMinor'>[],
+  lines: readonly Pick<ReceiptLineInput, 'productId' | 'quantityMinor' | 'batchId' | 'expiry' | 'damagedMinor' | 'qcFailedMinor' | 'mrpMinor'>[],
   batchTrackedProductIds?: readonly string[],
 ): readonly ReceiptLineProblem[] {
   const tracked = new Set(batchTrackedProductIds ?? []);
@@ -76,6 +91,13 @@ export function receiptLineProblems(
       if (!Number.isInteger(l.damagedMinor) || l.damagedMinor < 0) out.push({ kind: 'damaged_not_whole', productId: l.productId });
       else if (l.damagedMinor > l.quantityMinor) out.push({ kind: 'damaged_more_than_arrived', productId: l.productId });
     }
+    // Batch 18a · R4: failed the quality check / refused at the door — whole units, and with the damaged never more than arrived.
+    if (l.qcFailedMinor !== undefined) {
+      if (!Number.isInteger(l.qcFailedMinor) || l.qcFailedMinor < 0) out.push({ kind: 'qc_failed_not_whole', productId: l.productId });
+      else if (l.qcFailedMinor + (Number.isInteger(l.damagedMinor) && (l.damagedMinor ?? 0) > 0 ? l.damagedMinor! : 0) > l.quantityMinor) out.push({ kind: 'set_aside_more_than_arrived', productId: l.productId });
+    }
+    // Batch 18a · R3: the MRP on the pack — a whole number of paise above zero.
+    if (l.mrpMinor !== undefined && (!Number.isSafeInteger(l.mrpMinor) || l.mrpMinor <= 0)) out.push({ kind: 'mrp_not_an_amount', productId: l.productId });
     if (tracked.has(l.productId) && ((l.batchId ?? '').trim() === '' || expiry === '')) out.push({ kind: 'batch_and_expiry_needed', productId: l.productId });
   }
   return out;
@@ -140,7 +162,9 @@ export function commitReceipt(
 
   for (const line of input.lines) {
     // Fix batch 4b · D-029: a line that arrived wholly damaged raises no stock here (head office quarantines it).
-    if (Math.abs(line.quantityMinor) - Math.max(0, line.damagedMinor ?? 0) <= 0) continue;
+    // Batch 18a · R4: nor does a line that failed the quality check (head office quarantines it too).
+    const setAside = Math.max(0, line.damagedMinor ?? 0) + Math.max(0, line.qcFailedMinor ?? 0);
+    if (Math.abs(line.quantityMinor) - setAside <= 0) continue;
     stockLedger.append(
       makeEvent({
         id: `${input.id}:move:${line.productId}`,
@@ -151,7 +175,7 @@ export function commitReceipt(
         payload: {
           productId: line.productId,
           // inbound: stock increases — by the GOOD ones only; damaged units are quarantined at head office (D-029)
-          deltaMinor: Math.max(0, Math.abs(line.quantityMinor) - Math.max(0, line.damagedMinor ?? 0)),
+          deltaMinor: Math.max(0, Math.abs(line.quantityMinor) - setAside),
           uom: line.uom,
           batchId: line.batchId ?? null,
         },
@@ -186,6 +210,9 @@ export function commitReceipt(
           // Fix batch 4b · D-029: the batch's expiry date and how many arrived damaged travel with the line.
           ...(l.expiry === undefined || l.expiry.trim() === '' ? {} : { expiry: l.expiry.trim() }),
           ...(l.damagedMinor === undefined || l.damagedMinor <= 0 ? {} : { damagedMinor: l.damagedMinor }),
+          // Batch 18a · R4/R3: how many failed the quality check, and the MRP printed on the pack (head office judges both).
+          ...(l.qcFailedMinor === undefined || l.qcFailedMinor <= 0 ? {} : { qcFailedMinor: l.qcFailedMinor }),
+          ...(l.mrpMinor === undefined ? {} : { mrpMinor: l.mrpMinor }),
         })),
         storeId: input.storeId ?? null,
         source: input.source ?? 'receiving',

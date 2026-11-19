@@ -835,7 +835,7 @@ export interface ColdClassDefault {
  */
 export function receiptRuleFor(
   productId: string,
-  published: { readonly batchTracked?: boolean; readonly handling?: string } | undefined,
+  published: { readonly batchTracked?: boolean; readonly handling?: string; readonly mrpMinor?: number } | undefined,
   master: MasterHandling | undefined,
   classDefaults: readonly ColdClassDefault[],
   /** B4 · OB-504: the regulated kinds of the product's department on head office's category list (`packed` → packaged). */
@@ -856,6 +856,8 @@ export function receiptRuleFor(
     batchTracked: published?.batchTracked ?? false,
     ...(handling === undefined ? {} : { handling }),
     ...((regulated ?? []).includes('packed') ? { packaged: true } : {}),
+    // Batch 18a · R3 (M07-FR-02): the MRP head office publishes for the product — a delivered MRP that differs is flagged.
+    ...(published?.mrpMinor !== undefined && Number.isSafeInteger(published.mrpMinor) && published.mrpMinor > 0 ? { mrp: { minor: published.mrpMinor, currency: 'INR' } } : {}),
     ...(coldChain ? {
       coldChain: true,
       ...(maxC === undefined ? {} : { coldChainMaxC: maxC }),

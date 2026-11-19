@@ -41,6 +41,9 @@ export const typedQuantity = Object.freeze({
 
 export function wireBuyingAndStockScreens(win: Record<string, unknown>, viewerIdentity: (raw: unknown) => Viewer | undefined): void {
   win['sreTypedQuantity'] = typedQuantity;
+  // Batch 18a: the Open orders and Reorder tabs' own words, always — so a Buying page with no store data (the sample) shows
+  // the tabs' real names ("Open orders", "Reorder") and their leads, never the placeholder keys "tab" and "lead".
+  win['buyingWords'] = Object.freeze({ openOrders: openOrdersWords, reorder: replenishmentWords });
   if (win['buyingData'] !== undefined) {
     // M06-FR-04: the open-commitment report, and changing or cancelling an issued order.
     // M09-FR-02 · WF-03: the stored reorder settings, head office's proposal on them, and a requisition raised from it.
