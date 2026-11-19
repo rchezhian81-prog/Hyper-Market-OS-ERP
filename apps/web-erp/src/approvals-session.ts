@@ -142,7 +142,7 @@ export type CopyKey =
   | 'kindDataImport' | 'kindDataImportRollback' | 'kindCategoryDefine' | 'kindSupplierBank'
   | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor' | 'kindQuotationFloorNotKnown' | 'kindQuotationFloorNotKnownOwnerQuoted' | 'kindQuotationBelowFloorOwnerQuoted'
   | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit' | 'kindConcessionInvoice'
-  | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
+  | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindGoodsReceiptCorrection' | 'kindOrderRefund' | 'kindServiceCompensation'
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
@@ -201,6 +201,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindPeriodClose: 'Close and sign an accounting month', kindPeriodReopen: 'Reopen a signed accounting month',
     kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit', kindConcessionInvoice: 'Issue a concession invoice and settle the period',
     kindStockWriteOff: 'Write off stock (a material loss)', kindStockAdjustmentUp: 'Correct stock upward',
+    kindGoodsReceiptCorrection: 'Correct a saved goods receipt (a wrongly keyed quantity)',
     kindOrderRefund: 'Refund an online order', kindServiceCompensation: 'Give a customer compensation above the desk\'s own limit',
     kindSupplierInvoiceCheck: 'Check a supplier bill', kindSupplierPayment: 'Pay a supplier',
     kindDisplayContract: 'Approve a supplier\'s display-space funding', kindRebateScheme: 'Approve a supplier rebate scheme', kindRebateClaim: 'Approve a supplier rebate claim before it is sent',
@@ -313,6 +314,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindPeriodClose: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்', kindPeriodReopen: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்',
     kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்', kindConcessionInvoice: 'சலுகை விலைப்பட்டியலை வெளியிட்டு காலத்தைத் தீர்த்தல்',
     kindStockWriteOff: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)', kindStockAdjustmentUp: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்',
+    kindGoodsReceiptCorrection: 'சேமித்த சரக்கு வரவைத் திருத்துதல் (தவறாகப் பதிந்த அளவு)',
     kindOrderRefund: 'ஆன்லைன் ஆர்டருக்குப் பணத்தைத் திருப்பித் தருதல்', kindServiceCompensation: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்',
     kindSupplierInvoiceCheck: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்', kindSupplierPayment: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்',
     kindDisplayContract: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்', kindRebateScheme: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்', kindRebateClaim: 'அனுப்பும் முன் விநியோகஸ்தர் தள்ளுபடிக் கோரிக்கையை அனுமதித்தல்',
@@ -430,6 +432,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   concession_invoice: 'kindConcessionInvoice', // Round 4d · M27-FR-03
   stock_write_off: 'kindStockWriteOff',
   stock_adjustment_up: 'kindStockAdjustmentUp',
+  goods_receipt_correction: 'kindGoodsReceiptCorrection', // R2 (batch 18c · OB-873)
   order_refund: 'kindOrderRefund',
   service_compensation: 'kindServiceCompensation',
   supplier_invoice_check: 'kindSupplierInvoiceCheck',

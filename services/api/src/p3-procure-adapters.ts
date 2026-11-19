@@ -85,12 +85,14 @@ export async function foldBlanketAgreements(store: EventStore, tenantId: string)
 }
 
 const asRelease = (po: StoredPurchaseOrder): BlanketRelease & { readonly number: string; readonly requisitionedBy: string; readonly approvedBy: string | null } => ({
-  poId: po.poId, number: po.number, status: po.status, lines: po.lines, cancelledByProduct: po.cancelledByProduct,
+  poId: po.poId, number: po.number, status: po.status === 'issued' ? 'issued' : 'proposed', lines: po.lines, cancelledByProduct: po.cancelledByProduct,
   requisitionedBy: po.requisitionedBy, approvedBy: po.approvedBy,
 });
 
 async function releasesOf(store: EventStore, tenantId: string, agreementId: string) {
-  return [...(await foldPurchaseOrders(store, tenantId)).values()].filter((p) => p.blanketAgreementId === agreementId).map(asRelease);
+  return [...(await foldPurchaseOrders(store, tenantId)).values()].filter((p) => p.blanketAgreementId === agreementId)
+    // P2 (batch 18c): a rejected or withdrawn release spends none of the agreement's ceiling; one sent back still waits.
+    .filter((p) => p.status !== 'rejected' && p.status !== 'withdrawn').map(asRelease);
 }
 
 export function blanketAgreementsAdapter(input: Base): BlanketOrderDeps {
@@ -288,7 +290,9 @@ export async function rebateBasisFor(store: EventStore, tenantId: string, suppli
     const day = i.supplierInvoiceDate ?? shopDateIn(i.capturedAt, timeZone); // R1b: the shop's date, never UTC
     if (day < from || day > to) continue;
     const charges = (m as StoredMatch & { landedCharges?: { totalMinor: number } }).landedCharges?.totalMinor ?? 0;
-    amountMinor += (m.tax?.taxablePayableMinor ?? m.payableMinor) - (m.tax === undefined ? charges : 0);
+    // OB-866 B: a bill's round off is neither goods nor charges — never part of what a rebate is earned on.
+    const roundOff = m.roundOffMinor ?? 0;
+    amountMinor += (m.tax?.taxablePayableMinor ?? m.payableMinor) - (m.tax === undefined ? charges + roundOff : 0);
     invoices.push(i.invoiceId);
   }
   return { amountMinor, invoices };

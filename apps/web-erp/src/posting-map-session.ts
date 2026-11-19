@@ -16,7 +16,13 @@ import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
 
 export type Lang = 'en' | 'ta';
 export type Side = 'debit' | 'credit';
-export interface Leg { readonly account: string; readonly side: Side; readonly component: string }
+/**
+ * One figure of a rule. `optional` (OB-866 B): a figure head office lists as still waiting for an account nobody suggests — a
+ * supplier bill's round off. It starts blank; left blank it is not saved (the bills carrying it wait, said by name).
+ */
+export interface Leg { readonly account: string; readonly side: Side; readonly component: string; readonly optional?: true }
+/** OB-866 B: figures of a mapped kind head office lists as waiting for an account (`legsToName` on the posting map). */
+export interface LegsToName { readonly kind: string; readonly legs: readonly { readonly side: Side; readonly component: string }[] }
 export interface Rule { readonly kind: string; readonly legs: readonly Leg[] }
 
 /** One kind of posting as the screen lists it. `state`: in force · only suggested · waiting for a rule with nothing suggested. */
@@ -62,11 +68,21 @@ function rulesOf(v: unknown): Rule[] {
 }
 
 /** The kinds in one list: in force first (in the map's order), then suggested-only, then those waiting with nothing suggested. */
-export function kindRows(inForce: readonly Rule[], suggested: readonly Rule[], toMap: readonly { readonly kind: string; readonly components: readonly string[]; readonly legs?: readonly { readonly side: Side; readonly component: string }[] }[]): KindRow[] {
+export function kindRows(
+  inForce: readonly Rule[], suggested: readonly Rule[], toMap: readonly { readonly kind: string; readonly components: readonly string[]; readonly legs?: readonly { readonly side: Side; readonly component: string }[] }[],
+  legsToName: readonly LegsToName[] = [],
+): KindRow[] {
   const forced = new Map(inForce.map((r) => [r.kind, r.legs]));
   const sugg = new Map(suggested.map((r) => [r.kind, r.legs]));
-  const out: KindRow[] = inForce.map((r) => ({ kind: r.kind, state: 'in_force', legs: r.legs, inForce: r.legs, suggested: sugg.get(r.kind) ?? null }));
-  for (const r of suggested) if (!forced.has(r.kind)) out.push({ kind: r.kind, state: 'suggested', legs: r.legs, inForce: null, suggested: r.legs });
+  // OB-866 B: a kind's figures still waiting for an account are offered blank and optional after its own legs (never filled).
+  const withWaiting = (kind: string, legs: readonly Leg[]): readonly Leg[] => {
+    const waiting = legsToName.filter((t) => t.kind === kind).flatMap((t) => t.legs)
+      .filter((w) => !legs.some((l) => l.component === w.component && l.side === w.side))
+      .map((w): Leg => ({ account: '', side: w.side, component: w.component, optional: true }));
+    return waiting.length === 0 ? legs : [...legs, ...waiting];
+  };
+  const out: KindRow[] = inForce.map((r) => ({ kind: r.kind, state: 'in_force', legs: withWaiting(r.kind, r.legs), inForce: r.legs, suggested: sugg.get(r.kind) ?? null }));
+  for (const r of suggested) if (!forced.has(r.kind)) out.push({ kind: r.kind, state: 'suggested', legs: withWaiting(r.kind, r.legs), inForce: null, suggested: r.legs });
   for (const t of toMap) {
     if (forced.has(t.kind) || sugg.has(t.kind)) continue;
     const component = t.components[0] ?? 'amount';
@@ -84,6 +100,16 @@ export function accountRows(rules: readonly Rule[], names: Readonly<Record<strin
   return [...kinds.entries()].map(([account, ks]) => ({ account, tallyName: names?.[account] ?? null, kinds: ks }));
 }
 
+/** OB-866 B: head office's `legsToName` — the figures of a mapped kind still waiting for an account. Unreadable entries drop. */
+function legsToNameOf(v: unknown): LegsToName[] {
+  return Array.isArray(v) ? v.flatMap((t): LegsToName[] => (isObj(t) && typeof t['kind'] === 'string' ? [{
+    kind: t['kind'], legs: legsOf(t['legs']).map((l) => ({ side: l.side, component: l.component })).filter((l) => l.component !== ''),
+  }] : [])) : [];
+}
+
+/** OB-866 B: an optional figure left blank is not part of the rule (its bills keep waiting); every other figure is kept. */
+const namedOnly = (legs: readonly Leg[]): readonly Leg[] => legs.filter((l) => !(l.optional === true && l.account.trim() === ''));
+
 /**
  * The map to save: the rules in force with the screen's changes laid over them (`changes`: a kind → its legs, or `null` to
  * leave the kind out). A new kind is added at the end. What is missing is said by name, before anything is sent.
@@ -94,9 +120,9 @@ export function mapToSave(inForce: readonly Rule[], changes: ReadonlyMap<string,
   for (const r of inForce) {
     if (!changes.has(r.kind)) { rules.push(r); continue; }
     const legs = changes.get(r.kind);
-    if (legs !== null && legs !== undefined) rules.push({ kind: r.kind, legs });
+    if (legs !== null && legs !== undefined) rules.push({ kind: r.kind, legs: namedOnly(legs) });
   }
-  for (const [kind, legs] of changes) if (legs !== null && !inForce.some((r) => r.kind === kind)) rules.push({ kind, legs });
+  for (const [kind, legs] of changes) if (legs !== null && !inForce.some((r) => r.kind === kind)) rules.push({ kind, legs: namedOnly(legs) });
   if (rules.length === 0) return { ok: false, why: 'empty' };
   for (const r of rules) {
     if (r.legs.some((l) => l.account.trim() === '')) return { ok: false, why: 'blankAccount', kind: r.kind };
@@ -161,6 +187,9 @@ const COMPONENT_WORDS: Record<string, { en: string; ta: string }> = {
   cgst: { en: 'CGST', ta: 'CGST' }, sgst: { en: 'SGST', ta: 'SGST' }, igst: { en: 'IGST', ta: 'IGST' }, cess: { en: 'cess', ta: 'செஸ்' },
   amount: { en: 'the amount', ta: 'தொகை' }, payable: { en: 'what is owed to the supplier', ta: 'சப்ளையருக்குச் செலுத்த வேண்டியது' },
   round_off_up: { en: 'rounding up', ta: 'மேல் முழுமையாக்கல்' }, round_off_down: { en: 'rounding down', ta: 'கீழ் முழுமையாக்கல்' },
+  // OB-866 B: a supplier bill's "Round off" line — the "Purchase round off" account the accountant names (blank until then).
+  purchase_round_off_up: { en: 'Purchase round off — bill rounded up', ta: 'கொள்முதல் முழுமையாக்கல் — பில் மேலே முழுமையாக்கப்பட்டது' },
+  purchase_round_off_down: { en: 'Purchase round off — bill rounded down', ta: 'கொள்முதல் முழுமையாக்கல் — பில் கீழே முழுமையாக்கப்பட்டது' },
   cost: { en: 'the cost', ta: 'அடக்கவிலை' }, cost_of_sales: { en: 'the cost of goods sold', ta: 'விற்ற பொருளின் அடக்கவிலை' },
   increase: { en: 'stock value up', ta: 'சரக்கு மதிப்பு உயர்வு' }, decrease: { en: 'stock value down', ta: 'சரக்கு மதிப்பு குறைவு' },
   purchases: { en: 'the month\'s purchases', ta: 'மாதக் கொள்முதல்' }, accumulated: { en: 'depreciation so far', ta: 'இதுவரை தேய்மானம்' },
@@ -180,7 +209,8 @@ export const POSTING_MAP_COPY = {
     mapH: 'Posting map', mapRegister: 'Kinds of posting',
     colWhat: 'What it is', colKind: 'Kind', colState: 'State', colDebit: 'Debit account', colCredit: 'Credit account',
     in_force: 'in force', suggested: 'suggested only — not in force', to_map: 'waiting for a rule — nothing suggested', changed: 'changed — not saved yet', leftOut: 'to be left out — not saved yet',
-    legsH: 'Accounts for each figure', suggestion: 'Suggested', debit: 'Debit', credit: 'Credit', account: 'Account', figure: 'Figure',
+    optionalLeg: 'Not named yet — supplier bills with a round off wait until you name this account. Leave it blank if you have not chosen it.',
+    legsH: 'Accounts for each figure',suggestion: 'Suggested', debit: 'Debit', credit: 'Credit', account: 'Account', figure: 'Figure',
     keep: 'Keep these accounts in the change', useSuggested: 'Start from the suggestion', leaveOut: 'Leave this kind out of the map', undo: 'Undo my change to this kind',
     draftH: 'Your change', draftNone: 'Nothing changed yet. Open a kind, set its accounts and keep them.', draftCount: 'kinds changed', note: 'What the change is for', save: 'Save the posting map',
     adoptAll: 'Put every suggested rule in the change', adopted: 'suggested rules put in the change — look at each before you save.',
@@ -205,7 +235,8 @@ export const POSTING_MAP_COPY = {
     mapH: 'பதிவு வரைபடம்', mapRegister: 'பதிவு வகைகள்',
     colWhat: 'இது என்ன', colKind: 'வகை', colState: 'நிலை', colDebit: 'பற்றுக் கணக்கு', colCredit: 'வரவுக் கணக்கு',
     in_force: 'நடைமுறையில்', suggested: 'பரிந்துரை மட்டும் — நடைமுறையில் இல்லை', to_map: 'விதிக்குக் காத்திருக்கிறது — பரிந்துரை இல்லை', changed: 'மாற்றப்பட்டது — இன்னும் சேமிக்கவில்லை', leftOut: 'விலக்கப்படும் — இன்னும் சேமிக்கவில்லை',
-    legsH: 'ஒவ்வொரு எண்ணுக்கும் கணக்கு', suggestion: 'பரிந்துரை', debit: 'பற்று', credit: 'வரவு', account: 'கணக்கு', figure: 'எண்',
+    optionalLeg: 'இன்னும் பெயரிடப்படவில்லை — இந்தக் கணக்கைப் பெயரிடும் வரை முழுமையாக்கல் உள்ள சப்ளையர் பில்கள் காத்திருக்கும். தேர்வு செய்யவில்லை என்றால் காலியாக விடுங்கள்.',
+    legsH: 'ஒவ்வொரு எண்ணுக்கும் கணக்கு',suggestion: 'பரிந்துரை', debit: 'பற்று', credit: 'வரவு', account: 'கணக்கு', figure: 'எண்',
     keep: 'இந்தக் கணக்குகளை மாற்றத்தில் வை', useSuggested: 'பரிந்துரையிலிருந்து தொடங்கு', leaveOut: 'இந்த வகையை வரைபடத்திலிருந்து விலக்கு', undo: 'இந்த வகையில் என் மாற்றத்தைத் திரும்பப் பெறு',
     draftH: 'உங்கள் மாற்றம்', draftNone: 'இன்னும் எதுவும் மாற்றப்படவில்லை. ஒரு வகையைத் திறந்து, கணக்குகளை அமைத்து வையுங்கள்.', draftCount: 'வகைகள் மாற்றப்பட்டன', note: 'மாற்றம் எதற்காக', save: 'பதிவு வரைபடத்தைச் சேமி',
     adoptAll: 'பரிந்துரைத்த எல்லா விதிகளையும் மாற்றத்தில் வை', adopted: 'பரிந்துரைத்த விதிகள் மாற்றத்தில் வைக்கப்பட்டன — சேமிக்கும் முன் ஒவ்வொன்றையும் பாருங்கள்.',
@@ -285,7 +316,7 @@ export function createPostingMapSession(input: { readonly viewer: { readonly use
         value: {
           mapVersion: map === null || typeof map['version'] !== 'number' ? 0 : map['version'],
           mapBy: map === null ? null : str(map['definedBy']), mapAt: map === null ? null : str(map['definedAt']),
-          rows: kindRows(inForce, rulesOf(m.value['suggested']), toMap), mapHistory,
+          rows: kindRows(inForce, rulesOf(m.value['suggested']), toMap, legsToNameOf(m.value['legsToName'])), mapHistory,
           names, namesHistory, families, accounts: accountRows(inForce, names?.names), asAt: str(m.value['asAt']),
         },
       };

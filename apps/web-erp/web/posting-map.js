@@ -52,7 +52,9 @@ function legDrawer(row) {
   box.append(el('h3', t('legsH')));
   const form = el('form'); form.noValidate = true; form.id = 'legs-form';
   legs.forEach((l, i) => {
-    form.append(o.field({ id: `leg-${i}`, label: `${t(l.side)} — ${api.componentWords(lang, l.component)}`, required: true, value: l.account, hint: row.suggested?.[i] && row.suggested[i].account !== l.account ? `${t('suggestion')}: ${row.suggested[i].account}` : undefined }));
+    // OB-866 B: a figure still waiting for an account nobody suggests (a supplier bill's round off) is optional and starts blank.
+    const optional = l.optional === true;
+    form.append(o.field({ id: `leg-${i}`, label: `${t(l.side)} — ${api.componentWords(lang, l.component)}`, required: !optional, value: l.account, hint: optional && l.account === '' ? t('optionalLeg') : row.suggested?.[i] && row.suggested[i].account !== l.account ? `${t('suggestion')}: ${row.suggested[i].account}` : undefined }));
   });
   box.append(form);
   if (!may.configure) { form.querySelectorAll('input').forEach((i) => { i.readOnly = true; }); return box; }
@@ -60,7 +62,9 @@ function legDrawer(row) {
   const keep = el('button', t('keep')); keep.type = 'button'; keep.id = 'keep-legs';
   keep.addEventListener('click', () => {
     if (!o.check(form)) return;
-    const next = legs.map((l, i) => ({ account: $(`leg-${i}`).value.trim(), side: l.side, component: l.component }));
+    // OB-866 B: an optional figure left blank is not part of the change (its bills keep waiting, said on the Day book).
+    const next = legs.map((l, i) => ({ account: $(`leg-${i}`).value.trim(), side: l.side, component: l.component, optional: l.optional === true }))
+      .filter((l) => !(l.optional && l.account === '')).map(({ account, side, component }) => ({ account, side, component }));
     const same = row.inForce !== null && JSON.stringify(next) === JSON.stringify(row.inForce.map((l) => ({ account: l.account, side: l.side, component: l.component })));
     if (same) changes.delete(row.kind); else changes.set(row.kind, next);
     o.closeDrawer(); paintAll();

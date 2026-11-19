@@ -87,6 +87,13 @@ function paintHolds() {
         b.addEventListener('click', () => { void release(r.batchId); });
         const wrap = document.createElement('span'); wrap.append(b);
         if (!session.may.release) { whyDisabled(b, t('cannotRelease')); }
+        // S1 (batch 18c): send this batch back to the supplier instead — fills the Return to supplier box.
+        if (typeof window.shelfReturnPrefill === 'function') {
+          const r2 = document.createElement('button'); r2.type = 'button'; r2.className = 'sre-btn sre-btn-quiet'; r2.dataset.act = 'return'; r2.id = `rts-${r.batchId}`;
+          r2.textContent = window.shelfReturnSession?.words(lang, 'returnThis') ?? 'Return to supplier';
+          r2.addEventListener('click', () => { window.shelfReturnPrefill({ productId: r.productId, batchId: r.batchId, reason: 'damaged' }); });
+          wrap.append(' ', r2);
+        }
         return wrap;
       } },
     ],

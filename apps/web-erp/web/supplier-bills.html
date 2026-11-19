@@ -187,6 +187,9 @@
           <button class="sre-btn" id="dn-show" type="button"></button>
           <p class="muted" id="dn-owed"></p>
           <ul class="register" id="dn-list"></ul>
+          <!-- OB-879: debit notes for shelf stock sent back — waiting until the supplier accepts (supplier-bills-check.js). -->
+          <h4 id="dn-shelf-h"></h4>
+          <ul class="register" id="dn-shelf"></ul>
           <p class="status" id="dn-status" role="status" aria-live="polite"></p>
         </div>
       </section>
@@ -224,6 +227,8 @@
             <label for="type-freight"><span id="l-type-freight">Freight on the bill (₹)</span><input id="type-freight" inputmode="decimal" autocomplete="off" /></label>
             <label for="type-duty"><span id="l-type-duty">Duty on the bill (₹)</span><input id="type-duty" inputmode="decimal" autocomplete="off" /></label>
             <label for="type-other"><span id="l-type-other">Other charges on the bill (₹)</span><input id="type-other" inputmode="decimal" autocomplete="off" /></label>
+            <!-- OB-866 B: the paper's "Round off" line, minus or plus, at most one rupee; blank is none. -->
+            <label for="type-round-off"><span id="l-type-round-off">Round off on the bill (₹, for example −0.40)</span><input id="type-round-off" inputmode="decimal" autocomplete="off" /></label>
           </div>
           <!-- D-043: the lines filled from the order (quantities received, agreed prices); only differences are typed. -->
           <button id="type-from-order" type="button" class="sre-btn">Fill the lines from the order</button>

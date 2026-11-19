@@ -61785,6 +61785,165 @@
         }
       }
     },
+    "/v1/inventory/goods-receipt/{grnId}/corrections": {
+      "get": {
+        "operationId": "getInventoryGoodsReceiptByGrnIdCorrections",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryGoodsReceiptByGrnIdCorrectionsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/goods-receipt/{grnId}/corrections/{correctionId}": {
+      "post": {
+        "operationId": "postInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionId",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.movement.append",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "correctionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.movement.append\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/goods-receipt/{grnId}/excess/decide": {
       "post": {
         "operationId": "postInventoryGoodsReceiptByGrnIdExcessDecide",
@@ -63476,6 +63635,144 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/shelf-returns": {
+      "get": {
+        "operationId": "getInventoryShelfReturns",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryShelfReturnsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/shelf-returns/{returnId}": {
+      "post": {
+        "operationId": "postInventoryShelfReturnsByReturnId",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.movement.append",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "returnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInventoryShelfReturnsByReturnIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryShelfReturnsByReturnIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryShelfReturnsByReturnIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.movement.append\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -102252,6 +102549,90 @@
         }
       }
     },
+    "/v1/purchase/orders/{poId}/rejection": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdRejection",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.approve",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdRejectionRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdRejectionReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/purchase/orders/{poId}/related-party": {
       "get": {
         "operationId": "getPurchaseOrdersByPoIdRelatedParty",
@@ -102383,6 +102764,258 @@
           },
           "403": {
             "description": "Not \"purchase.relatedparty.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/orders/{poId}/resubmission": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdResubmission",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.propose",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdResubmissionRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdResubmissionReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.propose\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/orders/{poId}/send-back": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdSendBack",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.approve",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdSendBackRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdSendBackReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/orders/{poId}/withdrawal": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdWithdrawal",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.propose",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdWithdrawalRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseOrdersByPoIdWithdrawalReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.propose\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -105129,6 +105762,108 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/suppliers/{supplierId}/shelf-return-debit-notes/{debitNoteRef}/accept": {
+      "post": {
+        "operationId": "postPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAccept",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.invoice.match",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "supplierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "debitNoteRef",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.invoice.match\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -136648,6 +137383,7 @@
                   "type": "string",
                   "enum": [
                     "missing_component",
+                    "purchase_round_off_not_named",
                     "tax_not_mapped",
                     "unbalanced_journal",
                     "unmapped_kind"
@@ -137715,7 +138451,8 @@
           "asAt",
           "map",
           "suggested",
-          "toMap"
+          "toMap",
+          "legsToName"
         ],
         "properties": {
           "asAt": {
@@ -137757,6 +138494,45 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "legs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "side",
+                      "component"
+                    ],
+                    "properties": {
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "credit",
+                          "debit"
+                        ]
+                      },
+                      "component": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "legsToName": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "legs"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
                 },
                 "legs": {
                   "type": "array",
@@ -147934,6 +148710,135 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/free-samples.ts"
       },
+      "GetInventoryGoodsReceiptByGrnIdCorrectionsReply": {
+        "type": "object",
+        "required": [
+          "lines",
+          "corrections",
+          "openBillExceptions",
+          "asAt",
+          "grnId",
+          "receiptNumber"
+        ],
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "lineId",
+                "productId",
+                "uom",
+                "receivedMinor",
+                "nowMinor"
+              ],
+              "properties": {
+                "lineId": {
+                  "type": "string"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "uom": {
+                  "type": "string"
+                },
+                "receivedMinor": {
+                  "type": "number"
+                },
+                "nowMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "corrections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoredReceiptCorrection"
+            }
+          },
+          "openBillExceptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "correctionId",
+                "documentNumber",
+                "invoiceId",
+                "kind",
+                "paid",
+                "valueMinor",
+                "says"
+              ],
+              "properties": {
+                "correctionId": {
+                  "type": "string"
+                },
+                "documentNumber": {
+                  "type": "string"
+                },
+                "invoiceId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "debit_note_needed",
+                    "rematch_needed"
+                  ]
+                },
+                "paid": {
+                  "type": "boolean"
+                },
+                "valueMinor": {
+                  "type": "number"
+                },
+                "says": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "monthLocked": {
+            "type": "object",
+            "required": [
+              "period",
+              "why",
+              "says"
+            ],
+            "properties": {
+              "period": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string",
+                "enum": [
+                  "accounts_signed",
+                  "gst_filed"
+                ]
+              },
+              "says": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "grnId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-corrections.ts"
+      },
       "GetInventoryGoodsReceiptByGrnIdReply": {
         "type": "object",
         "required": [
@@ -150028,6 +150933,31 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/sales-history.ts"
+      },
+      "GetInventoryShelfReturnsReply": {
+        "type": "object",
+        "required": [
+          "returns",
+          "count",
+          "asAt"
+        ],
+        "properties": {
+          "returns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoredShelfReturn"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/shelf-returns.ts"
       },
       "GetInventoryValuationReply": {
         "type": "object",
@@ -164648,8 +165578,17 @@
                 "type": "string",
                 "enum": [
                   "issued",
-                  "proposed"
+                  "proposed",
+                  "rejected",
+                  "sent_back",
+                  "withdrawn"
                 ]
+              },
+              "proposalSteps": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProposalStep"
+                }
               },
               "approvedBy": {
                 "anyOf": [
@@ -164843,8 +165782,17 @@
                   "type": "string",
                   "enum": [
                     "issued",
-                    "proposed"
+                    "proposed",
+                    "rejected",
+                    "sent_back",
+                    "withdrawn"
                   ]
+                },
+                "proposalSteps": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProposalStep"
+                  }
                 },
                 "approvedBy": {
                   "anyOf": [
@@ -220565,6 +221513,66 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/goods-receipt.ts"
       },
+      "PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdReply200": {
+        "type": "object",
+        "required": [
+          "correction",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "correction": {
+            "$ref": "#/components/schemas/StoredReceiptCorrection"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-corrections.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdReply201": {
+        "type": "object",
+        "required": [
+          "correction"
+        ],
+        "properties": {
+          "correction": {
+            "$ref": "#/components/schemas/StoredReceiptCorrection"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-corrections.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdCorrectionsByCorrectionIdRequest": {
+        "type": "object",
+        "required": [
+          "correctQuantityMinor",
+          "lineId",
+          "reason"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "correctQuantityMinor": {
+            "type": "integer"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-corrections.ts"
+      },
       "PostInventoryGoodsReceiptByGrnIdExcessDecideReply": {
         "type": "object",
         "required": [
@@ -222583,6 +223591,106 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/warehouse-synced.ts"
+      },
+      "PostInventoryShelfReturnsByReturnIdReply200": {
+        "type": "object",
+        "required": [
+          "shelfReturn",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "shelfReturn": {
+            "$ref": "#/components/schemas/StoredShelfReturn"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/shelf-returns.ts"
+      },
+      "PostInventoryShelfReturnsByReturnIdReply201": {
+        "type": "object",
+        "required": [
+          "shelfReturn"
+        ],
+        "properties": {
+          "shelfReturn": {
+            "$ref": "#/components/schemas/StoredShelfReturn"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/shelf-returns.ts"
+      },
+      "PostInventoryShelfReturnsByReturnIdRequest": {
+        "type": "object",
+        "required": [
+          "locationId",
+          "productId",
+          "qty",
+          "reason",
+          "supplierId",
+          "uom"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "damaged",
+              "expired",
+              "near_expiry"
+            ]
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/shelf-returns.ts"
       },
       "PostInventoryStockoutImpactReply": {
         "type": "object",
@@ -249936,6 +251044,24 @@
             "x-unchecked": true,
             "description": "Read and passed on as given; the handler does not check its type."
           },
+          "roundOffMinor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "too_large"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "invalid",
+                  "too_large"
+                ]
+              }
+            ]
+          },
           "supplierId": {
             "type": "string"
           },
@@ -250135,6 +251261,9 @@
               }
             },
             "additionalProperties": true
+          },
+          "roundOffMinor": {
+            "type": "number"
           },
           "lines": {
             "type": "array",
@@ -250602,6 +251731,24 @@
               }
             ]
           },
+          "roundOffMinor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "too_large"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "invalid",
+                  "too_large"
+                ]
+              }
+            ]
+          },
           "source": {
             "type": "string"
           },
@@ -250944,6 +252091,69 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/purchase-orders.ts"
       },
+      "PostPurchaseOrdersByPoIdRejectionReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "order",
+              "already"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              },
+              "already": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "order"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdRejectionRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderedQty": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "unitCostMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
       "PostPurchaseOrdersByPoIdRelatedPartyApprovalReply200": {
         "anyOf": [
           {
@@ -251026,6 +252236,195 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/related-party-order-guard.ts"
+      },
+      "PostPurchaseOrdersByPoIdResubmissionReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "order",
+              "already"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              },
+              "already": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "order"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdResubmissionRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderedQty": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "unitCostMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdSendBackReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "order",
+              "already"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              },
+              "already": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "order"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdSendBackRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderedQty": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "unitCostMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdWithdrawalReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "order",
+              "already"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              },
+              "already": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "order"
+            ],
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/StoredPurchaseOrder"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
+      },
+      "PostPurchaseOrdersByPoIdWithdrawalRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderedQty": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "unitCostMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/purchase-order-proposal-steps.ts"
       },
       "PostPurchaseRebateClaimsAnswerPeriodReply": {
         "type": "object",
@@ -252317,6 +253716,82 @@
                 "type": "string"
               }
             ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-master.ts"
+      },
+      "PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptReply200": {
+        "type": "object",
+        "required": [
+          "acceptance",
+          "alreadyAccepted"
+        ],
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/ShelfDebitNoteAcceptance"
+          },
+          "alreadyAccepted": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-master.ts"
+      },
+      "PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptReply201": {
+        "type": "object",
+        "required": [
+          "acceptance",
+          "alreadyAccepted",
+          "owedMinor"
+        ],
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/ShelfDebitNoteAcceptance"
+          },
+          "alreadyAccepted": {
+            "type": "boolean"
+          },
+          "owedMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-master.ts"
+      },
+      "PostPurchaseSuppliersBySupplierIdShelfReturnDebitNotesByDebitNoteRefAcceptRequest": {
+        "type": "object",
+        "required": [
+          "supplierCreditNoteDate",
+          "supplierCreditNoteNo"
+        ],
+        "properties": {
+          "acceptedMinor": {
+            "type": "integer"
+          },
+          "cgstMinor": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "igstMinor": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sgstMinor": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "supplierCreditNoteDate": {
+            "type": "string"
+          },
+          "supplierCreditNoteNo": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -269804,6 +271279,9 @@
           },
           "tax": {
             "$ref": "#/components/schemas/PayablesTax"
+          },
+          "roundOffMinor": {
+            "type": "number"
           }
         },
         "additionalProperties": true
@@ -282798,6 +284276,38 @@
           },
           "correctedWape": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CorrectionBillException": {
+        "type": "object",
+        "required": [
+          "invoiceId",
+          "kind",
+          "paid",
+          "valueMinor",
+          "says"
+        ],
+        "properties": {
+          "invoiceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "debit_note_needed",
+              "rematch_needed"
+            ]
+          },
+          "paid": {
+            "type": "boolean"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "says": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -300579,6 +302089,7 @@
               "counted",
               "opening_reversed",
               "produced",
+              "receipt_corrected_out",
               "received",
               "returned",
               "returned_to_supplier",
@@ -304148,6 +305659,7 @@
               "counted",
               "opening_reversed",
               "produced",
+              "receipt_corrected_out",
               "received",
               "returned",
               "returned_to_supplier",
@@ -308334,6 +309846,7 @@
             "type": "string",
             "enum": [
               "missing_component",
+              "purchase_round_off_not_named",
               "tax_not_mapped",
               "unbalanced_journal",
               "unmapped_kind"
@@ -312414,6 +313927,36 @@
         },
         "additionalProperties": true
       },
+      "ProposalStep": {
+        "type": "object",
+        "required": [
+          "step",
+          "by",
+          "at",
+          "reason"
+        ],
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "rejected",
+              "resubmitted",
+              "sent_back",
+              "withdrawn"
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "Provenance": {
         "type": "object",
         "required": [
@@ -313633,6 +315176,7 @@
               "customer_debit_note",
               "floor_indent",
               "goods_receipt",
+              "goods_receipt_correction",
               "money_receipt",
               "purchase_order",
               "return_to_supplier",
@@ -322493,6 +324037,77 @@
         },
         "additionalProperties": true
       },
+      "ShelfDebitNoteAcceptance": {
+        "type": "object",
+        "required": [
+          "debitNoteRef",
+          "supplierId",
+          "supplierCreditNoteNo",
+          "supplierCreditNoteDate",
+          "noteValueMinor",
+          "acceptedMinor",
+          "differenceMinor",
+          "acceptedBy",
+          "acceptedAt"
+        ],
+        "properties": {
+          "debitNoteRef": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "supplierCreditNoteNo": {
+            "type": "string"
+          },
+          "supplierCreditNoteDate": {
+            "type": "string"
+          },
+          "noteValueMinor": {
+            "type": "number"
+          },
+          "acceptedMinor": {
+            "type": "number"
+          },
+          "differenceMinor": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "gst": {
+            "type": "object",
+            "required": [
+              "cgstMinor",
+              "sgstMinor",
+              "igstMinor",
+              "rateBps"
+            ],
+            "properties": {
+              "cgstMinor": {
+                "type": "number"
+              },
+              "sgstMinor": {
+                "type": "number"
+              },
+              "igstMinor": {
+                "type": "number"
+              },
+              "rateBps": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "acceptedBy": {
+            "type": "string"
+          },
+          "acceptedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "ShelfLifePolicy": {
         "type": "object",
         "required": [
@@ -322555,6 +324170,96 @@
               "chilled",
               "frozen",
               "secure"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "ShelfReturnDebitNoteOnAccount": {
+        "type": "object",
+        "required": [
+          "number",
+          "reason",
+          "productId",
+          "supplierId",
+          "raisedAt",
+          "quantityMinor",
+          "valueMinor",
+          "debitNoteRef",
+          "returnId",
+          "returnNumber",
+          "gstTreatment",
+          "state",
+          "nettedInBalance",
+          "acceptance"
+        ],
+        "properties": {
+          "number": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "raisedAt": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "debitNoteRef": {
+            "type": "string"
+          },
+          "returnId": {
+            "type": "string"
+          },
+          "returnNumber": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "gstTreatment": {
+            "type": "string",
+            "const": "not_decided"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "waiting_for_supplier"
+            ]
+          },
+          "nettedInBalance": {
+            "type": "boolean"
+          },
+          "acceptance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShelfDebitNoteAcceptance"
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },
@@ -325624,6 +327329,9 @@
             },
             "additionalProperties": true
           },
+          "roundOffMinor": {
+            "type": "number"
+          },
           "lines": {
             "type": "array",
             "items": {
@@ -325868,8 +327576,17 @@
             "type": "string",
             "enum": [
               "issued",
-              "proposed"
+              "proposed",
+              "rejected",
+              "sent_back",
+              "withdrawn"
             ]
+          },
+          "proposalSteps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalStep"
+            }
           },
           "approvedBy": {
             "anyOf": [
@@ -326122,6 +327839,134 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "StoredReceiptCorrection": {
+        "type": "object",
+        "required": [
+          "correctionId",
+          "grnId",
+          "receiptNumber",
+          "lineId",
+          "productId",
+          "warehouseId",
+          "batchId",
+          "uom",
+          "wasMinor",
+          "nowMinor",
+          "deltaMinor",
+          "unitCost",
+          "valueMinor",
+          "reason",
+          "requestedBy",
+          "approvedBy",
+          "at",
+          "movementId",
+          "poId",
+          "orderCorrected",
+          "billExceptions"
+        ],
+        "properties": {
+          "correctionId": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "grnId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "warehouseId": {
+            "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "uom": {
+            "type": "string"
+          },
+          "wasMinor": {
+            "type": "number"
+          },
+          "nowMinor": {
+            "type": "number"
+          },
+          "deltaMinor": {
+            "type": "number"
+          },
+          "unitCost": {
+            "type": "object",
+            "required": [
+              "minor",
+              "currency"
+            ],
+            "properties": {
+              "minor": {
+                "type": "number"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "per": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "movementId": {
+            "type": "string"
+          },
+          "poId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "orderCorrected": {
+            "type": "boolean"
+          },
+          "billExceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CorrectionBillException"
+            }
           }
         },
         "additionalProperties": true
@@ -326778,6 +328623,143 @@
         },
         "additionalProperties": true
       },
+      "StoredShelfReturn": {
+        "type": "object",
+        "required": [
+          "returnId",
+          "productId",
+          "locationId",
+          "quantityMinor",
+          "uom",
+          "supplierId",
+          "reason",
+          "valueMinor",
+          "currency",
+          "valueSource",
+          "raisedBy",
+          "approvedBy",
+          "requiredApproval",
+          "at",
+          "movementId",
+          "ewbNo",
+          "ewbThresholdMinor",
+          "debitNote"
+        ],
+        "properties": {
+          "returnId": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "damaged",
+              "expired",
+              "near_expiry"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "const": "INR"
+          },
+          "valueSource": {
+            "type": "string",
+            "enum": [
+              "cost_unknown",
+              "stock_cost"
+            ]
+          },
+          "unitCostMinor": {
+            "type": "number"
+          },
+          "raisedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "requiredApproval": {
+            "type": "boolean"
+          },
+          "at": {
+            "type": "string"
+          },
+          "movementId": {
+            "type": "string"
+          },
+          "ewbNo": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "ewbThresholdMinor": {
+            "type": "number"
+          },
+          "debitNote": {
+            "type": "object",
+            "required": [
+              "debitNoteRef",
+              "valueMinor",
+              "gstTreatment"
+            ],
+            "properties": {
+              "debitNoteRef": {
+                "type": "string"
+              },
+              "number": {
+                "type": "string"
+              },
+              "valueMinor": {
+                "type": "number"
+              },
+              "gstTreatment": {
+                "type": "string",
+                "const": "not_decided"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
       "StoredSignature": {
         "type": "object",
         "required": [
@@ -327401,6 +329383,8 @@
           "openings",
           "doorDebitNotes",
           "doorDebitNotesTotal",
+          "shelfReturnDebitNotes",
+          "shelfReturnDebitNotesTotal",
           "totals",
           "asAt"
         ],
@@ -327483,6 +329467,45 @@
               "nettedInBalance": {
                 "type": "boolean",
                 "const": false
+              }
+            },
+            "additionalProperties": true
+          },
+          "shelfReturnDebitNotes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShelfReturnDebitNoteOnAccount"
+            }
+          },
+          "shelfReturnDebitNotesTotal": {
+            "type": "object",
+            "required": [
+              "valueMinor",
+              "nettedInBalance",
+              "why",
+              "acceptedMinor",
+              "notAcceptedMinor",
+              "gstReversedMinor"
+            ],
+            "properties": {
+              "valueMinor": {
+                "type": "number"
+              },
+              "nettedInBalance": {
+                "type": "boolean",
+                "const": false
+              },
+              "why": {
+                "type": "string"
+              },
+              "acceptedMinor": {
+                "type": "number"
+              },
+              "notAcceptedMinor": {
+                "type": "number"
+              },
+              "gstReversedMinor": {
+                "type": "number"
               }
             },
             "additionalProperties": true
@@ -327851,6 +329874,9 @@
           },
           "landedCharges": {
             "$ref": "#/components/schemas/LandedChargesOnBill"
+          },
+          "roundOffMinor": {
+            "type": "number"
           }
         },
         "additionalProperties": true

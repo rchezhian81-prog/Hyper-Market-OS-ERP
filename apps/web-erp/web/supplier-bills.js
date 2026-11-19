@@ -45,6 +45,8 @@ const WORDS = {
     typeLede: 'No reading engine is connected, so head office could not read this scan. Type the bill as the paper says it; head office checks every line multiplies and the lines, with any freight, duty or other charges, add up to the total.',
     typeTotal: 'Total printed on the bill (₹)', addLine: 'Add a line', typeSave: 'Save this bill',
     typeFreight: 'Freight on the bill (₹)', typeDuty: 'Duty on the bill (₹)', typeOther: 'Other charges on the bill (₹)',
+    typeRoundOff: 'Round off on the bill (₹, for example −0.40)', roundOff: 'Round off',
+    roundOffNotMoney: 'The round off is not an amount of money — type it as the bill prints it, for example −0.40 or 0.40, or leave it blank.',
     chargesNotMoney: 'Freight, duty or other charges is not an amount of money — leave it blank if the bill has none.',
     otherCharges: 'other charges', charges: 'Freight and other charges',
     otherReason: 'Why do you say so (for example, what the supplier\'s bill calls them)', otherCost: 'They are freight / part of the goods\' cost', otherTax: 'They are a tax, not part of the goods\' cost',
@@ -107,6 +109,8 @@ const WORDS = {
     typeLede: 'படிக்கும் இயந்திரம் இணைக்கப்படாததால் தலைமை அலுவலகம் இந்த ஸ்கேனைப் படிக்க முடியவில்லை. தாளில் உள்ளபடி தட்டச்சு செய்யுங்கள்; ஒவ்வொரு வரியும் பெருக்கலில் சரியா, வரிகளும் சரக்குக் கட்டணம், தீர்வை, பிற கட்டணங்களும் சேர்ந்து மொத்தத்துடன் பொருந்துகிறதா என்று தலைமை அலுவலகம் சரிபார்க்கும்.',
     typeTotal: 'பில்லில் அச்சிட்ட மொத்தம் (₹)', addLine: 'ஒரு வரியைச் சேர்', typeSave: 'இந்த பில்லைச் சேமி',
     typeFreight: 'பில்லில் சரக்குக் கட்டணம் (₹)', typeDuty: 'பில்லில் தீர்வை (₹)', typeOther: 'பில்லில் பிற கட்டணங்கள் (₹)',
+    typeRoundOff: 'பில்லில் முழுமையாக்கல் (₹, உதாரணமாக −0.40)', roundOff: 'முழுமையாக்கல்',
+    roundOffNotMoney: 'முழுமையாக்கல் பணத் தொகை அல்ல — பில்லில் உள்ளபடி, உதாரணமாக −0.40 அல்லது 0.40 எனத் தட்டச்சு செய்யுங்கள், அல்லது காலியாக விடுங்கள்.',
     chargesNotMoney: 'சரக்குக் கட்டணம், தீர்வை அல்லது பிற கட்டணம் பணத் தொகை அல்ல — பில்லில் இல்லையென்றால் காலியாக விடுங்கள்.',
     otherCharges: 'பிற கட்டணங்கள்', charges: 'சரக்கு மற்றும் பிற கட்டணங்கள்',
     otherReason: 'ஏன் என்று சொல்லுங்கள் (எ.கா. சப்ளையரின் பில் அவற்றை என்ன என்று அழைக்கிறது)', otherCost: 'அவை சரக்குக் கட்டணம் / பொருட்களின் விலையின் பகுதி', otherTax: 'அவை வரி, பொருட்களின் விலையின் பகுதி அல்ல',
@@ -404,7 +408,7 @@ function renderTyping(d) {
     $('type-supplier').value = d.supplierId ?? '';
     $('type-po').value = d.poId ?? '';
     $('type-total').value = '';
-    $('type-freight').value = ''; $('type-duty').value = ''; $('type-other').value = '';
+    $('type-freight').value = ''; $('type-duty').value = ''; $('type-other').value = ''; $('type-round-off').value = '';
     $('type-status').textContent = '';
     typeRows = [{}];
   }
@@ -432,8 +436,8 @@ $('type-save').addEventListener('click', async () => {
   }));
   // The capture names this scan, so head office records it as typed — the list then reads it as captured (no tab memory).
   const charges = { freight: $('type-freight').value, duty: $('type-duty').value, other: $('type-other').value };
-  const answer = await session.type({ invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines, documentId: d.documentId, charges });
-  if (answer.ok === false && 'problem' in answer) { sayLocal($('type-status'), answer.problem === 'not_money' ? `${t('notMoney')} ${answer.line ?? ''}` : answer.problem === 'charges_not_money' ? t('chargesNotMoney') : t('needTyped')); return; }
+  const answer = await session.type({ invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines, documentId: d.documentId, charges, roundOff: $('type-round-off').value });
+  if (answer.ok === false && 'problem' in answer) { sayLocal($('type-status'), answer.problem === 'not_money' ? `${t('notMoney')} ${answer.line ?? ''}` : answer.problem === 'charges_not_money' ? t('chargesNotMoney') : answer.problem === 'round_off_not_money' ? t('roundOffNotMoney') : t('needTyped')); return; }
   say($('type-status'), answer, answer.ok ? `${t('typed')} ${answer.value.invoiceId}.` : '');
   // D-043: a paper bill typed with no file is on the register now — its drawer offers the check against the order.
   if (answer.ok && d.paper) { openDoc = { ...d, state: 'captured', invoiceId: answer.value.invoiceId }; renderDrawer(); }
@@ -490,7 +494,7 @@ function drawMatch(m) {
   v.dataset.invoice = m.invoiceId;
   const parts = [
     cell('strong', m.blocked ? t('blocked') : t('agreed')),
-    cell('span', `${t('payable')}: ${inr(m.payableMinor)} · ${t('invoiced')}: ${inr(m.invoicedMinor)}${m.withheldMinor > 0 ? ` · ${t('withheld')}: ${inr(m.withheldMinor)}` : ''}${m.chargesMinor > 0 ? ` · ${t('charges')}: ${inr(m.chargesMinor)}` : ''}`),
+    cell('span', `${t('payable')}: ${inr(m.payableMinor)} · ${t('invoiced')}: ${inr(m.invoicedMinor)}${m.withheldMinor > 0 ? ` · ${t('withheld')}: ${inr(m.withheldMinor)}` : ''}${m.chargesMinor > 0 ? ` · ${t('charges')}: ${inr(m.chargesMinor)}` : ''}${m.roundOffMinor ? ` · ${t('roundOff')}: ${m.roundOffMinor < 0 ? '−' : '+'}${inr(Math.abs(m.roundOffMinor))}` : ''}`),
     // Head office's own sentence on what to do — never reworded here.
     cell('span', m.ownerAction, 'muted'),
     cell('span', `${t('checkedBy')} ${m.matchedBy}`, 'muted'),
@@ -778,6 +782,7 @@ function paint() {
   $('type-h').textContent = t('typeH'); $('type-lede').textContent = t('typeLede');
   $('l-type-invoice').textContent = t('confirmInvoice'); $('l-type-supplier').textContent = t('supplierCode'); $('l-type-po').textContent = t('poNumber'); $('l-type-total').textContent = t('typeTotal');
   $('l-type-freight').textContent = t('typeFreight'); $('l-type-duty').textContent = t('typeDuty'); $('l-type-other').textContent = t('typeOther');
+  $('l-type-round-off').textContent = t('typeRoundOff');
   $('type-add-line').textContent = t('addLine'); $('type-save').textContent = t('typeSave');
   $('type-paper').textContent = t('typePaper'); $('type-from-order').textContent = t('fromOrder');
   $('l-other-reason').textContent = t('otherReason'); $('other-cost').textContent = t('otherCost'); $('other-tax').textContent = t('otherTax');

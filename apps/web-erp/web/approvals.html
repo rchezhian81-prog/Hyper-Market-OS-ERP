@@ -52,7 +52,8 @@
       table.lines { width:100%; border-collapse:collapse; font-size:14px; }
       table.lines th, table.lines td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line-soft); overflow-wrap:anywhere; }
       table.lines td.num, table.lines th.num { text-align:right; font-variant-numeric:tabular-nums; }
-      #orders-state:empty { display:none; }
+      #orders-state:empty { display:none; } #sent-back-state:empty { display:none; }
+      table.lines input.sre-input { min-width:6em; max-width:9em; }
       [hidden] { display:none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
@@ -93,6 +94,10 @@
         <h3 id="orders-heading"></h3>
         <p class="state" id="orders-state" role="status"></p>
         <ul class="rows" id="orders"></ul>
+        <!-- P2 (batch 18c): orders a second person sent back to the person looking — change and resubmit, or withdraw. -->
+        <h3 id="sent-back-heading"></h3>
+        <p class="state" id="sent-back-state" role="status"></p>
+        <ul class="rows" id="sent-back"></ul>
       </section>
 
       <h3 id="mine-heading"></h3>

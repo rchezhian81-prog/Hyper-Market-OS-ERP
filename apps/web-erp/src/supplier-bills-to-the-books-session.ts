@@ -36,6 +36,13 @@ export const SUPPLIER_BOOKS_COPY = {
     dnH: 'Debit notes to a supplier', dnLead: 'Goods sent back to the supplier are taken off what the shop owes them as a debit note. Issue it to give it its number.',
     dnSupplierL: 'Supplier code', dnShow: 'Show the debit notes', dnNone: 'This supplier has no debit note.', dnIssue: 'Issue this debit note', dnIssued: 'Issued as',
     dnNotIssued: 'not issued yet', dnOwed: 'The shop owes this supplier', needSupplier: 'Type the supplier code first.',
+    // OB-879: debit notes for shelf stock returned to the supplier — waiting until the supplier accepts them
+    shelfH: 'Debit notes for shelf stock sent back', shelfNone: 'No shelf stock has been sent back to this supplier.',
+    shelfWaiting: 'waiting for the supplier to accept — not taken off what is owed yet', shelfAccepted: 'accepted by the supplier as credit note',
+    shelfTakenOff: 'taken off what is owed', shelfNotAccepted: 'not accepted by the supplier', shelfCnNo: 'Supplier\'s credit-note number', shelfCnDate: 'Its date',
+    shelfAmount: 'Amount accepted (₹) — leave blank for the whole note', shelfReason: 'Why less (needed only if less was accepted)', shelfAccept: 'Supplier accepted',
+    shelfCgst: 'CGST on the credit note (₹, if it shows GST)', shelfSgst: 'SGST on the credit note (₹)', shelfIgst: 'IGST on the credit note (₹)', shelfGstReversed: 'input GST reversed',
+    shelfDone: 'Recorded — taken off what is owed:', needCreditNote: 'Type the supplier\'s credit-note number and its date first.', notRupees: 'The amount accepted is not an amount of money.',
     // Day book — supplier bills in the books
     apH: 'Supplier bills in the books', apLead: 'What the shop owes suppliers — matched bills, debit notes, payments — put in the books through the accountant\'s own rules. Nothing is typed: the figures are the bills\'. A bill not matched yet posts nothing.',
     apPost: 'Put supplier bills in the books', apShow: 'Show supplier bills in the books', apPosted: 'Put in the books:', apNothing: 'Nothing new to put in the books.',
@@ -60,6 +67,12 @@ export const SUPPLIER_BOOKS_COPY = {
     dnH: 'சப்ளையருக்கான பற்றுக் குறிப்புகள்', dnLead: 'சப்ளையருக்குத் திருப்பி அனுப்பிய பொருட்கள், கடை அவருக்குச் செலுத்த வேண்டியதிலிருந்து பற்றுக் குறிப்பாகக் கழிக்கப்படும். எண் தர அதை வெளியிடவும்.',
     dnSupplierL: 'சப்ளையர் குறியீடு', dnShow: 'பற்றுக் குறிப்புகளைக் காட்டு', dnNone: 'இந்தச் சப்ளையருக்குப் பற்றுக் குறிப்பு இல்லை.', dnIssue: 'இந்தப் பற்றுக் குறிப்பை வெளியிடு', dnIssued: 'வெளியிட்ட எண்',
     dnNotIssued: 'இன்னும் வெளியிடவில்லை', dnOwed: 'கடை இந்தச் சப்ளையருக்குச் செலுத்த வேண்டியது', needSupplier: 'முதலில் சப்ளையர் குறியீட்டைத் தட்டச்சு செய்யவும்.',
+    shelfH: 'திருப்பி அனுப்பிய அலமாரிச் சரக்கின் பற்றுக் குறிப்புகள்', shelfNone: 'இந்தச் சப்ளையருக்கு அலமாரிச் சரக்கு எதுவும் திருப்பி அனுப்பப்படவில்லை.',
+    shelfWaiting: 'சப்ளையர் ஏற்கக் காத்திருக்கிறது — இன்னும் செலுத்த வேண்டியதிலிருந்து கழிக்கப்படவில்லை', shelfAccepted: 'சப்ளையர் ஏற்றார், வரவுக் குறிப்பு',
+    shelfTakenOff: 'செலுத்த வேண்டியதிலிருந்து கழிக்கப்பட்டது', shelfNotAccepted: 'சப்ளையர் ஏற்கவில்லை', shelfCnNo: 'சப்ளையரின் வரவுக் குறிப்பு எண்', shelfCnDate: 'அதன் தேதி',
+    shelfAmount: 'ஏற்ற தொகை (₹) — முழுக் குறிப்புக்குக் காலியாக விடுங்கள்', shelfReason: 'ஏன் குறைவு (குறைவாக ஏற்றால் மட்டும்)', shelfAccept: 'சப்ளையர் ஏற்றார்',
+    shelfCgst: 'வரவுக் குறிப்பில் CGST (₹, ஜிஎஸ்டி இருந்தால்)', shelfSgst: 'வரவுக் குறிப்பில் SGST (₹)', shelfIgst: 'வரவுக் குறிப்பில் IGST (₹)', shelfGstReversed: 'உள்ளீட்டு ஜிஎஸ்டி திருப்பப்பட்டது',
+    shelfDone: 'பதிவு செய்யப்பட்டது — செலுத்த வேண்டியதிலிருந்து கழிக்கப்பட்டது:', needCreditNote: 'முதலில் சப்ளையரின் வரவுக் குறிப்பு எண்ணையும் தேதியையும் தட்டச்சு செய்யவும்.', notRupees: 'ஏற்ற தொகை பணத் தொகை அல்ல.',
     apH: 'கணக்குப் புத்தகத்தில் சப்ளையர் பில்கள்', apLead: 'கடை சப்ளையர்களுக்குச் செலுத்த வேண்டியது — பொருத்திய பில்கள், பற்றுக் குறிப்புகள், செலுத்தியவை — கணக்காளரின் சொந்த விதிகளின்படி புத்தகத்தில் சேர்க்கப்படுகிறது. எதுவும் தட்டச்சு செய்யப்படவில்லை: எண்கள் பில்களுடையவை. இன்னும் பொருத்தாத பில் எதையும் பதியாது.',
     apPost: 'சப்ளையர் பில்களைப் புத்தகத்தில் சேர்', apShow: 'புத்தகத்தில் உள்ள சப்ளையர் பில்களைக் காட்டு', apPosted: 'புத்தகத்தில் சேர்க்கப்பட்டது:', apNothing: 'புத்தகத்தில் சேர்க்கப் புதிதாக எதுவும் இல்லை.',
     apJournalsNone: 'இன்னும் எந்தச் சப்ளையர் பில்லும் புத்தகத்தில் இல்லை.', apRegister: 'பதிவேடு', apBooks: 'புத்தகம்', apAgrees: 'பொருந்துகிறது', apDiffers: 'பொருந்தவில்லை',
@@ -77,11 +90,28 @@ export const SUPPLIER_BOOKS_COPY = {
 
 export const supplierBooksWords = (lang: Lang, key: string): string =>
   (SUPPLIER_BOOKS_COPY[lang] as Record<string, string>)[key] ?? (SUPPLIER_BOOKS_COPY.en as Record<string, string>)[key] ?? key;
-export const supplierBooksOutcomeWords = (lang: Lang, out: Outcome<unknown>, good: string): string =>
+/**
+ * OB-866 B: the plain words for a reason a supplier bill is not in the books, where it has them; otherwise head office's own
+ * reason code, as before. A bill whose round off has no account yet is WAITING — not an error.
+ */
+const REASON_WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = {
+  en: {
+    purchase_round_off_not_named: 'Accounting entry waiting — the accountant has not named the Purchase round-off account',
+    // OB-881 B: a debit note carrying GST whose rule has no input-tax leg for it waits too — never buried in purchases.
+    tax_not_mapped: 'Accounting entry waiting — the accountant has not named the input-GST account for this',
+  },
+  ta: {
+    purchase_round_off_not_named: 'கணக்குப் பதிவு காத்திருக்கிறது — கணக்காளர் கொள்முதல் முழுமையாக்கல் கணக்கைப் பெயரிடவில்லை',
+    tax_not_mapped: 'கணக்குப் பதிவு காத்திருக்கிறது — கணக்காளர் இதற்கான உள்ளீட்டு ஜிஎஸ்டி கணக்கைப் பெயரிடவில்லை',
+  },
+};
+export const payablesReasonWords = (lang: Lang, reason: string): string => REASON_WORDS[lang][reason] ?? REASON_WORDS.en[reason] ?? reason;
+
+export const supplierBooksOutcomeWords =(lang: Lang, out: Outcome<unknown>, good: string): string =>
   out.result === 'ok' ? supplierBooksWords(lang, good) : outcomeIn((k) => supplierBooksWords(lang, k), out);
 export const rupees = (minor: number): string => `${minor < 0 ? '−' : ''}₹${(Math.abs(minor) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-type Why = 'nobody' | 'cannotCapture' | 'cannotMatch' | 'cannotRead' | 'cannotPost' | 'needBill' | 'notMoney' | 'needSupplier' | 'needPeriod';
+type Why = 'nobody' | 'cannotCapture' | 'cannotMatch' | 'cannotRead' | 'cannotPost' | 'needBill' | 'notMoney' | 'needSupplier' | 'needPeriod' | 'needCreditNote' | 'notRupees';
 type Done<T> = Promise<Outcome<T, Why>>;
 const gateOf = (viewer: Viewer) => {
   const named = viewer?.userId !== undefined;
@@ -104,7 +134,19 @@ export interface SupplierDebitNote {
   readonly debitNoteRef: string; readonly grnId: string; readonly lineId: string; readonly productId: string; readonly quantityMinor: number;
   readonly taxableMinor: number; readonly valueMinor: number; readonly number: string | null; readonly issuedBy: string | null; readonly reason?: string;
 }
-export interface SupplierAccountView { readonly supplierId: string; readonly debitNotes: readonly SupplierDebitNote[]; readonly totals?: { readonly owedMinor: number } }
+/** OB-879: a debit note for shelf stock sent back — waiting for the supplier, or accepted (then taken off what is owed, once). */
+export interface ShelfDebitNoteView {
+  readonly debitNoteRef: string; readonly number: string | null; readonly returnNumber: string | null; readonly productId: string; readonly quantityMinor: number; readonly valueMinor: number;
+  readonly state: 'waiting_for_supplier' | 'accepted';
+  readonly acceptance: { readonly supplierCreditNoteNo: string; readonly supplierCreditNoteDate: string; readonly acceptedMinor: number; readonly differenceMinor: number; readonly reason?: string; readonly acceptedBy: string; readonly gst?: { readonly cgstMinor: number; readonly sgstMinor: number; readonly igstMinor: number } } | null;
+}
+export interface SupplierAccountView { readonly supplierId: string; readonly debitNotes: readonly SupplierDebitNote[]; readonly shelfReturnDebitNotes?: readonly ShelfDebitNoteView[]; readonly totals?: { readonly owedMinor: number } }
+/** OB-879: what the accountant types when the supplier accepts a shelf-return debit note. */
+export interface SupplierAcceptanceTyped {
+  readonly creditNoteNo: string; readonly creditNoteDate: string; readonly accepted?: string; readonly reason?: string;
+  /** OB-881 B: the GST the supplier's credit note shows, by head, as typed (rupees); blank is none. */
+  readonly cgst?: string; readonly sgst?: string; readonly igst?: string;
+}
 
 export const SUPPLIER_INVOICE_CHECK = 'supplier_invoice_check';
 
@@ -120,6 +162,28 @@ export interface BillCheckSession {
   account(supplierId: string): Done<SupplierAccountView>;
   /** Issue a debit note — its DN number from the shop's series, once. */
   issueDebitNote(supplierId: string, debitNoteRef: string): Done<{ readonly number: string; readonly alreadyIssued: boolean }>;
+  /** OB-879: record that the supplier accepted a shelf-return debit note — its credit note's number and date; the amount optional. */
+  acceptShelfNote(supplierId: string, debitNoteRef: string, typed: SupplierAcceptanceTyped): Done<{ readonly acceptance: { readonly acceptedMinor: number; readonly differenceMinor: number }; readonly alreadyAccepted: boolean }>;
+}
+
+/** OB-879: the acceptance body from what was typed — rupees to paise exactly; a blank amount is the whole note. */
+export function acceptanceBody(typed: SupplierAcceptanceTyped): { readonly ok: true; readonly body: Record<string, unknown> } | { readonly ok: false; readonly why: 'needCreditNote' | 'notRupees' } {
+  if (typed.creditNoteNo.trim() === '' || !/^\d{4}-\d{2}-\d{2}$/.test(typed.creditNoteDate.trim())) return { ok: false, why: 'needCreditNote' };
+  const text = (typed.accepted ?? '').replace(/[,\s₹]/g, '');
+  const m = /^(\d+)(?:\.(\d{1,2}))?$/.exec(text);
+  if (text !== '' && m === null) return { ok: false, why: 'notRupees' };
+  const acceptedMinor = m === null ? undefined : Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
+  const reason = (typed.reason ?? '').trim();
+  // OB-881 B: the credit note's GST, by head — signed here so a minus reaches head office and is refused in its own words.
+  const gst: Record<string, number> = {};
+  for (const [head, raw] of [['cgstMinor', typed.cgst], ['sgstMinor', typed.sgst], ['igstMinor', typed.igst]] as const) {
+    const t = (raw ?? '').replace(/[,\s₹]/g, '').replace(/^[−–]/, '-');
+    if (t === '') continue;
+    const g = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(t);
+    if (g === null) return { ok: false, why: 'notRupees' };
+    gst[head] = (g[1] === '-' ? -1 : 1) * (Number(g[2]) * 100 + Number((g[3] ?? '').padEnd(2, '0'))) || 0;
+  }
+  return { ok: true, body: { supplierCreditNoteNo: typed.creditNoteNo.trim(), supplierCreditNoteDate: typed.creditNoteDate.trim(), ...(acceptedMinor === undefined ? {} : { acceptedMinor }), ...(reason === '' ? {} : { reason }), ...gst } };
 }
 
 export function createBillCheckSession(input: { readonly viewer: Viewer; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): BillCheckSession {
@@ -163,6 +227,13 @@ export function createBillCheckSession(input: { readonly viewer: Viewer; readonl
       const no = gate('purchase.invoice.match', 'cannotMatch'); if (no !== undefined) return no;
       if (supplierId.trim() === '') return { result: 'invalid', why: 'needSupplier' };
       return call('POST', `/v1/purchase/suppliers/${enc(supplierId.trim())}/debit-notes/${enc(debitNoteRef)}/issue`, {});
+    },
+    acceptShelfNote: async (supplierId, debitNoteRef, typed) => {
+      const no = gate('purchase.invoice.match', 'cannotMatch'); if (no !== undefined) return no;
+      if (supplierId.trim() === '') return { result: 'invalid', why: 'needSupplier' };
+      const built = acceptanceBody(typed);
+      if (!built.ok) return { result: 'invalid', why: built.why };
+      return call('POST', `/v1/purchase/suppliers/${enc(supplierId.trim())}/shelf-return-debit-notes/${enc(debitNoteRef)}/accept`, built.body);
     },
   };
 }

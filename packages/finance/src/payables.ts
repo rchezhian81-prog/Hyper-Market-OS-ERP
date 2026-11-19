@@ -33,6 +33,12 @@ export interface PayablesAccount {
     readonly matchedAt: string | null;
     /** The GST inside `payableMinor`, by component (the paper's tax on what may be paid). Absent ⇒ none. */
     readonly tax?: PayablesTax;
+    /**
+     * OB-866 B (owner, 19 Nov 2026): the bill's "Round off" line inside `payableMinor`, signed paise (−40 for "Round off −0.40"),
+     * at most ±100. It is neither goods nor tax: it posts to the "Purchase round off" account the accountant names, never into
+     * purchases. Absent ⇒ none.
+     */
+    readonly roundOffMinor?: number;
   }[];
   readonly debitNotes: readonly {
     readonly debitNoteRef: string;
@@ -196,11 +202,38 @@ export function ledgerHoldsTax(prior: readonly PostedPayable[], sourceKind: Paya
 }
 
 /**
- * A gross change split into its taxable value and its GST by component — the components a payables rule posts. `gross` and
- * every tax figure are deltas of the same sign; the taxable part is what is left. A source with no tax posts taxable = gross.
+ * OB-866 B: the two figures a supplier bill's round off posts as — `purchase_round_off_up` (the bill was rounded UP: the shop
+ * pays more) and `purchase_round_off_down` (rounded DOWN: the shop pays less). Like the sales round off (OB-279), up and down
+ * are separate figures so each posts on its own side. No account is suggested: the accountant names the "Purchase round off"
+ * account on the posting map. Until then a bill carrying a round off posts nothing and waits, by name (never into purchases).
  */
-function split(grossKey: 'payable' | 'amount', gross: number, tax: Record<(typeof TAX_KEYS)[number], number>): Readonly<Record<string, number>> {
-  return { [grossKey]: gross, taxable: gross - tax.cgst - tax.sgst - tax.igst, cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst };
+export const PURCHASE_ROUND_OFF_COMPONENTS = Object.freeze(['purchase_round_off_up', 'purchase_round_off_down'] as const);
+export const PURCHASE_ROUND_OFF_WAITING = 'Accounting entry waiting — the accountant has not named the Purchase round-off account';
+
+/**
+ * A gross change split into its taxable value, its GST by component and its round off — the components a payables rule posts.
+ * `gross` and every tax figure are deltas of the same sign; `roundOff` is the round off in the posting's own direction (an
+ * accrual's round off as printed; a reversal's as it is taken back), signed. The taxable part is what is left. A source with
+ * no tax and no round off posts taxable = gross.
+ */
+function split(grossKey: 'payable' | 'amount', gross: number, tax: Record<(typeof TAX_KEYS)[number], number>, roundOff = 0): Readonly<Record<string, number>> {
+  return {
+    [grossKey]: gross, taxable: gross - tax.cgst - tax.sgst - tax.igst - roundOff, cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst,
+    // Only a bill that HAS a round off carries its figures (a bill without one reads exactly as before); `postPayables` reads
+    // an absent figure as nought, so a rule with round-off legs posts every other bill unchanged.
+    ...(roundOff === 0 ? {} : { purchase_round_off_up: Math.max(0, roundOff), purchase_round_off_down: Math.max(0, -roundOff) }),
+  };
+}
+
+/** OB-866 B: what the ledger already holds of an invoice's round off, signed (an accrual adds its up less its down; a reversal takes it away). */
+export function ledgerHoldsRoundOff(prior: readonly PostedPayable[], sourceKind: PayablesSourceKind, sourceId: string): number {
+  let held = 0;
+  for (const p of prior) {
+    if (p.sourceKind !== sourceKind || p.sourceId !== sourceId) continue;
+    const sign = p.kind === 'supplier_invoice_reversal' ? -1 : 1;
+    held += sign * ((p.components['purchase_round_off_up'] ?? 0) - (p.components['purchase_round_off_down'] ?? 0));
+  }
+  return held;
 }
 
 /**
@@ -222,11 +255,13 @@ export function planPayablesPostings(
       const heldTax = ledgerHoldsTax(prior, 'supplier_invoice', inv.invoiceId);
       const nowTax = taxIn(inv.tax);
       const dTax = { cgst: nowTax.cgst - heldTax.cgst, sgst: nowTax.sgst - heldTax.sgst, igst: nowTax.igst - heldTax.igst };
-      if (delta === 0 && dTax.cgst === 0 && dTax.sgst === 0 && dTax.igst === 0) continue;
+      // OB-866 B: the round off the ledger does not hold yet (signed) — it rides with the bill's own posting, on its own figures.
+      const dRoundOff = (inv.roundOffMinor ?? 0) - ledgerHoldsRoundOff(prior, 'supplier_invoice', inv.invoiceId);
+      if (delta === 0 && dTax.cgst === 0 && dTax.sgst === 0 && dTax.igst === 0 && dRoundOff === 0) continue;
       const base = { sourceKind: 'supplier_invoice' as const, sourceId: inv.invoiceId, supplierId: a.supplierId, documentDate: dayOf(inv.matchedAt) };
       out.push(delta >= 0
-        ? { ...base, kind: 'supplier_invoice', components: split('payable', delta, dTax) }
-        : { ...base, kind: 'supplier_invoice_reversal', components: split('amount', -delta, { cgst: 0 - dTax.cgst, sgst: 0 - dTax.sgst, igst: 0 - dTax.igst }) });
+        ? { ...base, kind: 'supplier_invoice', components: split('payable', delta, dTax, dRoundOff) }
+        : { ...base, kind: 'supplier_invoice_reversal', components: split('amount', -delta, { cgst: 0 - dTax.cgst, sgst: 0 - dTax.sgst, igst: 0 - dTax.igst }, -dRoundOff) });
     }
     for (const dn of a.debitNotes) {
       const delta = dn.valueMinor - ledgerHolds(prior, 'supplier_debit_note', dn.debitNoteRef);
@@ -279,7 +314,9 @@ export function planPayablesPostings(
   return out;
 }
 
-export type PayablesExceptionReason = 'unmapped_kind' | 'missing_component' | 'unbalanced_journal' | 'tax_not_mapped';
+export type PayablesExceptionReason = 'unmapped_kind' | 'missing_component' | 'unbalanced_journal' | 'tax_not_mapped'
+  /** OB-866 B: the bill carries a round off and the accountant has not named the "Purchase round off" account yet — it waits. */
+  | 'purchase_round_off_not_named';
 
 export interface PayablesException {
   readonly sourceKind: PayablesSourceKind;
@@ -305,7 +342,9 @@ export function postPayables(postings: readonly PayablesPosting[], map: PostingM
   for (const posting of postings) {
     const input: PostingInput = {
       id: `${posting.kind}@${posting.sourceId}`, kind: posting.kind,
-      at: `${posting.documentDate}T00:00:00.000Z`, currency, components: posting.components,
+      at: `${posting.documentDate}T00:00:00.000Z`, currency,
+      // OB-866 B: a rule with round-off legs posts a bill with no round off too — its round off is nought, not missing.
+      components: { purchase_round_off_up: 0, purchase_round_off_down: 0, ...posting.components },
     };
     // GST the bill charged must land on an input-tax leg the accountant mapped. A rule with no leg for a tax component would
     // still balance (its gross leg carries the tax) and quietly bury the input tax in purchases — so it is REFUSED, by name.
@@ -315,6 +354,16 @@ export function postPayables(postings: readonly PayablesPosting[], map: PostingM
       exceptions.push({
         sourceKind: posting.sourceKind, sourceIds: [posting.sourceId], kind: posting.kind, supplierId: posting.supplierId, reason: 'tax_not_mapped',
         detail: `${posting.kind} for ${posting.sourceId} (supplier ${posting.supplierId}) carries ${unmappedTax.map((k) => k.toUpperCase()).join(' and ')} but the ledger mapping's '${posting.kind}' rule has no input-tax leg for it — nothing was posted; the accountant maps it (PUT /v1/finance/posting-map) and posts again`,
+      });
+      continue;
+    }
+    // OB-866 B: a round off with no leg of its own would be refused as unbalanced, or — under a rule someone widened — land in
+    // purchases. Neither is allowed: the bill's whole entry WAITS, said in plain words, until the accountant names the account.
+    const unmappedRoundOff = rule === undefined ? [] : PURCHASE_ROUND_OFF_COMPONENTS.filter((k) => (posting.components[k] ?? 0) !== 0 && !rule.legs.some((l) => l.component === k));
+    if (unmappedRoundOff.length > 0) {
+      exceptions.push({
+        sourceKind: posting.sourceKind, sourceIds: [posting.sourceId], kind: posting.kind, supplierId: posting.supplierId, reason: 'purchase_round_off_not_named',
+        detail: `Bill ${posting.sourceId} (supplier ${posting.supplierId}) has a round off of ${roundOffWords(posting.components)}; it was captured and matched, and nothing of it was posted. The accountant names the account on Accounts and Tally names ("${posting.kind === 'supplier_invoice_reversal' ? 'A supplier bill taken back' : 'A matched supplier bill'}", its two "Purchase round off" figures), then puts supplier bills in the books again.`,
       });
       continue;
     }
@@ -334,6 +383,12 @@ export function postPayables(postings: readonly PayablesPosting[], map: PostingM
     }
   }
   return { journals, exceptions };
+}
+
+/** A posting's round off in rupees, signed as the paper prints it (an accrual's up is +, its down −). */
+function roundOffWords(c: Readonly<Record<string, number>>): string {
+  const signed = (c['purchase_round_off_up'] ?? 0) - (c['purchase_round_off_down'] ?? 0);
+  return `${signed < 0 ? '−' : '+'}₹${(Math.abs(signed) / 100).toFixed(2)}`;
 }
 
 /** The account the mapping CREDITS for a supplier invoice — the payables control account the reconciliation reads. */

@@ -154,6 +154,11 @@ export interface AccountInvoice {
   readonly flags: readonly string[];
   /** The GST inside `payableMinor`, by component — present when the paper charged tax (M23-FR-02). */
   readonly tax?: PayablesTax;
+  /**
+   * OB-866 B: the bill's round off inside `payableMinor` (signed paise) — the bill's own while it may be paid, nought while the
+   * latest match blocks it (then it is withheld with the bill). Absent ⇒ none. It posts to "Purchase round off", never purchases.
+   */
+  readonly roundOffMinor?: number;
 }
 
 /** A debit note raised by a second person's return / claim of stock the shop had received and was going to pay for. */
@@ -276,6 +281,67 @@ export function doorDebitNotesFrom(versions: readonly DoorCheckInForAccount[]): 
   return out.sort((a, b) => (a.raisedAt < b.raisedAt ? -1 : a.raisedAt > b.raisedAt ? 1 : a.debitNoteRef < b.debitNoteRef ? -1 : 1));
 }
 
+/**
+ * S1 (batch 18c · OB-872): the debit note issued when expired, near-expiry or damaged SHELF stock went back to this supplier
+ * (its `SDN` number, its `RTS` return). Valued at the stock's own cost, before GST. OB-874 C (owner, 19 Nov 2026, in
+ * writing): it is SHOWN on the account but NOT taken off what is owed until the supplier accepts it — said in words, "waiting
+ * for the supplier to accept" (P-08).
+ */
+export interface ShelfReturnDebitNote {
+  readonly debitNoteRef: string;
+  readonly number: string | null;
+  readonly supplierId: string;
+  readonly returnId: string;
+  readonly returnNumber: string | null;
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly valueMinor: number;
+  readonly reason: string;
+  readonly raisedAt: string;
+  readonly gstTreatment: 'not_decided';
+  readonly nettedInBalance: false;
+}
+
+/**
+ * OB-879 (batch 19 · under OB-874 C): the supplier ACCEPTED a shelf-return debit note — recorded by the accountant with the
+ * supplier's own credit-note number and date. Append-only and audited, once per note; only then is the note taken off what
+ * is owed, once. The accepted amount defaults to the note's value; a lower one needs a reason and the difference stays shown.
+ */
+export interface ShelfDebitNoteAcceptance {
+  readonly debitNoteRef: string;
+  readonly supplierId: string;
+  readonly supplierCreditNoteNo: string;
+  /** The supplier's credit note's own date, YYYY-MM-DD. */
+  readonly supplierCreditNoteDate: string;
+  /** The note's value when it was accepted (before GST). */
+  readonly noteValueMinor: number;
+  /** What the supplier accepted — taken off what is owed. At most the note's value. */
+  readonly acceptedMinor: number;
+  /** noteValueMinor − acceptedMinor: what the supplier did NOT accept; stays visible, never netted. */
+  readonly differenceMinor: number;
+  /** Why less was accepted — required when `differenceMinor` > 0. */
+  readonly reason?: string;
+  /**
+   * OB-881 B (owner, 19 Nov 2026): the GST the supplier's credit note shows, typed as its own figure — optional. When present
+   * the books reverse that input GST once, on top of the accepted amount (the debit note then carries it as its tax). Absent ⇒
+   * no GST reversal. `rateBps` is the highest GST rate known on the item when it was checked (the figure may not exceed
+   * acceptedMinor × that rate).
+   */
+  readonly gst?: { readonly cgstMinor: number; readonly sgstMinor: number; readonly igstMinor: number; readonly rateBps: number };
+  readonly acceptedBy: string;
+  readonly acceptedAt: string;
+}
+
+/** OB-881 B: the GST an acceptance reverses, in all (0 when the credit note showed none or none was typed). */
+export const gstOf = (a: Pick<ShelfDebitNoteAcceptance, 'gst'>): number => (a.gst === undefined ? 0 : a.gst.cgstMinor + a.gst.sgstMinor + a.gst.igstMinor);
+
+/** A shelf-return debit note as the account shows it: waiting for the supplier, or accepted (and then netted, once). */
+export type ShelfReturnDebitNoteOnAccount = Omit<ShelfReturnDebitNote, 'nettedInBalance'> & {
+  readonly state: 'waiting_for_supplier' | 'accepted';
+  readonly nettedInBalance: boolean;
+  readonly acceptance: ShelfDebitNoteAcceptance | null;
+};
+
 export interface SupplierAccountTotals {
   readonly invoicedMinor: number;
   /** Σ matched payable — what the shop has agreed it owes. */
@@ -315,6 +381,13 @@ export interface SupplierAccountStatement extends PayablesAccount {
   /** R3 · D-11 · OB-196 — the numbered debit notes raised at the DSD door; shown, not netted (see `DoorDebitNote`). */
   readonly doorDebitNotes: readonly DoorDebitNote[];
   readonly doorDebitNotesTotal: { readonly valueMinor: number; readonly notesWithValueUnknown: number; readonly nettedInBalance: false };
+  /** S1 (batch 18c): debit notes for shelf stock returned to this supplier — shown, not netted, until the GST treatment is decided. */
+  readonly shelfReturnDebitNotes: readonly ShelfReturnDebitNoteOnAccount[];
+  /**
+   * `valueMinor`: the notes still WAITING for the supplier (shown, not netted). OB-879: `acceptedMinor` — what the supplier
+   * accepted (netted, as debit notes); `notAcceptedMinor` — what the supplier did not accept of an accepted note (shown only).
+   */
+  readonly shelfReturnDebitNotesTotal: { readonly valueMinor: number; readonly nettedInBalance: false; readonly why: string; readonly acceptedMinor: number; readonly notAcceptedMinor: number; readonly gstReversedMinor: number };
   readonly totals: SupplierAccountTotals;
   readonly asAt: string;
 }
@@ -343,6 +416,10 @@ export interface SupplierAccountInput {
   readonly doorDebitNotes?: readonly DoorDebitNote[];
   /** OB-725 — every APPROVED claim credit (all suppliers). Optional for callers that have none. */
   readonly claimCredits?: readonly SupplierClaimCredit[];
+  /** S1 (batch 18c) — every shelf-return debit note (all suppliers). Optional for callers that have none. */
+  readonly shelfReturnDebitNotes?: readonly ShelfReturnDebitNote[];
+  /** OB-879 — every supplier acceptance of a shelf-return debit note (all suppliers). Optional for callers that have none. */
+  readonly shelfDebitNoteAcceptances?: readonly ShelfDebitNoteAcceptance[];
   readonly asAt: string;
 }
 
@@ -362,6 +439,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
         matched: m !== undefined, blocked: m?.blocked ?? false, matchedAt: m?.matchedAt ?? null,
         flags: [...i.governanceFlags, ...(m?.flags ?? [])],
         ...(m?.tax === undefined ? {} : { tax: { cgstMinor: m.tax.cgstMinor, sgstMinor: m.tax.sgstMinor, igstMinor: m.tax.igstMinor } }),
+        ...(m === undefined || m.blocked || (m.roundOffMinor ?? 0) === 0 ? {} : { roundOffMinor: m.roundOffMinor }),
       };
     });
 
@@ -430,6 +508,27 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
     }
   }
 
+  // OB-879: a shelf-return debit note the supplier ACCEPTED is taken off what is owed — once, at the accepted amount, as a
+  // debit note on the account (so the payables posting puts it in the books once, through the debit-note rule). One still
+  // waiting stays shown and not netted (OB-874 C).
+  const acceptanceOf = new Map((input.shelfDebitNoteAcceptances ?? []).filter((a) => a.supplierId === input.supplierId).map((a) => [a.debitNoteRef, a]));
+  const shelfReturnDebitNotes: ShelfReturnDebitNoteOnAccount[] = (input.shelfReturnDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId).map((d) => {
+    const acceptance = acceptanceOf.get(d.debitNoteRef) ?? null;
+    return { ...d, state: acceptance === null ? 'waiting_for_supplier' : 'accepted', nettedInBalance: acceptance !== null, acceptance };
+  });
+  for (const d of shelfReturnDebitNotes) {
+    if (d.acceptance === null || d.acceptance.acceptedMinor <= 0) continue;
+    debitNotes.push({
+      debitNoteRef: d.debitNoteRef, grnId: d.returnNumber ?? d.returnId, lineId: '', productId: d.productId, poId: '', disposition: 'return',
+      // OB-881 B: with the credit note's GST typed, the note takes the goods AND that GST off what is owed, and the payables
+      // posting reverses the input GST through the debit-note rule's own input-tax legs (or waits, named, when unmapped).
+      quantityMinor: d.quantityMinor, valueMinor: d.acceptance.acceptedMinor + gstOf(d.acceptance), taxableMinor: d.acceptance.acceptedMinor, currency: 'INR',
+      ...(gstOf(d.acceptance) === 0 ? {} : { tax: { cgstMinor: d.acceptance.gst!.cgstMinor, sgstMinor: d.acceptance.gst!.sgstMinor, igstMinor: d.acceptance.gst!.igstMinor } }),
+      decidedBy: d.acceptance.acceptedBy, decidedAt: d.acceptance.acceptedAt,
+      reason: `accepted by the supplier as credit note ${d.acceptance.supplierCreditNoteNo} of ${d.acceptance.supplierCreditNoteDate}`,
+      number: d.number, issuedBy: null, issuedAt: d.raisedAt,
+    });
+  }
   const accruedMinor = invoices.reduce((s, i) => s + i.payableMinor, 0);
   const debitNotesMinor = debitNotes.reduce((s, d) => s + d.valueMinor, 0);
   const payments = (input.payments ?? []).filter((p) => p.supplierId === input.supplierId);
@@ -440,6 +539,14 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const openingMinor = openings.filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0); // OB-44: a reversed opening is not owed
   const doorDebitNotes = (input.doorDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId);
   return {
+    shelfReturnDebitNotes,
+    shelfReturnDebitNotesTotal: {
+      valueMinor: shelfReturnDebitNotes.filter((d) => d.acceptance === null).reduce((s, d) => s + d.valueMinor, 0), nettedInBalance: false,
+      acceptedMinor: shelfReturnDebitNotes.reduce((s, d) => s + (d.acceptance?.acceptedMinor ?? 0), 0),
+      gstReversedMinor: shelfReturnDebitNotes.reduce((s, d) => s + (d.acceptance === null ? 0 : gstOf(d.acceptance)), 0),
+      notAcceptedMinor: shelfReturnDebitNotes.reduce((s, d) => s + (d.acceptance?.differenceMinor ?? 0), 0),
+      why: 'Waiting for the supplier to accept. Shown here, but not taken off what is owed until the supplier accepts it (owner\'s decision OB-874).',
+    },
     supplierId: input.supplierId, currency: 'INR',
     invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments, claimCredits, openings,
     doorDebitNotes,
@@ -469,6 +576,7 @@ export function foldAllSupplierAccounts(input: Omit<SupplierAccountInput, 'suppl
     ...input.invoices.map((i) => i.supplierId), ...input.orders.map((o) => o.supplierId), ...(input.payments ?? []).map((p) => p.supplierId),
     ...(input.openings ?? []).map((o) => o.supplierId), ...(input.doorDebitNotes ?? []).map((d) => d.supplierId), // OB-196
     ...(input.claimCredits ?? []).map((c) => c.supplierId), // OB-725
+    ...(input.shelfReturnDebitNotes ?? []).map((d) => d.supplierId), // S1 (batch 18c)
   ])].sort();
   const accounts = supplierIds.map((supplierId) => foldSupplierAccount({ ...input, supplierId }));
   const known = new Set(input.orders.map((o) => o.poId));
@@ -503,17 +611,22 @@ export interface SupplierAccountDeps {
   readonly doorDebitNotes?: (tenantId: string) => Promise<readonly DoorDebitNote[]> | readonly DoorDebitNote[];
   /** OB-725 — the supplier claims the accountant approved as credits. Optional: a stub has none. */
   readonly claimCredits?: (tenantId: string) => Promise<readonly SupplierClaimCredit[]> | readonly SupplierClaimCredit[];
+  /** S1 (batch 18c) — the debit notes issued for shelf stock returned to suppliers. Optional: a stub has none. */
+  readonly shelfReturnDebitNotes?: (tenantId: string) => Promise<readonly ShelfReturnDebitNote[]> | readonly ShelfReturnDebitNote[];
+  /** OB-879 — the supplier acceptances of shelf-return debit notes. Optional: a stub has none. */
+  readonly shelfDebitNoteAcceptances?: (tenantId: string) => Promise<readonly ShelfDebitNoteAcceptance[]> | readonly ShelfDebitNoteAcceptance[];
   readonly now: () => string;
 }
 
 /** The registers the account folds from, read once — shared by the account routes, the master (SP-7c) and finance. */
 export async function accountRegisters(deps: SupplierAccountDeps, tenantId: string): Promise<Omit<SupplierAccountInput, 'supplierId'>> {
-  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits] = await Promise.all([
+  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, shelfReturnDebitNotes, shelfDebitNoteAcceptances] = await Promise.all([
     deps.invoices(tenantId), deps.latestMatches(tenantId), deps.purchaseOrders(tenantId), deps.receipts(tenantId),
     deps.payments(tenantId), deps.debitNoteIssues(tenantId), deps.openingBalances?.(tenantId) ?? [], deps.doorDebitNotes?.(tenantId) ?? [],
-    deps.claimCredits?.(tenantId) ?? [],
+    deps.claimCredits?.(tenantId) ?? [], deps.shelfReturnDebitNotes?.(tenantId) ?? [],
+    deps.shelfDebitNoteAcceptances?.(tenantId) ?? [],
   ]);
-  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, asAt: deps.now() };
+  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, shelfReturnDebitNotes, shelfDebitNoteAcceptances, asAt: deps.now() };
 }
 const registers = accountRegisters;
 
@@ -549,7 +662,8 @@ export function supplierAccountRoutes(deps: SupplierAccountDeps): readonly Route
         const supplierId = (ctx.params['supplierId'] ?? '').trim();
         const regs = await registers(deps, ctx.tenantId);
         const known = regs.invoices.some((i) => i.supplierId === supplierId) || regs.orders.some((o) => o.supplierId === supplierId)
-          || (regs.payments ?? []).some((p) => p.supplierId === supplierId) || (regs.openings ?? []).some((o) => o.supplierId === supplierId);
+          || (regs.payments ?? []).some((p) => p.supplierId === supplierId) || (regs.openings ?? []).some((o) => o.supplierId === supplierId)
+          || (regs.shelfReturnDebitNotes ?? []).some((d) => d.supplierId === supplierId); // S1 (batch 18c)
         if (!known) throw notFound(`supplier ${supplierId}`);
         return { status: 200, body: foldSupplierAccount({ ...regs, supplierId }) };
       },

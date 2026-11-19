@@ -205,7 +205,7 @@ import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } fro
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
-import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
+import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnward, isReceiptReversalKind } from '../../inventory/src/index';
 import { minorPerUnitOf, normaliseUom, valueAtCost } from '../../../packages/contracts/src/quantity';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
@@ -218,12 +218,14 @@ import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatc
 import { capturePortalInvoice } from '../../purchase/src/index';
 import type { Asn } from '../../../packages/receiving/src/asn';
 import { approvedClaimCredits, type ClaimCreditDecision } from '../../purchase/src/supplier-claims'; // U7 · OB-725
-import { foldAllSupplierAccounts, foldSupplierAccount, doorDebitNotesFrom, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue, type DoorCheckInForAccount } from '../../purchase/src/supplier-account'; // R3 OB-196: doorDebitNotesFrom
+import { foldAllSupplierAccounts, foldSupplierAccount, doorDebitNotesFrom, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue, type DoorCheckInForAccount, type ShelfDebitNoteAcceptance } from '../../purchase/src/supplier-account'; // R3 OB-196: doorDebitNotesFrom
 import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
 import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBalance, type SupplierOpeningSignOff, type SupplierOpeningReversal } from '../../purchase/src/supplier-openings';
 import type { DisplayFundingDeps, DisplayFundingJournal } from '../../finance/src/display-funding';
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
+import { applyProposalStep, type ProposalStepRecord } from '../../purchase/src/purchase-order-proposal-steps';
+import type { StoredShelfReturn } from '../../inventory/src/shelf-returns';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
 import { withLandedCost, type StockCostAdjustment } from '../../inventory/src/landed-cost'; // OB-288 P3 (M07-FR-04)
 import type { StoreReplenishmentFacts } from '../../inventory/src/replenishment';
@@ -456,7 +458,7 @@ const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
  * The type goes to the store rather than to a `filter` afterwards. A caller that reads a million
  * events and keeps forty has still read a million.
  */
-async function allOf<T>(
+export async function allOf<T>(
   store: EventStore, tenantId: string, stream: string, type: string,
 ): Promise<readonly T[]> {
   const events = await store.readStream(tenantId, stream, { type });
@@ -1572,7 +1574,9 @@ const MATCH_POLICY_STREAM = streamName(STREAM.purchase, 'match-policy');
 // issued under a number — three tenant-wide registers (a shop has hundreds of suppliers, not hundreds of thousands).
 const SUPPLIERS_STREAM = streamName(STREAM.purchase, 'suppliers');
 const SUPPLIER_PAYMENTS_STREAM = streamName(STREAM.purchase, 'supplier-payments');
-const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
+export const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
+/** OB-879: the supplier's acceptances of shelf-return debit notes — one append-only fact per note. */
+export const SHELF_DN_ACCEPTANCES_STREAM = streamName(STREAM.purchase, 'shelf-debit-note-acceptances');
 /** U7 · OB-725 — the accountant's decisions on draft credits from accepted supplier claims (append-only; first per credit stands). */
 export const SUPPLIER_CLAIM_CREDITS_STREAM = streamName(STREAM.purchase, 'supplier-claim-credits');
 /** U7 · M24-FR-02 alt — how each disputed (rejected) supplier claim was settled (append-only; first per dispute stands). */
@@ -1601,7 +1605,7 @@ const forB2BPortalLogins = (customerId: string): string => streamName(STREAM.b2b
 const forB2BPortalRefusals = streamName(STREAM.b2b, 'portal-refusals');
 // Purchase orders and supplier holds live on their own shared streams so a fold can list every PO
 // (and answer the open commitment) and read a supplier's latest block state (M06-FR-01/02/04).
-const PURCHASE_ORDERS_STREAM = streamName(STREAM.purchase, 'orders');
+export const PURCHASE_ORDERS_STREAM = streamName(STREAM.purchase, 'orders');
 const SUPPLIER_BLOCK_STREAM = streamName(STREAM.purchase, 'supplier-block');
 // Supplier performance: delivery outcomes per supplier (scored), contracts on one shared stream (reviewed).
 const forSupplierPerformance = (supplierId: string): string => streamName(STREAM.purchase, 'performance', supplierId);
@@ -4324,7 +4328,7 @@ export async function ownedStockRows(store: EventStore, tenantId: string): Promi
       withLandedCost(ms, ownership === 'own' ? adjustments : [], (m): ValuationMovement => ({
         productId: m.productId, locationId: m.locationId,
         effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-        isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
+        isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(isReceiptReversalKind(m.kind) ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
         ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
       })),
       'INR',
@@ -5479,7 +5483,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     withLandedCost(moves, (await stockCostAdjustments(store, tenantId)).filter((a) => a.productId === productId), (m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
+      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(isReceiptReversalKind(m.kind) ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -7346,7 +7350,7 @@ export function writeOffCommittedEntry(tenantId: string, w: StoredWriteOff, occu
 const RECEIPT_POLICY_STREAM = streamName(STREAM.inventory, 'receipt-policy');
 
 /** One inbound movement in the SAME format the inventory adapter uses, so the availability projection folds it as any other (mv-<movementId>). */
-const movementEvent = (tenantId: string, m: Movement) => ({
+export const movementEvent = (tenantId: string, m: Movement) => ({
   stream: STREAM.inventory,
   event: makeEvent({
     id: `mv-${m.movementId}`,
@@ -7725,7 +7729,7 @@ export function inventoryAdapter(input: {
         withLandedCost(movements, await stockCostAdjustments(input.store, tenantId), (m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(isReceiptReversalKind(m.kind) ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -7751,7 +7755,7 @@ export function inventoryAdapter(input: {
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(isReceiptReversalKind(m.kind) ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -7785,7 +7789,7 @@ export function inventoryAdapter(input: {
           withLandedCost(movements.filter((m) => m.occurredAt <= cutoff), adjustments.filter((a) => placed(a.locationId) && a.occurredAt <= cutoff), (m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
+              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(isReceiptReversalKind(m.kind) ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',
@@ -7994,6 +7998,11 @@ export async function foldPurchaseOrders(store: EventStore, tenantId: string): P
       const r = payloadOf<{ poId: string; receivedByProduct: Record<string, number> }>(e);
       const cur = byId.get(r.poId);
       if (cur !== undefined) byId.set(r.poId, { ...cur, receivedByProduct: mergeQty(cur.receivedByProduct, r.receivedByProduct) });
+    } else if (type === 'PurchaseOrderProposalStep') {
+      // P2 (batch 18c): rejected / sent back / withdrawn / resubmitted before it was issued.
+      const st = payloadOf<ProposalStepRecord>(e);
+      const cur = byId.get(st.poId);
+      if (cur !== undefined) byId.set(st.poId, applyProposalStep(cur, st));
     }
   }
   return byId;
@@ -8051,7 +8060,7 @@ export function purchaseOrdersAdapter(input: {
       }) }],
     })),
 
-    issue: async (tenantId, poId, approvedBy, issuedAt, reason, _key, budgetGuard) => {
+    issue: async (tenantId, poId, approvedBy, issuedAt, reason, _key, budgetGuard, orderVersion) => {
       const event = makeEvent({
         id: `po-${poId}-issued`,
         type: 'PurchaseOrderIssued',
@@ -8062,8 +8071,23 @@ export function purchaseOrdersAdapter(input: {
         payload: { poId, approvedBy, issuedAt, reason },
       });
       // WF-03 (round 10): under the month's open-to-buy guard when a budget governs the order (two approvals: one lands).
-      if (budgetGuard === undefined) await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, event);
+      // P2 (batch 18c): and pinned to the order's own guard as the route judged it, so an order rejected, sent back or
+      // withdrawn a moment ago is never also issued.
+      if (orderVersion !== undefined) await appendMovingOrder(input.store, tenantId, poId, [{ stream: PURCHASE_ORDERS_STREAM, event }], budgetGuard, orderVersion);
+      else if (budgetGuard === undefined) await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, event);
       else await input.store.appendBatch(tenantId, [{ stream: PURCHASE_ORDERS_STREAM, event }], { guard: budgetGuard });
+    },
+
+    // P2 (batch 18c · OB-871): a step before the order is issued — one event, pinned to the order's guard.
+    recordProposalStep: async (tenantId, step, orderVersion) => {
+      await appendMovingOrder(input.store, tenantId, step.poId, [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
+        id: `po-${step.poId}-step-${step.stepId}`,
+        type: 'PurchaseOrderProposalStep',
+        occurredAt: step.at,
+        idempotencyKey: `po-${tenantId}-${step.poId}-step-${step.stepId}`,
+        source: 'api/purchase',
+        payload: step,
+      }) }], undefined, orderVersion);
     },
 
     orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
@@ -8795,6 +8819,14 @@ export function supplierAccountAdapter(input: {
     doorDebitNotes: async (tenantId) => doorDebitNotesFrom(await allOf<DoorCheckInForAccount>(input.store, tenantId, streamName(STREAM.inventory, 'dsd-checkins'), 'DsdCheckInRecorded')),
     // U7 · OB-725: only the credits the accountant APPROVED count on the account; a draft or a refused one never does.
     claimCredits: async (tenantId) => approvedClaimCredits(await allOf<ClaimCreditDecision>(input.store, tenantId, SUPPLIER_CLAIM_CREDITS_STREAM, 'SupplierClaimCreditDecided')),
+    // S1 (batch 18c): the debit notes issued for shelf stock returned to a supplier (services/api/src/b18c-adapters.ts).
+    shelfReturnDebitNotes: async (tenantId) => (await allOf<StoredShelfReturn>(input.store, tenantId, streamName(STREAM.inventory, 'shelf-returns'), 'ShelfStockReturnedToSupplier')).map((r) => ({
+      debitNoteRef: r.debitNote.debitNoteRef, number: r.debitNote.number ?? null, supplierId: r.supplierId, returnId: r.returnId,
+      returnNumber: r.documentNumber ?? null, productId: r.productId, quantityMinor: r.quantityMinor, valueMinor: r.debitNote.valueMinor,
+      reason: r.reason, raisedAt: r.at, gstTreatment: 'not_decided' as const, nettedInBalance: false as const,
+    })),
+    // OB-879: the supplier's acceptance of such a note — only then is it taken off what is owed.
+    shelfDebitNoteAcceptances: (tenantId) => allOf<ShelfDebitNoteAcceptance>(input.store, tenantId, SHELF_DN_ACCEPTANCES_STREAM, 'ShelfDebitNoteAccepted'),
   };
 }
 
@@ -9170,6 +9202,29 @@ export function supplierMasterAdapter(input: {
       return build(saved?.number ?? '');
     },
     allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
+    // OB-881 B: the highest GST rate known on an item — the published pack's rate and every rate a supplier bill charged on it.
+    highestGstRateBps: async (tenantId, productId) => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      const rates: number[] = [];
+      const packRate = pack?.snapshot.products.find((p) => p.productId === productId)?.taxBps;
+      if (typeof packRate === 'number') rates.push(packRate);
+      for (const inv of await liveSupplierInvoices(input.store, tenantId)) {
+        for (const l of inv.lines) {
+          const tax = (l.cgstMinor ?? 0) + (l.sgstMinor ?? 0) + (l.igstMinor ?? 0);
+          if (l.productId === productId && l.lineTotalMinor > 0 && tax > 0) rates.push(Math.round((tax * 10_000) / l.lineTotalMinor));
+        }
+      }
+      return rates.length === 0 ? undefined : Math.max(...rates);
+    },
+    // OB-879: keyed on the note — a second acceptance collapses onto the first, which is what stands (and is answered).
+    recordShelfDebitNoteAcceptance: async (tenantId, acceptance) => {
+      const key = `shelf-dn-accept-${tenantId}-${acceptance.supplierId}-${acceptance.debitNoteRef}`;
+      await input.store.append(tenantId, SHELF_DN_ACCEPTANCES_STREAM, makeEvent({
+        id: keyedEventId('shelf-dn-accept', key), type: 'ShelfDebitNoteAccepted', occurredAt: acceptance.acceptedAt,
+        idempotencyKey: key, source: 'api/purchase', payload: acceptance as unknown as Record<string, unknown>,
+      }));
+      return (await input.store.findByIdempotencyKey(tenantId, key))!.event.payload as unknown as ShelfDebitNoteAcceptance;
+    },
     recordDebitNoteIssue: async (tenantId, issue) => {
       await input.store.append(tenantId, DEBIT_NOTE_ISSUES_STREAM, makeEvent({
         id: `dn-issue-${issue.debitNoteRef}`,
@@ -9224,11 +9279,12 @@ export function payablesAdapter(input: { readonly store: EventStore; readonly no
     now: input.now,
     postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
     supplierAccounts: async (tenantId) => {
-      const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, claimCredits] = await Promise.all([
+      const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, claimCredits, shelfReturnDebitNotes, shelfDebitNoteAcceptances] = await Promise.all([
         registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
         registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId), registers.claimCredits!(tenantId),
+        registers.shelfReturnDebitNotes!(tenantId), registers.shelfDebitNoteAcceptances!(tenantId), // OB-879: an accepted shelf note posts once
       ]);
-      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, claimCredits, asAt: input.now() }).accounts;
+      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, claimCredits, shelfReturnDebitNotes, shelfDebitNoteAcceptances, asAt: input.now() }).accounts;
     },
     payablesJournals: async (tenantId) =>
       (await allOf<JournalEntry | PayablesJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
@@ -9255,11 +9311,12 @@ export function supplierPortalAdapter(input: {
   const registers = supplierAccountAdapter(input);
   /** The supplier account (SP-7b) as statement lines for the partner whose id is the supplier's — nothing when it names no supplier. */
   const accountStatementLines = async (tenantId: string, partnerId: string): Promise<readonly StatementLine[]> => {
-    const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, claimCredits] = await Promise.all([
+    const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, claimCredits, shelfReturnDebitNotes, shelfDebitNoteAcceptances] = await Promise.all([
       registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
       registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId), registers.claimCredits!(tenantId),
+      registers.shelfReturnDebitNotes!(tenantId), registers.shelfDebitNoteAcceptances!(tenantId), // OB-879
     ]);
-    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, claimCredits, asAt: input.now() });
+    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, claimCredits, shelfReturnDebitNotes, shelfDebitNoteAcceptances, asAt: input.now() });
     const lines: StatementLine[] = [];
     const zone = (await shopCalendarOf(input.calendar)(tenantId)).timeZone; // R1b: the shop's dates on the statement
     for (const i of a.invoices) {
