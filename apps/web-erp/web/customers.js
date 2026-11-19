@@ -50,7 +50,7 @@ function paintRegister() {
       columns: [
         { key: 'customerRef', label: both('colCustomer'), sort: 'text' },
         // U5 (G16): the person's NAME beside the code, as head office holds it; blank when it holds none (never invented)
-        { key: 'name', label: both('colName'), sort: 'text', value: (c) => c.name ?? '' },
+        { key: 'name', label: both('colName'), sort: 'text', personal: true, value: (c) => c.name ?? '' },
         { key: 'segment', label: both('colSegment'), sort: 'text', filter: true, value: (c) => both(`segment_${c.segment}`) },
         { key: 'orders', label: both('colBills'), sort: 'number', align: 'end', value: (c) => c.orders },
         { key: 'lastOrderAt', label: both('colLastBill'), sort: 'text', value: (c) => (c.lastOrderAt === null ? both('noOrder') : shopDayOf(c.lastOrderAt)) },

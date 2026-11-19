@@ -66,7 +66,7 @@ function paintMatches() {
     id: 'matches', label: both('matchesH'), rows: matches, pageSize: 10, search: false,
     rowKey: (c) => c.customerRef, rowData: (c) => ({ customer: c.customerRef }),
     columns: [
-      { key: 'name', label: both('nameCol'), sort: 'text', value: nameOf },
+      { key: 'name', label: both('nameCol'), sort: 'text', personal: true, value: nameOf },
       { key: 'customerRef', label: both('number'), sort: 'text' },
       { key: 'segment', label: both('segment'), value: (c) => c.segment },
       { key: 'marketing', label: both('marketing'), value: (c) => { const m = marketingOf(c); return m === null ? t('reading') : m.map((x) => `${t(`ch_${x.channel}`)}: ${t(x.verdict)}`).join(' · '); },
@@ -99,7 +99,7 @@ function paintRecords() {
       columns: [
         { key: 'channel', label: both('channel'), value: (x) => t(`ch_${x.channel}`) },
         { key: 'verdict', label: both('verdictCol'), value: (x) => t(x.verdict), render: (x) => verdictChip(o, x.verdict) },
-        { key: 'evidence', label: both('evidence'), value: (x) => x.evidence ?? null, render: (x) => { if (x.evidence === undefined) return null; const s = document.createElement('span'); s.lang = 'en'; s.textContent = x.evidence; return s; } },
+        { key: 'evidence', label: both('evidence'), personal: true, value: (x) => x.evidence ?? null, render: (x) => { if (x.evidence === undefined) return null; const s = document.createElement('span'); s.lang = 'en'; s.textContent = x.evidence; return s; } },
         { key: 'at', label: both('when'), value: (x) => (x.at === undefined ? null : shopTime(x.at)) },
       ],
     });

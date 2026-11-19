@@ -25,6 +25,7 @@
 // script. The marker is explicit and greppable rather than a guessed position in the file, and a
 // guardrail checks every shell still carries one.
 
+import { periodFromUrl } from './report-period';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
@@ -1205,7 +1206,9 @@ export async function startScreenServer(input: {
       const signedIn = officeUser !== null ? officeUser.userId
         : headOfficeUser !== null ? headOfficeUser
         : input.trustForwardedUser === true && (APP_SHELL[route.screen].dir === 'web-erp' || handheld !== null) ? forwardedUser(req.headers['x-sre-user']) : null;
-      const built = payloadFor(route.screen, snap, handheld !== null && signedIn !== null ? signedIn : undefined);
+      // Batch 18b · O1 (M29-FR-02): the Reports page asks for a past day, week or month in its own address.
+      const forScreen = route.screen === 'reporting' ? { ...snap, reportPeriod: periodFromUrl(req.url) } : snap;
+      const built = payloadFor(route.screen, forScreen, handheld !== null && signedIn !== null ? signedIn : undefined);
       const addressed = signedIn === null ? built : handheld !== null ? asPhoneHolder(handheld, built, signedIn, snap.pack) : asSignedInPerson(built, signedIn, snap.pack);
       // OB-569: the Products page carries a product's costs and commercial fields only to a viewer who holds the right to
       // see them — trimmed HERE, before the page data leaves this box, never in the browser. The viewer is the person

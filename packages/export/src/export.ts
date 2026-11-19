@@ -57,6 +57,15 @@ export interface ExportAudit {
   readonly redactedColumns: readonly string[];
   /** SF-10: the bounded period a dated export covered (inclusive dates), when the domain takes one. */
   readonly period?: { readonly from: string; readonly to: string };
+  /**
+   * Batch 18b · B1: a list downloaded from an office screen ("Download to Excel") — which page and list, the headings
+   * written, and when the person pressed the button (it may have been offline; `at` is when head office recorded it).
+   * The rows themselves never travel here.
+   */
+  readonly screenList?: {
+    readonly screen: string; readonly list: string; readonly label: string;
+    readonly columns: readonly string[]; readonly downloadedAt: string;
+  };
 }
 
 export interface ExportResult {
