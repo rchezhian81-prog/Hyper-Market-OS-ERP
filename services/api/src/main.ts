@@ -335,6 +335,7 @@ import { sweepDrafts } from '../../ai/src/auto-approve';
 import { autoApproveDeps } from './ai-auto-approve-store';
 import { autoApprovePlacer, ruleAwareAuthority } from './ai-auto-approve-executor';
 import { catalogueChangeSurface } from './catalogue-change-proposals'; // OB-773
+import { barcodeLinkChangeRoutes } from './barcode-link-changes'; // C-7 (batch 20d)
 import { approvedStockChangeSurface } from './approved-stock-change-applies'; // OB-808 A
 import { exactActsFor, otherStockAtStoreFor } from './ai-auto-approve-acts';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
@@ -2486,6 +2487,7 @@ export function buildSurface(deps: {
   floorDevicesSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
   fg4BuyingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-4 (M04-FR-04 · M06-FR-03 · D03-FR-04/05 · A12 · OB-386 · M02-FR-02 · SEC-03)
   productsPricesSurface(surface, { store, now, calendar: shopCalendar, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Round 4a (M03-FR-01..04 · M05-FR-01 · OB-291): product and price audit, the price basis
+  barcodeLinkChangeRoutes(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // C-7 (M03-FR-02 · batch 20d): a wrongly keyed barcode removed or moved — only as an approved catalogue change; the item's barcode history
   catalogueChangeSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-773 (choice 3 B · audit C-8): the store manager proposes an item, barcode or GST change; the owner approves and head office makes it
   approvedStockChangeSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-808 A (owner, 16 Nov 2026) · D-013: approving a write-off writes it off at once, in the asker's name
   spaceSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Wave 2 (M04-FR-01..04 · D02-FR-02/06 · OB-625): space audit, product checks

@@ -47,7 +47,7 @@ import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue
 import type { SignedPack } from '../../catalogue/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { ProductMasterDeps } from '../../catalogue/src/product-master';
-import type { BarcodeRegistryDeps } from '../../catalogue/src/barcodes';
+import { standingBarcodes, type BarcodeRegistryDeps, type BarcodeLinkEvent, type BarcodeRelease } from '../../catalogue/src/barcodes';
 import type { ProductMergeDeps, MergeView, MergeRejection } from '../../catalogue/src/product-merge';
 import type { PackHierarchyDeps } from '../../catalogue/src/pack-hierarchy';
 import type { TaxClassRateDeps } from '../../catalogue/src/tax-classes';
@@ -2315,12 +2315,19 @@ async function ensureSkuIndex(store: EventStore, tenantId: string): Promise<void
   });
 }
 
+/** C-7: the barcode register's events, oldest first — a code given, and a code taken off (removed or moved). */
+async function barcodeLinksOf(store: EventStore, tenantId: string): Promise<readonly BarcodeLinkEvent[]> {
+  return (await store.readStream(tenantId, BARCODES_STREAM)).flatMap((e): BarcodeLinkEvent[] =>
+    e.event.type === 'BarcodeAssigned' ? [{ type: 'assigned', at: e.event.occurredAt, assignment: payloadOf<BarcodeAssignment>(e) }]
+      : e.event.type === 'BarcodeReleased' ? [{ type: 'released', at: e.event.occurredAt, release: payloadOf<BarcodeRelease>(e) }] : []);
+}
+
 async function ensureBarcodeIndex(store: EventStore, tenantId: string): Promise<void> {
   await ensureCatalogueIndex(store, tenantId, 'barcode-owner', async () => {
-    const latest = new Map<string, BarcodeAssignment>();
-    for (const a of await allOf<BarcodeAssignment>(store, tenantId, BARCODES_STREAM, 'BarcodeAssigned')) latest.set(a.code, a);
+    // C-7: a code taken off its item (removed or moved) is indexed where it stands now, not where it first stood.
+    const latest = standingBarcodes(await barcodeLinksOf(store, tenantId));
     const at = new Date().toISOString();
-    return [...latest.values()].map((a) => ({ stream: barcodeOwnerStream(a.code), event: makeEvent({ id: `barcode-owner-${a.code}-indexed`, type: 'BarcodeOwnerIndexed', occurredAt: at, idempotencyKey: `barcode-owner-${tenantId}-${a.code}-indexed`, source: 'api/catalogue', payload: a }) }));
+    return latest.map((a) => ({ stream: barcodeOwnerStream(a.code), event: makeEvent({ id: `barcode-owner-${a.code}-indexed`, type: 'BarcodeOwnerIndexed', occurredAt: at, idempotencyKey: `barcode-owner-${tenantId}-${a.code}-indexed`, source: 'api/catalogue', payload: a }) }));
   });
 }
 
@@ -2421,9 +2428,25 @@ export function barcodeAdapter(input: {
       await ensureBarcodeIndex(input.store, tenantId);
       const version = await input.store.guardVersion(tenantId, `barcode:${code}`); // read BEFORE the owner
       const owner = await input.store.latestOfType(tenantId, barcodeOwnerStream(code), 'BarcodeOwnerIndexed');
-      return { version, ...(owner === undefined ? {} : { assignment: payloadOf<BarcodeAssignment>(owner) }) };
+      // C-7: a code taken off its item is indexed as standing nowhere (`released`) — no owner.
+      const held = owner === undefined ? undefined : payloadOf<BarcodeAssignment & { readonly released?: true }>(owner);
+      return { version, ...(held === undefined || held.released === true ? {} : { assignment: held }) };
     },
-    all: (tenantId) => allOf<BarcodeAssignment>(input.store, tenantId, stream, 'BarcodeAssigned'),
+    // C-7: the codes standing now — the last link of each code; one taken off its item (removed or moved) is not its own.
+    all: async (tenantId) => standingBarcodes(await barcodeLinksOf(input.store, tenantId)),
+    links: (tenantId) => barcodeLinksOf(input.store, tenantId),
+    release: async (tenantId, release, key, version) => {
+      const at = input.now();
+      await ensureBarcodeIndex(input.store, tenantId);
+      const moved = release.movedTo;
+      // The release, the new link (a move) and the code's owner index entry, all in ONE atomic batch, guarded on the code.
+      const owner = moved ?? { code: release.code, productId: '', kind: release.kind, released: true as const };
+      await input.store.appendBatch(tenantId, [
+        { stream, event: makeEvent({ id: `barcode-release-${release.code}-${key}`, type: 'BarcodeReleased', occurredAt: at, idempotencyKey: `barcode-release-${tenantId}-${release.code}-${key}`, source: 'api/catalogue', payload: release }) },
+        ...(moved === undefined ? [] : [{ stream, event: makeEvent({ id: `barcode-${moved.code}-${key}-moved`, type: 'BarcodeAssigned', occurredAt: at, idempotencyKey: `barcode-${tenantId}-${moved.code}-${key}-moved`, source: 'api/catalogue', payload: moved }) }]),
+        { stream: barcodeOwnerStream(release.code), event: makeEvent({ id: `barcode-owner-${release.code}-${key}-release`, type: 'BarcodeOwnerIndexed', occurredAt: at, idempotencyKey: `barcode-owner-${tenantId}-${release.code}-${key}-release`, source: 'api/catalogue', payload: owner }) },
+      ], version === undefined ? undefined : { guard: { key: `barcode:${release.code}`, expectedVersion: version } });
+    },
   };
 }
 
@@ -2906,6 +2929,11 @@ export function posAdapter(input: {
 
     currentPackVersion: async (tenantId) =>
       (await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'))?.snapshot.version ?? 0,
+    // C-7 (M03-FR-02): the item each plain barcode names in the current pack — what a scanned code is judged against.
+    barcodeOwners: async (tenantId) => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      return new Map((pack?.snapshot.barcodes ?? []).map((b) => [b.code, b.productId]));
+    },
 
     // OB-35 "A": the batches on hand where this sale's stock leaves from (the same location `bankSale` resolves), earliest
     // expiry first — Batch 2's FEFO read over the one batch projection, called once per sale.

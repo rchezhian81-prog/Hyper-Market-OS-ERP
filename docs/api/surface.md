@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1765 | 1015 | 1015 | 196 | 454 |
+| 13 | 1764 | 1017 | 1017 | 196 | 453 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -147,7 +147,6 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/catalogue/category-policy/resolve` | `catalogue.pack.read` | core | yes |
 | POST | `/v1/catalogue/changes` | `catalogue.change.propose` | core | yes |
 | GET | `/v1/catalogue/dual-mrp-check` | `catalogue.pack.read` | core | — |
-| GET | `/v1/catalogue/item-gst-rates` | `purchase.invoice.capture` | core | — |
 | GET | `/v1/catalogue/label-facts-outstanding` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/label-height` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/loose-food-label` | `catalogue.pack.read` | core | — |
@@ -164,8 +163,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/catalogue/products` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/products/:productId` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/products/:productId/app-content` | `catalogue.pack.read` | core | — |
+| GET | `/v1/catalogue/products/:productId/barcode-history` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/products/:productId/barcodes` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/barcodes/:code` | `catalogue.pack.publish` | core | yes |
+| POST | `/v1/catalogue/products/:productId/barcodes/:code/move` | `catalogue.pack.publish` | core | yes |
+| POST | `/v1/catalogue/products/:productId/barcodes/:code/remove` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/canonical` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/content` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/image` | `catalogue.pack.read` | core | — |
@@ -389,7 +391,6 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/availability` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/batch-directory` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/batches` | `inventory.availability.read` | core | — |
-| GET | `/v1/inventory/count-history` | `count.view` | core | — |
 | GET | `/v1/inventory/count-plans` | `inventory.count.plan` | core | — |
 | GET | `/v1/inventory/count-plans/:planId` | `inventory.count.plan` | core | — |
 | POST | `/v1/inventory/count-plans/:planId` | `inventory.count.plan` | core | yes |
@@ -468,9 +469,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/sales-history` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/shelf-returns` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/shelf-returns/:returnId` | `inventory.movement.append` | core | yes |
-| GET | `/v1/inventory/stockout-estimate` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/stockout-impact` | `inventory.availability.read` | core | yes |
-| GET | `/v1/inventory/transfer-suggestions` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/valuation` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/write-off-captures` | `waste.view` | core | — |
 | POST | `/v1/inventory/write-off-captures/:writeOffId/decide` | `inventory.movement.append` | core | yes |

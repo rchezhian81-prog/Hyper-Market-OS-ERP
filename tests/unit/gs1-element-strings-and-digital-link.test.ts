@@ -102,7 +102,7 @@ describe('the lane catalogue scans a GS1 code offline (D-20 · SF-08)', () => {
   it('a 1D scan behaves exactly as before — no batch, the product price, the same refusals', () => {
     const c = cache([product({ productId: 'p-paneer', name: 'Paneer 200g', batchPrices: [{ batchId: 'B-1', unitPriceMinor: 45_00 }] })]);
     const hit = c.scan(PANEER_EAN);
-    expect(hit).toEqual({ product: expect.objectContaining({ productId: 'p-paneer' }), barcodeKind: 'standard', quantityMinor: 1, requiresAgeCheck: false });
+    expect(hit).toEqual({ product: expect.objectContaining({ productId: 'p-paneer' }), barcodeKind: 'standard', quantityMinor: 1, requiresAgeCheck: false, scannedCode: PANEER_EAN });
     expect(() => c.scan('8901000000099')).toThrow(UnknownBarcodeError);
   });
 

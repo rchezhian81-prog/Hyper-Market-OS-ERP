@@ -93,6 +93,14 @@ const WORDS = {
     sendForApproval: 'Send for the owner\u2019s approval', whyOwner: 'Why (the owner reads it)',
     proposeLead: 'You can propose changes to this product. Each one is sent for the owner\u2019s approval; nothing changes until he approves it.',
     sentForApproval: 'Sent for the owner\u2019s approval. Nothing has changed yet — the change is made only when the owner approves it on his Approvals page.',
+    // C-7 (batch 20d): a wrongly keyed barcode removed or moved — a second person approves it first.
+    removeCode: 'Remove', moveCode: 'Move to another item', unlinkRemoveH: 'Remove barcode {code} from this item', unlinkMoveH: 'Move barcode {code} to the right item',
+    unlinkLead: 'A second person approves this on the Approvals page before anything changes. The tills get it with their next price update — never in the middle of a bill — and bills already made stay exactly as they are.',
+    moveTo: 'The item it belongs on', whyApprover: 'Why (the approver reads it)', leaveIt: 'Yes, leave it with no barcode', sendIt: 'Send for approval', cancel: 'Cancel',
+    onlyCodeWarn: 'This is the only barcode on this item. Without it the tills cannot sell it by scanning — only by finding it by name.',
+    needTo: 'Pick the item the barcode belongs on.', sentUnlink: 'Sent for approval. Nothing has changed yet — the barcode stays on this item until a second person approves it on the Approvals page.',
+    historyH: 'Barcode history', noHistory: 'No barcode has been given to this item yet.', hGiven: '{code} given to this item', hRemoved: '{code} removed from this item',
+    hMovedAway: '{code} moved to {other}', hMovedHere: '{code} moved here from {other}', hWho: 'proposed by {p}, approved by {a}', hWhy: 'why: {r}', standsNow: 'on this item now',
   },
   ta: {
     lang: 'English', title: 'பொருள் விவரங்கள்',
@@ -135,6 +143,13 @@ const WORDS = {
     sendForApproval: 'உரிமையாளரின் ஒப்புதலுக்கு அனுப்பு', whyOwner: 'ஏன் (உரிமையாளர் படிப்பார்)',
     proposeLead: 'இந்தப் பொருளில் மாற்றங்களை நீங்கள் முன்மொழியலாம். ஒவ்வொன்றும் உரிமையாளரின் ஒப்புதலுக்கு அனுப்பப்படும்; அவர் ஒப்புக்கொள்ளும் வரை எதுவும் மாறாது.',
     sentForApproval: 'உரிமையாளரின் ஒப்புதலுக்கு அனுப்பப்பட்டது. இன்னும் எதுவும் மாறவில்லை — உரிமையாளர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டால் மட்டுமே மாற்றம் செய்யப்படும்.',
+    removeCode: 'நீக்கு', moveCode: 'வேறு பொருளுக்கு மாற்று', unlinkRemoveH: 'இந்தப் பொருளிலிருந்து பார்கோடு {code}-ஐ நீக்கு', unlinkMoveH: 'பார்கோடு {code}-ஐ சரியான பொருளுக்கு மாற்று',
+    unlinkLead: 'எதுவும் மாறுவதற்கு முன் இரண்டாம் நபர் ஒப்புதல்கள் பக்கத்தில் இதை ஒப்புக்கொள்ள வேண்டும். அடுத்த விலை புதுப்பிப்புடன் இது பில்லிங் இயந்திரங்களுக்குச் சேரும் — ஒரு பில்லின் நடுவில் ஒருபோதும் இல்லை — ஏற்கனவே போட்ட பில்கள் அப்படியே இருக்கும்.',
+    moveTo: 'இது சேர வேண்டிய பொருள்', whyApprover: 'ஏன் (ஒப்புதல் அளிப்பவர் படிப்பார்)', leaveIt: 'ஆம், பார்கோடு இல்லாமல் விடு', sendIt: 'ஒப்புதலுக்கு அனுப்பு', cancel: 'ரத்து',
+    onlyCodeWarn: 'இந்தப் பொருளில் உள்ள ஒரே பார்கோடு இதுதான். இது இல்லாமல் பில்லிங் இயந்திரங்கள் இதை ஸ்கேன் செய்து விற்க முடியாது — பெயரால் தேடித்தான் விற்க முடியும்.',
+    needTo: 'பார்கோடு சேர வேண்டிய பொருளைத் தேர்ந்தெடுங்கள்.', sentUnlink: 'ஒப்புதலுக்கு அனுப்பப்பட்டது. இன்னும் எதுவும் மாறவில்லை — இரண்டாம் நபர் ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொள்ளும் வரை பார்கோடு இந்தப் பொருளிலேயே இருக்கும்.',
+    historyH: 'பார்கோடு வரலாறு', noHistory: 'இந்தப் பொருளுக்கு இன்னும் எந்த பார்கோடும் கொடுக்கப்படவில்லை.', hGiven: '{code} இந்தப் பொருளுக்குக் கொடுக்கப்பட்டது', hRemoved: '{code} இந்தப் பொருளிலிருந்து நீக்கப்பட்டது',
+    hMovedAway: '{code} {other}-க்கு மாற்றப்பட்டது', hMovedHere: '{code} {other}-இலிருந்து இங்கு மாற்றப்பட்டது', hWho: 'முன்மொழிந்தவர் {p}, ஒப்புக்கொண்டவர் {a}', hWhy: 'காரணம்: {r}', standsNow: 'இப்போது இந்தப் பொருளில்',
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
@@ -204,6 +219,8 @@ let barcodes = null;
 let pack = null;
 let bundle = null;        // { bundle, history } or null
 let subs = null;          // { list, set, history }
+let codeHistory = null;   // C-7: the item's barcode history (given, removed, moved), or null when head office could not say
+let unlink = null;        // C-7: { action: 'remove' | 'move', code } — the removal or move being written
 let pendingSafetyAsk = null; // W4 · OB-546: the approval the last SAFETY save needed (an age limit newly on a product on sale)
 let pendingAsk = null;    // { kind, subjectRef, details, summary } — the approval the last save needed
 let tab = 'record';
@@ -394,9 +411,34 @@ function paintPanels() {
   unknown($('v-subs'), subs !== undefined && subs !== null, subs?.set === false ? t('notSet') : fill(t('subsCount'), { n: subs?.list?.substitutes?.length ?? 0 }));
 }
 
+/** C-7: a product's name from the list head office gave this page, else its id. */
+const productNameOf = (id) => {
+  const o = [...$('product-list').options].find((x) => x.value === id);
+  return o !== undefined && o.label !== '' ? `${o.label} (${id})` : id;
+};
+// OB-606: the shop's own clock (the chrome's shop day), never the device's; the stored instant while the chrome is not there.
+const whenOf = (iso) => window.sreShopDay?.dateTimeOf(iso) || String(iso ?? '');
+
 function paintCodes() {
   $('barcode-list').replaceChildren(...((barcodes ?? []).length === 0 ? [Object.assign(document.createElement('li'), { textContent: t('noBarcodes') })]
-    : barcodes.map((b) => { const li = document.createElement('li'); li.dataset.code = b.code; li.textContent = `${b.code} · ${b.kind}${b.level === undefined ? '' : ` · ${b.level}`}`; return li; })));
+    : barcodes.map((b) => {
+      const li = document.createElement('li'); li.dataset.code = b.code; li.className = 'code-row';
+      const words = document.createElement('span'); words.textContent = `${b.code} · ${b.kind}${b.level === undefined ? '' : ` · ${b.level}`}`;
+      li.append(words);
+      // C-7: a wrongly keyed code is taken off, or moved to the right item — for a second person's approval.
+      if (mayChange) {
+        const acts = document.createElement('span'); acts.className = 'acts';
+        for (const [action, key] of [['remove', 'removeCode'], ['move', 'moveCode']]) {
+          const btn = document.createElement('button'); btn.type = 'button'; btn.className = `sre-btn u-${action}`; btn.dataset.code = b.code; btn.textContent = t(key);
+          btn.addEventListener('click', () => openUnlink(action, b.code));
+          acts.append(btn);
+        }
+        li.append(acts);
+      }
+      return li;
+    })));
+  paintUnlink();
+  paintHistory();
   const rows = $('pack-rows');
   if (rows.childElementCount === 0) {
     for (let i = 0; i < 4; i += 1) {
@@ -503,6 +545,64 @@ function paint() {
   if (shown) { paintCodes(); paintBundle(); paintSubs(); }
 }
 
+/** C-7: the removal / move box — what it will do, the warning when it is the item's only barcode, and its words. */
+function paintUnlink() {
+  const box = $('unlink-box');
+  box.hidden = unlink === null || !mayChange;
+  if (unlink === null) return;
+  $('unlink-h').textContent = fill(t(unlink.action === 'move' ? 'unlinkMoveH' : 'unlinkRemoveH'), { code: unlink.code });
+  $('unlink-lead').textContent = t('unlinkLead');
+  $('u-to-row').hidden = unlink.action !== 'move';
+  $('l-u-to').textContent = t('moveTo'); $('l-u-why').textContent = t('whyApprover'); $('l-u-leave').textContent = t('leaveIt');
+  $('u-send').textContent = t('sendIt'); $('u-cancel').textContent = t('cancel');
+  const only = (barcodes ?? []).length === 1 && barcodes[0].code === unlink.code;
+  $('u-only').hidden = !only; $('u-only').textContent = t('onlyCodeWarn');
+  $('u-leave-row').hidden = !only;
+  if (!only) $('u-leave').checked = false;
+}
+function openUnlink(action, code) {
+  unlink = { action, code };
+  $('u-to').value = ''; $('u-why').value = ''; $('u-leave').checked = false; $('unlink-status').textContent = '';
+  paintUnlink();
+  ($(action === 'move' ? 'u-to' : 'u-why')).focus();
+}
+async function sendUnlink() {
+  const st = $('unlink-status');
+  if (unlink === null) return;
+  const to = $('u-to').value.trim();
+  const why = $('u-why').value.trim();
+  if (unlink.action === 'move' && to === '') { tell(st, false, t('needTo')); return; }
+  if (why === '') { tell(st, false, t('needWhy')); return; }
+  const body = {
+    change: unlink.action === 'move' ? 'barcode_move' : 'barcode_remove', productId, code: unlink.code,
+    ...(unlink.action === 'move' ? { toProductId: to } : {}), ...($('u-leave').checked ? { leaveWithoutBarcode: true } : {}), reason: why,
+  };
+  const out = await call('POST', '/v1/catalogue/changes', body);
+  if (!out.ok) { say(st, out, ''); return; }
+  unlink = null; paintUnlink();
+  tell($('codes-status'), true, t('sentUnlink'));
+}
+/** C-7: every code that ever named this item, newest first — the old link stays visible (nothing is erased). */
+function paintHistory() {
+  $('history-h').textContent = t('historyH');
+  const list = $('barcode-history');
+  if (codeHistory === null) { list.replaceChildren(Object.assign(document.createElement('li'), { textContent: t('notKnown') })); return; }
+  if (codeHistory.length === 0) { list.replaceChildren(Object.assign(document.createElement('li'), { textContent: t('noHistory') })); return; }
+  const standing = new Set((barcodes ?? []).map((b) => b.code));
+  list.replaceChildren(...codeHistory.slice().reverse().map((h, i, all) => {
+    const li = document.createElement('li'); li.dataset.code = h.code; li.dataset.what = h.what;
+    const key = { given: 'hGiven', removed: 'hRemoved', moved_away: 'hMovedAway', moved_here: 'hMovedHere' }[h.what] ?? 'hGiven';
+    const parts = [fill(t(key), { code: h.code, other: h.otherProductId === undefined ? '' : productNameOf(h.otherProductId) }), whenOf(h.at)];
+    if (h.approvedBy !== undefined) parts.push(fill(t('hWho'), { p: h.proposedBy ?? '', a: h.approvedBy }));
+    if (h.reason !== undefined && h.reason !== '') parts.push(fill(t('hWhy'), { r: h.reason }));
+    // the newest line that put a code here, while it is still here
+    const latestHere = (h.what === 'given' || h.what === 'moved_here') && standing.has(h.code) && !all.slice(0, i).some((x) => x.code === h.code);
+    if (latestHere) parts.push(t('standsNow'));
+    li.textContent = parts.join(' · ');
+    return li;
+  }));
+}
+
 async function loadLists() {
   const [cats, prods] = await Promise.all([call('GET', '/v1/catalogue/categories'), call('GET', '/v1/catalogue/products')]);
   if (cats.ok && Array.isArray(cats.body?.categories)) categories = cats.body.categories;
@@ -518,10 +618,12 @@ async function load() {
   pendingAsk = null;
   if (productId === '') { held = null; paint(); return; }
   const id = encodeURIComponent(productId);
-  const [p, b, pk, bd, sb] = await Promise.all([
+  const [p, b, pk, bd, sb, hs] = await Promise.all([
     call('GET', `/v1/catalogue/products/${id}`), call('GET', `/v1/catalogue/products/${id}/barcodes`), call('GET', `/v1/catalogue/products/${id}/pack`),
-    call('GET', `/v1/catalogue/bundles/${id}`), call('GET', `/v1/catalogue/products/${id}/substitutes`),
+    call('GET', `/v1/catalogue/bundles/${id}`), call('GET', `/v1/catalogue/products/${id}/substitutes`), call('GET', `/v1/catalogue/products/${id}/barcode-history`),
   ]);
+  codeHistory = hs.ok && Array.isArray(hs.body?.history) ? hs.body.history : null;
+  unlink = null;
   readFailed = !p.ok && p.status !== 404;
   held = p.ok ? p.body?.product ?? null : null;
   heldVersion = p.ok && Number.isInteger(p.body?.version) ? p.body.version : undefined;
@@ -663,6 +765,8 @@ $('ask-safety-approval').addEventListener('click', async () => {
   if (out.ok) { tell(st, true, t('asked')); $('ask-safety-approval').hidden = true; } else say(st, out, '');
 });
 $('save-safety').addEventListener('click', () => { void saveSafety(); });
+$('u-send').addEventListener('click', () => { void sendUnlink(); });
+$('u-cancel').addEventListener('click', () => { unlink = null; paintUnlink(); });
 $('safety-reload').addEventListener('click', () => { void load(); });
 $('barcode-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -759,3 +863,4 @@ document.addEventListener('sre:chrome', () => { shopDate('m-from', { en: wordsIn
 
 pickable('product', 'product', 'pickProduct');
 pickable('r-parent', 'product', 'pickProduct');
+pickable('u-to', 'product', 'pickProduct'); // C-7: the item a wrongly keyed barcode belongs on

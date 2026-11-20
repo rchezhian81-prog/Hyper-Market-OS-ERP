@@ -10637,6 +10637,63 @@
         }
       }
     },
+    "/v1/catalogue/products/{productId}/barcode-history": {
+      "get": {
+        "operationId": "getCatalogueProductsByProductIdBarcodeHistory",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCatalogueProductsByProductIdBarcodeHistoryReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/products/{productId}/barcodes": {
       "get": {
         "operationId": "getCatalogueProductsByProductIdBarcodes",
@@ -10754,6 +10811,190 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostCatalogueProductsByProductIdBarcodesByCodeReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.publish\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/catalogue/products/{productId}/barcodes/{code}/move": {
+      "post": {
+        "operationId": "postCatalogueProductsByProductIdBarcodesByCodeMove",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.publish",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCatalogueProductsByProductIdBarcodesByCodeMoveRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCatalogueProductsByProductIdBarcodesByCodeMoveReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.publish\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/catalogue/products/{productId}/barcodes/{code}/remove": {
+      "post": {
+        "operationId": "postCatalogueProductsByProductIdBarcodesByCodeRemove",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.publish",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCatalogueProductsByProductIdBarcodesByCodeRemoveRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCatalogueProductsByProductIdBarcodesByCodeRemoveReply"
                 }
               }
             }
@@ -129107,6 +129348,31 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/product-content-images.ts"
       },
+      "GetCatalogueProductsByProductIdBarcodeHistoryReply": {
+        "type": "object",
+        "required": [
+          "productId",
+          "history",
+          "count"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BarcodeHistoryRow"
+            }
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/barcode-link-changes.ts"
+      },
       "GetCatalogueProductsByProductIdBarcodesReply": {
         "type": "object",
         "required": [
@@ -183637,6 +183903,13 @@
               {
                 "type": "string",
                 "const": "tax_rate"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "barcode_move",
+                  "barcode_remove"
+                ]
               }
             ]
           },
@@ -183654,6 +183927,10 @@
           },
           "kind": {
             "type": "string"
+          },
+          "leaveWithoutBarcode": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
           },
           "level": {
             "type": "string"
@@ -183696,6 +183973,9 @@
                 }
               }
             ]
+          },
+          "toProductId": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -183947,6 +184227,142 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/index.ts"
+      },
+      "PostCatalogueProductsByProductIdBarcodesByCodeMoveReply": {
+        "type": "object",
+        "required": [
+          "barcodeChange"
+        ],
+        "properties": {
+          "barcodeChange": {
+            "type": "object",
+            "required": [
+              "codesAfter",
+              "leavesNoBarcode",
+              "tills",
+              "action",
+              "code",
+              "productId"
+            ],
+            "properties": {
+              "codesAfter": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "leavesNoBarcode": {
+                "type": "boolean"
+              },
+              "tills": {
+                "type": "string"
+              },
+              "toProductId": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "move",
+                  "remove"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "productId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/barcode-link-changes.ts"
+      },
+      "PostCatalogueProductsByProductIdBarcodesByCodeMoveRequest": {
+        "type": "object",
+        "properties": {
+          "leaveWithoutBarcode": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "toProductId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/barcode-link-changes.ts"
+      },
+      "PostCatalogueProductsByProductIdBarcodesByCodeRemoveReply": {
+        "type": "object",
+        "required": [
+          "barcodeChange"
+        ],
+        "properties": {
+          "barcodeChange": {
+            "type": "object",
+            "required": [
+              "codesAfter",
+              "leavesNoBarcode",
+              "tills",
+              "action",
+              "code",
+              "productId"
+            ],
+            "properties": {
+              "codesAfter": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "leavesNoBarcode": {
+                "type": "boolean"
+              },
+              "tills": {
+                "type": "string"
+              },
+              "toProductId": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "move",
+                  "remove"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "productId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/barcode-link-changes.ts"
+      },
+      "PostCatalogueProductsByProductIdBarcodesByCodeRemoveRequest": {
+        "type": "object",
+        "properties": {
+          "leaveWithoutBarcode": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "toProductId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/barcode-link-changes.ts"
       },
       "PostCatalogueProductsByProductIdBarcodesByCodeReply": {
         "type": "object",
@@ -278397,6 +278813,54 @@
         },
         "additionalProperties": true
       },
+      "BarcodeHistoryRow": {
+        "type": "object",
+        "required": [
+          "code",
+          "what",
+          "at",
+          "kind"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string",
+            "enum": [
+              "given",
+              "moved_away",
+              "moved_here",
+              "removed"
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "otherProductId": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "BatchBalance": {
         "type": "object",
         "required": [
@@ -324427,6 +324891,7 @@
             "type": "string",
             "enum": [
               "age_restricted_sold_without_check",
+              "barcode_changed_since_the_tills_pack",
               "batch_tracked_sold_without_batch",
               "card_data_in_tender",
               "cashier_lacks_authority",

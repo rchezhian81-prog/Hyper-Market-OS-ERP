@@ -67,6 +67,9 @@
       .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
       .pick-row input { flex: 1 1 140px; min-width: 0; }
       .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+      .code-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+      .code-row .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+      h4 { margin: 0; font-size: 15px; }
     </style>
   </head>
   <body>
@@ -189,6 +192,25 @@
           <label for="b-why" id="b-why-row" hidden><span id="l-b-why">Why (the owner reads it)</span><input id="b-why" autocomplete="off" maxlength="200" /></label>
           <button id="add-barcode" type="submit" class="sre-btn">Give this barcode</button>
         </form>
+        <!-- C-7 (M03-FR-02 · batch 20d): a wrongly keyed barcode removed from this item, or moved to the right item — sent
+             for a second person's approval (POST /v1/catalogue/changes); nothing changes until it is approved on Approvals. -->
+        <fieldset id="unlink-box" hidden>
+          <legend id="unlink-h">Remove a barcode</legend>
+          <p class="muted" id="unlink-lead"></p>
+          <div class="row">
+            <label for="u-to" id="u-to-row"><span id="l-u-to">The item it belongs on</span><input id="u-to" list="product-list" autocomplete="off" /></label>
+            <label for="u-why"><span id="l-u-why">Why (the approver reads it)</span><input id="u-why" autocomplete="off" maxlength="200" /></label>
+          </div>
+          <p class="status err" id="u-only" hidden></p>
+          <label class="check" for="u-leave" id="u-leave-row" hidden><input id="u-leave" type="checkbox" /><span id="l-u-leave">Yes, leave it with no barcode</span></label>
+          <div class="row">
+            <button id="u-send" type="button" class="sre-btn sre-btn-primary">Send for approval</button>
+            <button id="u-cancel" type="button" class="sre-btn">Cancel</button>
+          </div>
+          <p class="status" id="unlink-status" role="status" aria-live="polite"></p>
+        </fieldset>
+        <h4 id="history-h">Barcode history</h4>
+        <ul class="rows" id="barcode-history" aria-label="Barcode history"></ul>
         <fieldset>
           <legend id="pack-h">Pack hierarchy</legend>
           <p class="muted" id="pack-lead"></p>
