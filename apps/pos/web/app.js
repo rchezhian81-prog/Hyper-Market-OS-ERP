@@ -195,7 +195,17 @@ const WORDS = {
     keyCashFirst: 'Key the cash the customer gave, then OK — or tap Exact {amount}. Nothing was charged.',
     qtyNotZero: 'The quantity must be 1 or more. Key the number of items, then OK.',
     approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
-    more: 'More', pickup: 'Cash to safe', closeTill: 'Close till', refund: 'Refund',
+    more: 'More', pickup: 'Pickup (manager takes cash to the safe)', closeTill: 'Close till', refund: 'Refund',
+    // Batch 20a · T1 (M14-FR-01): change added to the drawer during the shift, and cash the cashier drops in the safe.
+    loan: 'Cash loan (change added to the drawer)', safeDrop: 'Safe drop (cashier puts cash in the safe)',
+    loanAmount: 'How much change is being added to the drawer?', loanDone: 'Cash loan recorded — change added to the drawer',
+    dropAmount: 'How much is going into the safe?', dropDone: 'Safe drop recorded',
+    confirmLoanTitle: 'Record the cash loan?', confirmLoanWhat: '{amount} will be recorded as change added to this drawer (a cash loan).', confirmLoan: 'Record the loan',
+    confirmDropTitle: 'Record the safe drop?', confirmDropWhat: '{amount} will be recorded as dropped from this drawer into the safe.', confirmDrop: 'Record the drop',
+    shiftMoves: 'This shift: float {float} · cash loans {loans} · pickups {pickups} · safe drops {drops}.',
+    // Batch 20a · T2 (M12-FR-01): a price check that adds nothing to the bill.
+    priceCheck: 'Price check (does not add to the bill)', priceCheckTitle: 'Price check',
+    priceCheckHint: 'Scan the item, or type part of its name or code. Nothing is added to the bill.',
     find: 'Find', findTitle: 'Find an item', findHint: 'Type part of the name, or key the barcode or code. A scan still works here.',
     findNone: 'Nothing in this till\'s price list matches that.', findMore: 'More match — type more letters.', findKg: 'sold by weight — weigh it and scan its label',
     groupCash: 'Cash drawer', groupReturns: 'Returns & exchanges', groupBaskets: 'Baskets, quotations & this bill', groupBills: 'Bills & payments',
@@ -487,7 +497,15 @@ const WORDS = {
     keyCashFirst: 'வாடிக்கையாளர் கொடுத்த பணத்தை உள்ளிட்டு சரி அழுத்தவும் — அல்லது சரியான தொகை {amount} அழுத்தவும். எதுவும் வசூலிக்கப்படவில்லை.',
     qtyNotZero: 'எண்ணிக்கை 1 அல்லது அதற்கு மேல் இருக்க வேண்டும். பொருட்களின் எண்ணிக்கையை உள்ளிட்டு சரி அழுத்தவும்.',
     approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
-    more: 'மேலும்', pickup: 'பணத்தை பெட்டகத்திற்கு', closeTill: 'டில்லை மூடு', refund: 'திரும்பப் பணம்',
+    more: 'மேலும்', pickup: 'பிக்அப் (மேலாளர் பணத்தைப் பெட்டகத்திற்கு எடுக்கிறார்)', closeTill: 'டில்லை மூடு', refund: 'திரும்பப் பணம்',
+    loan: 'பணக் கடன் (டிராயருக்குச் சில்லறை சேர்)', safeDrop: 'பெட்டகத்தில் போடு (காசாளர் பணத்தைப் பெட்டகத்தில் போடுகிறார்)',
+    loanAmount: 'டிராயருக்கு எவ்வளவு சில்லறை சேர்க்கப்படுகிறது?', loanDone: 'பணக் கடன் பதிவு செய்யப்பட்டது — டிராயருக்குச் சில்லறை சேர்க்கப்பட்டது',
+    dropAmount: 'பெட்டகத்தில் எவ்வளவு போடப்படுகிறது?', dropDone: 'பெட்டகத்தில் போட்டது பதிவு செய்யப்பட்டது',
+    confirmLoanTitle: 'பணக் கடனைப் பதிவு செய்யவா?', confirmLoanWhat: '{amount} இந்த டிராயருக்குச் சேர்த்த சில்லறையாக (பணக் கடன்) பதிவு செய்யப்படும்.', confirmLoan: 'கடனைப் பதிவு செய்',
+    confirmDropTitle: 'பெட்டகத்தில் போட்டதைப் பதிவு செய்யவா?', confirmDropWhat: '{amount} இந்த டிராயரிலிருந்து பெட்டகத்தில் போடப்பட்டதாகப் பதிவு செய்யப்படும்.', confirmDrop: 'போட்டதைப் பதிவு செய்',
+    shiftMoves: 'இந்த ஷிஃப்ட்: ஆரம்பப் பணம் {float} · பணக் கடன் {loans} · பிக்அப் {pickups} · பெட்டகத்தில் போட்டவை {drops}.',
+    priceCheck: 'விலை பார் (பில்லில் சேர்க்காது)', priceCheckTitle: 'விலை பார்',
+    priceCheckHint: 'பொருளை ஸ்கேன் செய்யவும், அல்லது அதன் பெயர் / குறியீட்டின் ஒரு பகுதியைத் தட்டச்சு செய்யவும். பில்லில் எதுவும் சேர்க்கப்படாது.',
     find: 'தேடு', findTitle: 'பொருளைத் தேடு', findHint: 'பெயரின் ஒரு பகுதியைத் தட்டச்சு செய்யவும், அல்லது பார்கோடு / குறியீட்டை உள்ளிடவும். இங்கே ஸ்கேன் செய்தாலும் சேரும்.',
     findNone: 'இந்த டில்லின் விலைப் பட்டியலில் அதற்குப் பொருந்துவது எதுவும் இல்லை.', findMore: 'இன்னும் பொருந்துகின்றன — மேலும் எழுத்துகளைத் தட்டச்சு செய்யவும்.', findKg: 'எடையால் விற்கப்படுவது — எடை போட்டு அதன் லேபிளை ஸ்கேன் செய்யவும்',
     groupCash: 'பண டிராயர்', groupReturns: 'திரும்பப் பெறுதலும் மாற்றமும்', groupBaskets: 'கூடைகள், மேற்கோள்கள், இந்த பில்', groupBills: 'பில்களும் பணம் செலுத்தலும்',
@@ -2511,6 +2529,8 @@ el('more').addEventListener('click', async () => {
     // ── Cash drawer ──
     ...(cash === null || !cash.shiftOpen ? [{ value: 'float', label: t('takeFloat'), group: 'groupCash' }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'pickup', label: t('pickup'), group: 'groupCash' }] : []),
+    // Batch 20a · T1 (M14-FR-01): a cash loan (change into the drawer) and a safe drop, beside the pickup — while a float is out.
+    ...(cash === null || cash.shiftOpen ? [{ value: 'loan', label: t('loan'), group: 'groupCash' }, { value: 'safe_drop', label: t('safeDrop'), group: 'groupCash' }] : []),
     // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer first.
     ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale'), group: 'groupCash' }] : []),
     // ── Returns & exchanges ──
@@ -2552,6 +2572,9 @@ el('more').addEventListener('click', async () => {
     ...(typeof session.deliverThisBill === 'function'
       ? [session.isForDelivery() ? { value: 'undeliver', label: t('undeliverBill'), icon: 'truck', group: 'groupLine' } : { value: 'deliver', label: t('deliverBill'), icon: 'truck', group: 'groupLine' }] : []),
     // ── Customer ──
+    // Batch 20a · T2 (M12-FR-01 "price enquiry"): the customer asks a price — answered from this till's own price list; nothing
+    // goes on the bill. Offered whenever the till has a price list.
+    ...(typeof session.priceCheck === 'function' && session.hasCatalogue() ? [{ value: 'price_check', label: t('priceCheck'), icon: 'search', group: 'groupCustomer' }] : []),
     // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
     ...(guestOnly() ? [{ value: 'guest_only', label: t('guestOnlyOption'), group: 'groupCustomer' }] : session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
       ? [{ value: 'member', label: t('member'), group: 'groupCustomer' }]
@@ -2564,6 +2587,9 @@ el('more').addEventListener('click', async () => {
   const what = await choose(t('more'), options);
   if (what === 'float') return takeFloat();
   if (what === 'pickup') return takeCashToSafe();
+  if (what === 'price_check') return checkPriceOnly(); // Batch 20a · T2
+  if (what === 'loan') return takeCashLoan(); // Batch 20a · T1
+  if (what === 'safe_drop') return dropCashInSafe(); // Batch 20a · T1
   if (what === 'refund') return startRefund();
   if (what === 'exchange') return startExchange();
   if (what === 'no_receipt') return startNoReceiptReturn();
@@ -2601,6 +2627,19 @@ async function findItem() {
   scanCode(String(code), null);
 }
 el('find').addEventListener('click', () => { void findItem(); });
+
+/**
+ * Batch 20a · T2 (M12-FR-01 "price enquiry"): what an item costs — by a scan, a keyed code or a row picked from the same
+ * search Find uses — WITHOUT putting it on the bill. The answer (price, MRP, a markdown, every offer on it now) comes from
+ * this till's own signed price list and offers; there is no network call and nothing is written.
+ */
+async function checkPriceOnly() {
+  if (!session.hasCatalogue() || typeof session.priceCheck !== 'function') { tell(t('read'), t('noCatalogue'), STOP); return; }
+  const code = await ask({ title: t('priceCheckTitle'), mode: 'find', hint: t('priceCheckHint') });
+  if (code === null || code === '') return;
+  const answer = session.priceCheck(String(code));
+  tell(answer.name ? `${t('priceCheckTitle')} — ${answer.name}` : t('priceCheckTitle'), lang === 'ta' ? answer.words.ta : answer.words.en, answer.outcome === 'priced' ? SUCCESS : STOP);
+}
 
 /**
  * OB-299 (M12-FR-02): mark the bill for delivery — the delivery-fee line at its signed price, once. The customer then pays the
@@ -2761,13 +2800,19 @@ async function moveCashToBox(kind, titleKey, doneKey) {
   if (minor <= 0) return;
   // OB-698 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
   const at = new Date().toISOString();
-  const float = kind === 'float_issue';
+  // The confirm words for each kind of movement (Batch 20a · T1 adds the cash loan and the safe drop).
+  const CONFIRM = {
+    float_issue: ['confirmFloatTitle', 'confirmFloatWhat', 'confirmFloat'],
+    loan: ['confirmLoanTitle', 'confirmLoanWhat', 'confirmLoan'],
+    safe_drop: ['confirmDropTitle', 'confirmDropWhat', 'confirmDrop'],
+  };
+  const [titleWords, whatWords, verbWords] = CONFIRM[kind] ?? ['confirmSafeTitle', 'confirmSafeWhat', 'confirmSafe'];
   const confirmed = await confirmAction({
-    title: t(float ? 'confirmFloatTitle' : 'confirmSafeTitle'),
-    what: t(float ? 'confirmFloatWhat' : 'confirmSafeWhat').replace('{amount}', inr(minor)),
+    title: t(titleWords),
+    what: t(whatWords).replace('{amount}', inr(minor)),
     detail: t('confirmCashDetail'),
     who: t('confirmCashWho').replace('{who}', (session.operator && session.operator()) || '—').replace('{time}', shopTimeOf(at) || '—'), // OB-607: the shop's clock, never this device's; '—' when the page has no shop clock
-    confirmLabel: t(float ? 'confirmFloat' : 'confirmSafe'),
+    confirmLabel: t(verbWords),
   });
   if (!confirmed) return;
   try {
@@ -2781,6 +2826,10 @@ async function moveCashToBox(kind, titleKey, doneKey) {
 }
 const takeFloat = () => moveCashToBox('float_issue', 'floatAmount', 'floatTaken');
 const takeCashToSafe = () => moveCashToBox('pickup', 'amountToSafe', 'movedToSafe');
+// Batch 20a · T1 (M14-FR-01): the store computer already records both kinds; the same confirm, the same durable-first path,
+// the same "one custodian, no overdraw" guard — so a safe drop of more than the drawer holds is refused in the same words.
+const takeCashLoan = () => moveCashToBox('loan', 'loanAmount', 'loanDone');
+const dropCashInSafe = () => moveCashToBox('safe_drop', 'dropAmount', 'dropDone');
 
 /**
  * Ask for a receipt number or a staff code — SCANNED or keyed (the owner chose both). The receipt
@@ -3383,7 +3432,12 @@ async function closeTheTill() {
     // put away. The store computer has recorded it and the cash office will see it.
     // OB-271 · audit A9: in real trading the close also lists today's card/UPI payments with the machine's numbers.
     const cards = realTradingOn() ? await cardListText() : null;
-    tell(headline, result.exceptionRaised ? t('needsReason') : `${t('tillClosed')} — ${t('counted')}: ${inr(counted)}`, variance === 0 && !result.exceptionRaised ? SUCCESS : STOP, cards);
+    // Batch 20a · T1: AFTER the count (never before — the count stays blind), the shift's float, cash loans, pickups and safe drops.
+    const d = result.drawer;
+    const moves = d && typeof d === 'object'
+      ? ` ${t('shiftMoves').replace('{float}', inr(d.floatMinor)).replace('{loans}', inr(d.loansMinor)).replace('{pickups}', inr(d.pickupsMinor)).replace('{drops}', inr(d.safeDropsMinor))}`
+      : '';
+    tell(headline, `${result.exceptionRaised ? t('needsReason') : `${t('tillClosed')} — ${t('counted')}: ${inr(counted)}`}${moves}`, variance === 0 && !result.exceptionRaised ? SUCCESS : STOP, cards);
   } catch (e) {
     // Nobody signed in, or no lane: refused before the store computer is asked, in the model's words (F09).
     tell(t('read'), e && e.laneMessage ? e.laneMessage : t('needsReason'), STOP);

@@ -1083,6 +1083,8 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   Object.assign(payload, receivingChecklistFor(input));
   // B4 · OB-504: which products are PACKED — the Receive form refuses a packed line with no month of manufacture, offline.
   Object.assign(payload, packedProductIdsFor(input));
+  // Batch 20a · R7 (M03-FR-02): each counted product's case sizes — the Receive form takes "4 cases × 12", offline.
+  Object.assign(payload, casePacksFor(input));
   // Fix batch 4b · D-029: the Receive form's aids, offline — the orders this store waits for (each with what is still due),
   // the items' names, and the batch-tracked products (a line of one needs a batch and an expiry).
   Object.assign(payload, receivingAidsFor(input));
@@ -1143,6 +1145,28 @@ export function packedProductIdsFor(input: ScreenInput): Record<string, unknown>
   const register = input.pack.packedProductIds;
   if (register === undefined || !register.known || !Array.isArray(register.value)) return {};
   return { packedProductIds: (register.value as readonly unknown[]).filter((p): p is string => typeof p === 'string' && p.trim() !== '') };
+}
+
+/**
+ * Batch 20a · R7 (M07-FR-01 · M03-FR-02): head office's case sizes for counted products, read STRICTLY — a product id with a
+ * list of `{ level, units }` where units is a whole number above 1; anything else is dropped, never repaired. Absent when the
+ * store setup did not carry the section (Receive then takes single units only).
+ */
+export function casePacksFor(input: ScreenInput): Record<string, unknown> {
+  const register = input.pack.casePacks;
+  if (register === undefined || !register.known || register.value === null || typeof register.value !== 'object' || Array.isArray(register.value)) return {};
+  const out: Record<string, { level: string; units: number }[]> = {};
+  for (const [productId, raw] of Object.entries(register.value as Record<string, unknown>)) {
+    if (productId.trim() === '' || !Array.isArray(raw)) continue;
+    const levels = raw.flatMap((l): { level: string; units: number }[] => {
+      if (l === null || typeof l !== 'object') return []; // not a case size: dropped, never repaired
+      const x = l as Record<string, unknown>;
+      return typeof x['level'] === 'string' && x['level'].trim() !== '' && Number.isSafeInteger(x['units']) && (x['units'] as number) > 1
+        ? [{ level: x['level'].trim(), units: x['units'] as number }] : [];
+    });
+    if (levels.length > 0) out[productId] = levels;
+  }
+  return { casePacks: out };
 }
 
 /**
@@ -3244,6 +3268,9 @@ export function cashOfficePayload(input: ScreenInput): Record<string, unknown> |
       days: BOX_OVERSHORT_DAYS,
       closes: materialCloses(input.tillCloses, input.tradingDay, BOX_OVERSHORT_DAYS - 1).map((c) => ({
         shiftId: c.shiftId, tillId: c.tillId, cashierId: c.cashierId, tradingDay: c.tradingDay, varianceMinor: c.varianceMinor, reasonCode: c.reasonCode,
+        // Batch 20a · T1: the shift's cash loans and safe drops, when the close kept them by kind.
+        ...(c.loansMinor === undefined ? {} : { loansMinor: c.loansMinor }),
+        ...(c.safeDropsMinor === undefined ? {} : { safeDropsMinor: c.safeDropsMinor }),
       })),
     };
   }

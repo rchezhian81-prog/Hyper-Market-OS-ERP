@@ -149385,6 +149385,182 @@
                     }
                   },
                   "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "returnDispatches",
+                    "order",
+                    "grnId",
+                    "number",
+                    "poId",
+                    "warehouseId",
+                    "receivedBy",
+                    "receivedAt",
+                    "captured",
+                    "availableMinor",
+                    "heldMinor"
+                  ],
+                  "properties": {
+                    "returnDispatches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
+                      }
+                    },
+                    "order": {
+                      "$ref": "#/components/schemas/ReceiptOrderFacts"
+                    },
+                    "grnId": {
+                      "type": "string"
+                    },
+                    "documentNumber": {
+                      "type": "string"
+                    },
+                    "receivingChecklist": {
+                      "$ref": "#/components/schemas/ReceivingChecklistOnFile"
+                    },
+                    "receivingChecklistNotAccepted": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "poId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "warehouseId": {
+                      "type": "string"
+                    },
+                    "receivedBy": {
+                      "type": "string"
+                    },
+                    "receivedAt": {
+                      "type": "string"
+                    },
+                    "captured": {
+                      "$ref": "#/components/schemas/CapturedReceipt"
+                    },
+                    "availableMinor": {
+                      "type": "number"
+                    },
+                    "heldMinor": {
+                      "type": "number"
+                    },
+                    "excessDecision": {
+                      "$ref": "#/components/schemas/ExcessDecision"
+                    },
+                    "excessReturn": {
+                      "$ref": "#/components/schemas/ExcessReturn"
+                    },
+                    "lineReturns": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineReturn"
+                      }
+                    },
+                    "poReceipt": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "receiptId",
+                            "receivedByProduct"
+                          ],
+                          "properties": {
+                            "receiptId": {
+                              "type": "string"
+                            },
+                            "receivedByProduct": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "orderPosition": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/OrderPosition"
+                      }
+                    },
+                    "dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineDisposition"
+                      }
+                    },
+                    "assembledFrom": {
+                      "$ref": "#/components/schemas/AssembledFromScans"
+                    },
+                    "governanceFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "segregationConflict": {
+                      "type": "string"
+                    },
+                    "asnCheck": {
+                      "$ref": "#/components/schemas/AsnCheck"
+                    },
+                    "costDiscrepancies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+                      }
+                    },
+                    "costNotKnown": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CostNotKnownLine"
+                      }
+                    },
+                    "billCosts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillCost"
+                      }
+                    },
+                    "relayedBy": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "storeId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "discrepancyOwners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscrepancyOwner"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
                 }
               ]
             }
@@ -149613,6 +149789,182 @@
                       "items": {
                         "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
                       }
+                    },
+                    "grnId": {
+                      "type": "string"
+                    },
+                    "documentNumber": {
+                      "type": "string"
+                    },
+                    "receivingChecklist": {
+                      "$ref": "#/components/schemas/ReceivingChecklistOnFile"
+                    },
+                    "receivingChecklistNotAccepted": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "poId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "warehouseId": {
+                      "type": "string"
+                    },
+                    "receivedBy": {
+                      "type": "string"
+                    },
+                    "receivedAt": {
+                      "type": "string"
+                    },
+                    "captured": {
+                      "$ref": "#/components/schemas/CapturedReceipt"
+                    },
+                    "availableMinor": {
+                      "type": "number"
+                    },
+                    "heldMinor": {
+                      "type": "number"
+                    },
+                    "excessDecision": {
+                      "$ref": "#/components/schemas/ExcessDecision"
+                    },
+                    "excessReturn": {
+                      "$ref": "#/components/schemas/ExcessReturn"
+                    },
+                    "lineReturns": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineReturn"
+                      }
+                    },
+                    "poReceipt": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "receiptId",
+                            "receivedByProduct"
+                          ],
+                          "properties": {
+                            "receiptId": {
+                              "type": "string"
+                            },
+                            "receivedByProduct": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "orderPosition": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/OrderPosition"
+                      }
+                    },
+                    "dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineDisposition"
+                      }
+                    },
+                    "assembledFrom": {
+                      "$ref": "#/components/schemas/AssembledFromScans"
+                    },
+                    "governanceFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "segregationConflict": {
+                      "type": "string"
+                    },
+                    "asnCheck": {
+                      "$ref": "#/components/schemas/AsnCheck"
+                    },
+                    "costDiscrepancies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+                      }
+                    },
+                    "costNotKnown": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CostNotKnownLine"
+                      }
+                    },
+                    "billCosts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillCost"
+                      }
+                    },
+                    "relayedBy": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "storeId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "discrepancyOwners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscrepancyOwner"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "returnDispatches",
+                    "order",
+                    "grnId",
+                    "number",
+                    "poId",
+                    "warehouseId",
+                    "receivedBy",
+                    "receivedAt",
+                    "captured",
+                    "availableMinor",
+                    "heldMinor"
+                  ],
+                  "properties": {
+                    "returnDispatches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
+                      }
+                    },
+                    "order": {
+                      "$ref": "#/components/schemas/ReceiptOrderFacts"
                     },
                     "grnId": {
                       "type": "string"
@@ -171519,6 +171871,8 @@
                 "laneId",
                 "relayed",
                 "flags",
+                "loansMinor",
+                "safeDropsMinor",
                 "reviewed",
                 "reviewedBy",
                 "disposition",
@@ -171588,6 +171942,26 @@
                       "material_variance_without_reason"
                     ]
                   }
+                },
+                "loansMinor": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "safeDropsMinor": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
                 },
                 "reviewed": {
                   "type": "boolean"
@@ -223553,6 +223927,9 @@
           "manufacturedOn": {
             "type": "string"
           },
+          "mrpMinor": {
+            "type": "integer"
+          },
           "poId": {
             "anyOf": [
               {
@@ -223565,6 +223942,9 @@
           },
           "productId": {
             "type": "string"
+          },
+          "qcFailed": {
+            "type": "boolean"
           },
           "quantityMinor": {
             "type": "integer"
@@ -260758,6 +261138,12 @@
           },
           "exceptionRaised": {
             "type": "boolean"
+          },
+          "loansMinor": {
+            "type": "integer"
+          },
+          "safeDropsMinor": {
+            "type": "integer"
           },
           "storeId": {
             "type": "string"
@@ -316177,6 +316563,25 @@
         },
         "additionalProperties": true
       },
+      "ReceiptOrderFacts": {
+        "type": "object",
+        "required": [
+          "orderNumber",
+          "supplierId"
+        ],
+        "properties": {
+          "orderNumber": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "supplierName": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "ReceiptPolicy": {
         "type": "object",
         "required": [
@@ -316510,6 +316915,13 @@
           },
           "manufacturedOn": {
             "type": "string"
+          },
+          "mrpMinor": {
+            "type": "number"
+          },
+          "qcFailed": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true

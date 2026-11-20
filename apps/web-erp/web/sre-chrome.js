@@ -3040,7 +3040,7 @@
   }
   /** Batch 18a · B3: the four pages whose lists had no search — wired here, by the page's address, once its rows exist. */
   const LIST_SEARCHES = Object.freeze({
-    'goods-receipt': { before: 'register', lists: ['rows'] },
+    // Batch 20a · R5: Goods receipt review has its own lookup (GRN number, order number or supplier, and the days received).
     suppliers: { before: 'register', lists: ['rows'] },
     waste: { before: 'rows', lists: ['rows'] },
     approvals: { before: 'waiting-heading', lists: ['waiting', 'orders', 'mine'] },

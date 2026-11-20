@@ -1316,6 +1316,19 @@ export class PosSession {
     return this.promotions.filter((p) => !this.offerInForce(p)).map((p) => p.id);
   }
 
+  /**
+   * Batch 20a · T2 (M12-FR-01 price enquiry): the offers this till applies NOW — loaded from the signed pack, not refused
+   * (a carry bag, tobacco) and not held back by a clock hold (OB-403). Read-only; the price check only describes them.
+   */
+  offersInForce(): readonly Promotion[] {
+    return this.promotions.filter((p) => this.offerInForce(p));
+  }
+
+  /** Batch 20a · T2: this till's clock now, as offers are judged at checkout (SF-01). */
+  offerClock(): string {
+    return this.nowRef ?? this.config.clock?.() ?? new Date().toISOString();
+  }
+
   private offerInForce(p: Promotion): boolean {
     if (this.offerHoldCutoff === null) return true;
     const starts = Date.parse(p.startsAt);

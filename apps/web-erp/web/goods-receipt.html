@@ -127,6 +127,7 @@
       button.act:hover {   }
       button.act:active { transform: translateY(1px); }
       p.note { margin:0; color: var(--ink-2); font-size:15px; }
+      .lookup-actions { display:flex; flex-wrap:wrap; gap: var(--space-3); }
       section.form p.note { color: var(--muted); }
       p.result { margin:0; padding:12px 16px; background:var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); color:var(--ink-2); font-size:15px; display:flex; gap:10px; align-items:center; box-shadow: var(--shadow-sm); }
       p.result .icon { display:inline-flex; flex:none; width:20px; height:20px; align-items:center; justify-content:center; font-size:18px; }
@@ -156,6 +157,36 @@
       </div>
 
       <div class="stats" id="summary" role="status" aria-live="polite" hidden></div>
+
+      <!-- Batch 20a · R5 (M07-FR-01 "receiving and dock reports" · §27.1): look a delivery up — by its GRN number, its order
+           number or its supplier, and/or the days it was received (from – to). The tested rule is receiptsMatching in
+           apps/web-erp/src/goods-receipt-session.ts; this form only collects the words and the dates. -->
+      <section class="form" id="lookup" aria-labelledby="lookup-heading">
+        <h3 id="lookup-heading">Look up a delivery</h3>
+        <div class="grid">
+          <div>
+            <label for="lookup-text" id="lookup-text-label">GRN number, order number or supplier</label>
+            <input id="lookup-text" type="search" autocomplete="off" aria-describedby="lookup-text-help" />
+            <p class="help" id="lookup-text-help"></p>
+          </div>
+          <div>
+            <label for="lookup-from" id="lookup-from-label">Received from</label>
+            <input id="lookup-from" type="date" />
+            <p class="help" id="lookup-from-help"></p>
+          </div>
+          <div>
+            <label for="lookup-to" id="lookup-to-label">Received to</label>
+            <input id="lookup-to" type="date" />
+            <p class="help" id="lookup-to-help"></p>
+          </div>
+        </div>
+        <div class="lookup-actions">
+          <button id="lookup-show" class="act sre-btn sre-btn-primary" type="button">Show</button>
+          <button id="lookup-last-month" class="act sre-btn" type="button">Last month</button>
+          <button id="lookup-clear" class="act sre-btn" type="button">Clear</button>
+        </div>
+        <p class="note" id="lookup-status" role="status" aria-live="polite"></p>
+      </section>
 
       <h3 class="section" id="list-heading" hidden></h3>
       <div class="register" id="register">

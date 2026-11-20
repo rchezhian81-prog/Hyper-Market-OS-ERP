@@ -90,6 +90,8 @@ function rowNode(r) {
   // D-015: the cashier's reason in plain words from the tested session ("Wrong change given"), never the bare code.
   const reason = typeof r.reasonWords === 'string' && r.reasonWords !== '' ? r.reasonWords : r.reasonCode ? String(r.reasonCode).replace(/_/g, ' ') : '';
   if (reason !== '') { const rc = document.createElement('span'); rc.className = 'reason'; rc.textContent = `${t('reasonLabel')}: ${reason}`; facts.append(rc); }
+  // Batch 20a · T1 (M14-FR-01): the shift's cash loans and safe drops, each on its own, when the close kept them.
+  if (typeof r.movesWords === 'string' && r.movesWords !== '') { const mv = document.createElement('span'); mv.className = 'moves'; mv.textContent = r.movesWords; facts.append(mv); }
 
   li.append(head, status, facts);
   if (r.isOwnDrawer) { const own = document.createElement('div'); own.className = 'own'; own.textContent = t('yourDrawer'); li.append(own); }

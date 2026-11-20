@@ -93,6 +93,13 @@ export interface TillShiftCloseRecord {
   readonly toleranceKnown: boolean;
   readonly currency: string;
   readonly denominations?: readonly CountedDenomination[];
+  /**
+   * Batch 20a · T1 (M14-FR-01): of `openingFloatMinor`, how much came in as CASH LOANS (change added during the shift), and of
+   * `pickupsMinor`, how much went out as SAFE DROPS — so the close and the cash office see each kind on its own. Absent on a
+   * close recorded before batch 20a (the totals above already included them).
+   */
+  readonly loansMinor?: number;
+  readonly safeDropsMinor?: number;
   /** Who the box verified at the till, sealed (ADR-0023) — absent only where no till register is wired. */
   readonly operatorVerified?: OperatorStamp;
 }
@@ -140,6 +147,8 @@ export function readTillCashRecord(raw: unknown): TillCashRecord | undefined {
       toleranceMinor: r['toleranceMinor'] as number, toleranceKnown: r['toleranceKnown'] !== false,
       currency: str(r['currency']) ?? 'INR',
       ...(denominations === undefined ? {} : { denominations }),
+      ...(int(r['loansMinor']) === undefined ? {} : { loansMinor: int(r['loansMinor'])! }),
+      ...(int(r['safeDropsMinor']) === undefined ? {} : { safeDropsMinor: int(r['safeDropsMinor'])! }),
       ...(stampOf(r['operatorVerified']) === undefined ? {} : { operatorVerified: stampOf(r['operatorVerified'])! }),
     };
   }
@@ -319,6 +328,29 @@ export function shiftFigures(input: {
   return { openingFloatMinor, pickupsMinor, cashSalesMinor, cashRefundsMinor };
 }
 
+/** Batch 20a · T1: the shift's movements by kind — the float, the cash loans, the pickups and the safe drops (minor units). */
+export interface DrawerMovements {
+  readonly floatMinor: number;
+  readonly loansMinor: number;
+  readonly pickupsMinor: number;
+  readonly safeDropsMinor: number;
+}
+
+/** Batch 20a · T1 (M14-FR-01): what each kind of movement put into or took out of the drawer this shift, from the box's chain. */
+export function drawerMovements(chain: readonly TillCashMovementRecord[]): DrawerMovements {
+  const sum = (kind: CashMovementKind): number => chain.filter((m) => m.movementKind === kind).reduce((n, m) => n + m.amountMinor, 0);
+  return { floatMinor: sum('float_issue'), loansMinor: sum('loan'), pickupsMinor: sum('pickup'), safeDropsMinor: sum('safe_drop') };
+}
+
+/** Batch 20a · T1: a recorded close's movements by kind — undefined for a close from before 20a (no loans/drops kept). */
+export function drawerOfClose(close: TillShiftCloseRecord): DrawerMovements | undefined {
+  if (close.loansMinor === undefined || close.safeDropsMinor === undefined) return undefined;
+  return {
+    floatMinor: close.openingFloatMinor - close.loansMinor, loansMinor: close.loansMinor,
+    pickupsMinor: close.pickupsMinor - close.safeDropsMinor, safeDropsMinor: close.safeDropsMinor,
+  };
+}
+
 /**
  * The cash a return took OUT of the drawer: a cash refund's amount; on an EXCHANGE (SP-9b-ii · M13-FR-03) only a balance
  * refunded in cash — the credited value never left the drawer (it paid for the replacement as `exchange_credit`, and a
@@ -395,12 +427,14 @@ export function decideShiftClose(input: {
   if (!assessment.ok) {
     return { ok: false, refusedBecause: 'material_variance_needs_a_reason', detail: assessment.detail, varianceMinor: assessment.varianceMinor };
   }
+  // Batch 20a · T1: the loans and safe drops inside the float and pickup totals, kept on the close by kind.
+  const moved = drawerMovements(state.movementsSinceOpen);
   return {
     ok: true,
     record: {
       kind: 'close', shiftId: request.shiftId, tillId: state.tillId, laneId: input.laneId, cashierId: request.cashierId,
       tradingDay: input.tradingDay, openedAt: state.openedAt, closedAt: request.closedAt,
-      ...input.figures, countedMinor: request.countedMinor,
+      ...input.figures, countedMinor: request.countedMinor, loansMinor: moved.loansMinor, safeDropsMinor: moved.safeDropsMinor,
       expectedMinor: assessment.expectedMinor, varianceMinor: assessment.varianceMinor, exceptionRaised: assessment.exceptionRaised,
       reasonCode: assessment.reasonCode, toleranceMinor, toleranceKnown, currency: 'INR',
       ...(request.denominations === undefined ? {} : { denominations: request.denominations }),
@@ -488,6 +522,11 @@ export type ShiftCloseOutcome =
     readonly exceptionRaised: boolean;
     readonly reasonCode: string | null;
     readonly alreadyClosed?: true;
+    /**
+     * Batch 20a · T1: the shift's float, cash loans, pickups and safe drops — given only AFTER the count is made (the close
+     * is the answer to the count), never before, so the count stays blind (M14-FR-02). Absent on a close from before 20a.
+     */
+    readonly drawer?: DrawerMovements;
     readonly laneMessage: string;
   }
   | {

@@ -659,6 +659,15 @@ export async function acceptCarriedChecklist(
   return {};
 }
 
+/** Batch 20a · R5: what the receipts list says about the order a receipt was received against. */
+export interface ReceiptOrderFacts {
+  /** The order's document number (`PO/26-27/00001`), else its own number. */
+  readonly orderNumber: string;
+  readonly supplierId: string;
+  /** The supplier's name on head office's supplier register, when it holds one. */
+  readonly supplierName?: string;
+}
+
 export interface GoodsReceiptDeps {
   /**
    * OB-172: the receiving check a carried checklist names — an ACTIVE `receiving` check head office holds — and the way it
@@ -701,6 +710,12 @@ export interface GoodsReceiptDeps {
   /** SP-6 (M07-FR-03): record a line disposition and, for an accept, the released movement as ONE atomic append. */
   readonly commitDisposition: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void> | void;
   readonly now: () => string;
+  /**
+   * Batch 20a · R5 (M07-FR-01 "receiving and dock reports" · §27.1): each order's own number and its supplier (id and name),
+   * read ONCE for the receipts list so a delivery can be looked up by its order number or its supplier. Absent → the list
+   * carries no order facts (the screen then finds a receipt by its own number and order id only).
+   */
+  readonly orderFactsForList?: (tenantId: string) => Promise<ReadonlyMap<string, ReceiptOrderFacts>>;
   /** F03 — the product's receiving rules from the PRODUCT MASTER; `undefined` when the product is not on it. */
   readonly productRule: (tenantId: string, productId: string) => Promise<ProductReceiptRules | undefined> | ProductReceiptRules | undefined;
   /** OB-31 · SF-11: the unit the product master counts the product in (its base unit), or undefined when it does not know it. */
@@ -1864,12 +1879,16 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
     const all = (await deps.all(ctx.tenantId)).filter((g) => scope.covers(g.warehouseId));
     const waiting = all.filter(awaitsDecision);
     const ordered = [...waiting, ...all.filter((g) => !awaitsDecision(g))];
+    // Batch 20a · R5: each receipt's order number and supplier, read once for the whole list.
+    const orderFacts = deps.orderFactsForList === undefined ? undefined : await deps.orderFactsForList(ctx.tenantId);
     // OB-204: each supplier return's dispatch state, so the screen can say it before anyone presses Dispatch.
     const receipts = await Promise.all(ordered.map(async (g) => {
       const returnDispatches = await supplierReturnDispatchStatuses(deps, ctx.tenantId, g);
       // OB-508: each discrepancy's named owner, on the list too.
       const owned = await withDiscrepancyOwners(deps, ctx.tenantId, g);
-      return returnDispatches === undefined ? owned : { ...owned, returnDispatches };
+      const order = g.poId === null ? undefined : orderFacts?.get(g.poId);
+      const withOrder = order === undefined ? owned : { ...owned, order };
+      return returnDispatches === undefined ? withOrder : { ...withOrder, returnDispatches };
     }));
     return {
       status: 200,

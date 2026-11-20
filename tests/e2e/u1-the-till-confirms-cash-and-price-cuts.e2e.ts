@@ -180,7 +180,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-698 A: the till confirms before money moves o
     // ── Cash to safe: its own words, the same step. The budget, counted: More · Cash to safe · four digits · OK · the verb.
     const safe = new Tally(page);
     await safe.tap('#more');
-    await safe.tap('#pay-kinds button:text-is("Cash to safe")');
+    await safe.tap('#pay-kinds button:text-is("Pickup (manager takes cash to the safe)")');
     await keyDigits(page, '1000');
     safe.count += 4;
     await safe.tap('#sheet-ok');

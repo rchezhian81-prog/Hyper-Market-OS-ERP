@@ -272,7 +272,7 @@ import {
   type AdapterHealthView, type AdapterHealthState,
 } from './integration-health-session';
 import {
-  createGoodsReceiptSession, receiptQuantitiesByUom, receiptItemLines, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
+  createGoodsReceiptSession, receiptQuantitiesByUom, receiptItemLines, receiptsMatching, receiptLookupProblem, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
   type GrnLineDispatchPort, type LineDispatchPostResult, type GrnReturnDispatchView,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView, type GrnDiscrepancyOwnerView,
   type GrnBillMatchPort,
@@ -457,6 +457,8 @@ export interface ManagerData {
   readonly receivingChecklist?: unknown;
   /** B4 · OB-504: the products head office makes PACKED (absent = not told). */
   readonly packedProductIds?: unknown;
+  /** Batch 20a · R7: head office's case sizes for counted products (absent = not told). */
+  readonly casePacks?: unknown;
   /** Fix batch 4b · D-029: the deliveries this store waits for, the items' names and the batch-tracked products (absent = not told). */
   readonly openDeliveries?: unknown;
   readonly deliveriesAsAt?: unknown;
@@ -2567,6 +2569,8 @@ function openSignOffPort(): OverShortSignOffPort {
 interface RawOverShortRow {
   readonly shiftId: string; readonly tillId: string; readonly cashierId: string; readonly tradingDay: string;
   readonly varianceMinor: number; readonly reasonCode: string | null; readonly reviewed: boolean;
+  /** Batch 20a · T1: the shift's cash loans and safe drops (null: the close did not keep them by kind). */
+  readonly loansMinor?: number | null; readonly safeDropsMinor?: number | null;
 }
 
 /** Read the live over/short worklist (a GET — read-only) and keep only the OPEN (unsigned) rows — the ones the
@@ -2586,6 +2590,8 @@ export async function fetchOverShortWorklist(): Promise<OverShortRead> {
       .map((r) => ({
         shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay,
         varianceMinor: r.varianceMinor, reasonCode: r.reasonCode,
+        ...(typeof r.loansMinor === 'number' ? { loansMinor: r.loansMinor } : {}),
+        ...(typeof r.safeDropsMinor === 'number' ? { safeDropsMinor: r.safeDropsMinor } : {}),
       }));
     return { result: 'read', worklist: { openCount: open.length, totalVarianceMinor: open.reduce((s, r) => s + r.varianceMinor, 0), open } };
   } catch {
@@ -3465,6 +3471,30 @@ export async function readBoxProductNames(): Promise<ReadonlyMap<string, string>
   }
 }
 
+/** Batch 20a · R7 (M03-FR-02): the case sizes the store computer sent, read strictly; `{}` when it sent none. */
+export function readCasePacks(raw: unknown): { casePacks?: Record<string, { level: string; units: number }[]> } {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, { level: string; units: number }[]> = {};
+  for (const [productId, levels] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(levels)) continue;
+    const kept = levels.flatMap((l): { level: string; units: number }[] => {
+      const x = (l ?? {}) as Record<string, unknown>;
+      return typeof x['level'] === 'string' && x['level'] !== '' && Number.isSafeInteger(x['units']) && (x['units'] as number) > 1 ? [{ level: x['level'], units: x['units'] as number }] : [];
+    });
+    if (kept.length > 0) out[productId] = kept;
+  }
+  return { casePacks: out };
+}
+
+/** Batch 20a · R5: a receipt's order facts as head office's list carries them (`order`), kept only when they read right. */
+export function orderFactsOf(raw: unknown): { orderNumber?: string; supplierId?: string; supplierName?: string } {
+  if (raw === null || typeof raw !== 'object') return {};
+  const o = raw as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v : undefined);
+  const orderNumber = str(o['orderNumber']); const supplierId = str(o['supplierId']); const supplierName = str(o['supplierName']);
+  return { ...(orderNumber === undefined ? {} : { orderNumber }), ...(supplierId === undefined ? {} : { supplierId }), ...(supplierName === undefined ? {} : { supplierName }) };
+}
+
 export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): Promise<GoodsReceiptData | null> {
   const body = await getInventory(path);
   if (body === null || !Array.isArray(body['receipts'])) return null;
@@ -3538,6 +3568,8 @@ export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): P
       grnId: String(g['grnId'] ?? ''), number: String(g['documentNumber'] ?? g['number'] ?? '') /* OB-847: its format-A number when it has one */,
       ...(typeof g['documentNumber'] === 'string' ? { reference: String(g['number'] ?? g['grnId'] ?? '') } : {}),
       poId: typeof g['poId'] === 'string' ? g['poId'] : null,
+      // Batch 20a · R5: the order's number and its supplier, for looking a delivery up.
+      ...orderFactsOf(g['order']),
       warehouseId: String(g['warehouseId'] ?? ''), receivedBy: String(g['receivedBy'] ?? ''),
       receivedAt: String(g['receivedAt'] ?? ''),
       requiresApproval: captured['requiresApproval'] === true,
@@ -6092,6 +6124,8 @@ export function bootManager(config?: {
       })(),
       // B4 · OB-504: read strictly — only a list of product ids counts as being told.
       ...(Array.isArray(data?.packedProductIds) ? { packedProductIds: (data.packedProductIds as unknown[]).filter((p): p is string => typeof p === 'string') } : {}),
+      // Batch 20a · R7: read strictly — a product id with whole case sizes above 1; anything else is left out.
+      ...readCasePacks(data?.casePacks),
       // Fix batch 4b · D-029: read strictly — what is not a whole delivery, name or id is left out, never guessed.
       ...readReceivingAids(data),
     },
@@ -7541,6 +7575,8 @@ if (browserWindow !== undefined) {
   const grnLineDispatchPort = openGrnLineDispatchPort(); // OB-204
   const grnBillMatchPort = openGrnBillMatchPort(); // R9-A · OB-534
   const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined, grnLineReturnPort, grnLineDispatchPort, grnBillMatchPort);
+  // Batch 20a · R5: the tested lookup (GRN number, order number or supplier, and the days received) for the page's form.
+  (browserWindow as unknown as { goodsReceiptLookup?: unknown }).goodsReceiptLookup = Object.freeze({ matching: receiptsMatching, problem: receiptLookupProblem });
   if (goodsReceipt !== null) {
     browserWindow.goodsReceiptSession = goodsReceipt;
     browserWindow.goodsReceipt = {

@@ -40,6 +40,9 @@ export interface OverShortView {
   readonly varianceMinor: number;
   /** The reason the cashier gave for the material variance at close (never blank for a material one). */
   readonly reasonCode: string | null;
+  /** Batch 20a · T1 (M14-FR-01): the shift's cash loans and safe drops (paise), when the close kept them by kind. */
+  readonly loansMinor?: number | null;
+  readonly safeDropsMinor?: number | null;
 }
 
 /** The worklist body (`GET /v1/shifts/over-short`). Only the OPEN (unsigned) rows are worked here; the route
@@ -107,7 +110,8 @@ export type CopyKey =
   | 'signRecorded' | 'signRefused' | 'signLostLink'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noReview'
   | 'nobodyNamed' | 'staleShell' | 'sampleData'
-  | 'notKnown' | 'whyNotReadYet' | 'whyUnreachable' | 'whyRefused' | 'boxHeading' | 'boxLead' | 'boxNone';
+  | 'notKnown' | 'whyNotReadYet' | 'whyUnreachable' | 'whyRefused' | 'boxHeading' | 'boxLead' | 'boxNone'
+  | 'loansLabel' | 'safeDropsLabel';
 
 export const CASH_OFFICE_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -138,6 +142,7 @@ export const CASH_OFFICE_COPY: BilingualCopy<CopyKey> = {
     boxHeading: 'Recorded on this store computer',
     boxLead: 'These drawers closed over or short beyond the tolerance in the last {days} trading days, by this store computer’s own records. Whether head office has signed them off is not known until head office can be read — they cannot be signed off from here until then.',
     boxNone: 'This store computer recorded no drawer closing over or short beyond the tolerance in the last {days} trading days — but head office could not be read, so a drawer closed on another computer is not known.',
+    loansLabel: 'Cash loans (change added)', safeDropsLabel: 'Safe drops',
   },
   ta: {
     title: 'கூடுதல் / குறைவு கையொப்பம்', langName: 'English',
@@ -167,6 +172,7 @@ export const CASH_OFFICE_COPY: BilingualCopy<CopyKey> = {
     boxHeading: 'இந்தக் கடைக் கணினியில் பதிவானவை',
     boxLead: 'இந்தக் கடைக் கணினியின் சொந்தப் பதிவுகளின்படி, கடந்த {days} வர்த்தக நாட்களில் இந்தப் பணப்பெட்டிகள் சகிப்புத்தன்மையை மீறி கூடுதலாகவோ குறைவாகவோ மூடப்பட்டன. தலைமை அலுவலகம் இவற்றைக் கையொப்பமிட்டதா என்பது அதைப் படிக்கும் வரை தெரியாது — அதுவரை இங்கிருந்து கையொப்பமிட முடியாது.',
     boxNone: 'கடந்த {days} வர்த்தக நாட்களில் சகிப்புத்தன்மையை மீறி கூடுதலாகவோ குறைவாகவோ மூடப்பட்ட பணப்பெட்டி எதையும் இந்தக் கடைக் கணினி பதிவு செய்யவில்லை — ஆனால் தலைமை அலுவலகத்தைப் படிக்க முடியவில்லை, எனவே வேறு கணினியில் மூடப்பட்ட பணப்பெட்டி தெரியாது.',
+    loansLabel: 'பணக் கடன் (சேர்த்த சில்லறை)', safeDropsLabel: 'பெட்டகத்தில் போட்டவை',
   },
 };
 
@@ -196,6 +202,8 @@ export interface PresentedOverShort {
   readonly reasonCode: string | null;
   /** D-015: the cashier's reason in plain words ("Wrong change given"); null when none was given. */
   readonly reasonWords: string | null;
+  /** Batch 20a · T1: "Cash loans (change added): ₹500.00 · Safe drops: ₹1,000.00" — null when the close kept neither. */
+  readonly movesWords: string | null;
   /** True when the logged-in reviewer counted this drawer — the screen flags it and refuses the sign-off. */
   readonly isOwnDrawer: boolean;
   /** Every open over/short needs attention (P-03) — a degraded tone with an icon and word. */
@@ -274,6 +282,16 @@ export function cashierReasonWords(lang: Lang, code: string | null): string | nu
   return plain.charAt(0).toUpperCase() + plain.slice(1);
 }
 
+/** Batch 20a · T1 (M14-FR-01): the shift's cash loans and safe drops in words, each only when there was one. */
+export function movesWords(lang: Lang, r: Pick<OverShortView, 'loansMinor' | 'safeDropsMinor'>): string | null {
+  const t = translator(CASH_OFFICE_COPY, lang);
+  const parts = [
+    typeof r.loansMinor === 'number' && r.loansMinor > 0 ? `${t('loansLabel')}: ${rupees(r.loansMinor)}` : null,
+    typeof r.safeDropsMinor === 'number' && r.safeDropsMinor > 0 ? `${t('safeDropsLabel')}: ${rupees(r.safeDropsMinor)}` : null,
+  ].filter((x): x is string => x !== null);
+  return parts.length === 0 ? null : parts.join(' · ');
+}
+
 const isDisposition = (v: string): v is OverShortDisposition => (OVER_SHORT_DISPOSITIONS as readonly string[]).includes(v);
 
 export function createCashOfficeSession(config: CashOfficeConfig, ports: CashOfficePorts): CashOfficeSession {
@@ -294,6 +312,7 @@ export function createCashOfficeSession(config: CashOfficeConfig, ports: CashOff
       varianceMinor: r.varianceMinor,
       reasonCode: r.reasonCode,
       reasonWords: cashierReasonWords(lang, r.reasonCode),
+      movesWords: movesWords(lang, r),
       isOwnDrawer,
       // Every open over/short is work — a degraded tone that asks for a glance (P-03). Colour is never the
       // only signal: an icon and the direction word ride with it. The worklist ordering puts the biggest

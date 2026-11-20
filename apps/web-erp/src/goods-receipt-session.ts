@@ -100,6 +100,10 @@ export interface GrnRecordView {
   readonly reference?: string;
   /** The purchase order it was received against, or `null` for an unmatched (no-PO) delivery. */
   readonly poId: string | null;
+  /** Batch 20a · R5: the order's own number (`PO/26-27/00001`) and its supplier, as head office's list carries them. */
+  readonly orderNumber?: string;
+  readonly supplierId?: string;
+  readonly supplierName?: string;
   readonly warehouseId: string;
   readonly receivedBy: string;
   readonly receivedAt: string;
@@ -506,7 +510,13 @@ export interface PresentedReceipt {
   readonly status: StatusPresentation;
   readonly grnId: string;
   readonly number: string;
+  /** OB-847: the delivery's own reference it was booked as. */
+  readonly reference?: string;
   readonly poId: string | null;
+  /** Batch 20a · R5: the order's number and supplier, for the lookup and the row. */
+  readonly orderNumber?: string;
+  readonly supplierId?: string;
+  readonly supplierName?: string;
   readonly warehouseId: string;
   readonly receivedBy: string;
   readonly receivedAt: string;
@@ -606,6 +616,54 @@ const DISPATCH_WORDS: Readonly<Record<Exclude<GrnReturnDispatchView['state'], 'n
   dispatched: { key: 'dispDispatched', tone: 'ok' },
   not_known: { key: 'dispNotKnown', tone: 'unknown' },
 });
+
+/**
+ * Batch 20a · R5 (M07-FR-01 "receiving and dock reports" · roadmap §27.1): look a delivery up by its GRN number (or the
+ * reference it was booked as), its order number or order id, or its supplier (code or name) — every word typed must be in
+ * one of those — and/or by the day it was received, from and to (shop days, both ends included). An empty lookup keeps every
+ * delivery. `dayOf` turns a receipt's moment into the shop's own day (YYYY-MM-DD); a receipt whose day cannot be told is
+ * left out of a date range, never guessed in. Pure; it reads nothing and saves nothing.
+ */
+export interface ReceiptLookup {
+  readonly text?: string;
+  readonly from?: string;
+  readonly to?: string;
+}
+
+/** A lookup's dates that make no sense (not a real day, or "from" after "to") — said before anything is filtered. */
+export type ReceiptLookupProblem = 'from_not_a_day' | 'to_not_a_day' | 'from_after_to';
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const realDay = (v: string): boolean => DAY.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+
+export function receiptLookupProblem(q: ReceiptLookup): ReceiptLookupProblem | null {
+  const from = (q.from ?? '').trim(); const to = (q.to ?? '').trim();
+  if (from !== '' && !realDay(from)) return 'from_not_a_day';
+  if (to !== '' && !realDay(to)) return 'to_not_a_day';
+  if (from !== '' && to !== '' && from > to) return 'from_after_to';
+  return null;
+}
+
+export function receiptsMatching<R extends Pick<PresentedReceipt, 'grnId' | 'number' | 'reference' | 'poId' | 'orderNumber' | 'supplierId' | 'supplierName' | 'receivedAt'>>(
+  receipts: readonly R[], q: ReceiptLookup, dayOf: (iso: string) => string | null,
+): readonly R[] {
+  if (receiptLookupProblem(q) !== null) return [];
+  const words = (q.text ?? '').trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+  const from = (q.from ?? '').trim(); const to = (q.to ?? '').trim();
+  return receipts.filter((r) => {
+    if (words.length > 0) {
+      const hay = [r.number, r.reference ?? '', r.grnId, r.poId ?? '', r.orderNumber ?? '', r.supplierId ?? '', r.supplierName ?? ''].join(' ').toLowerCase();
+      if (!words.every((w) => hay.includes(w))) return false;
+    }
+    if (from !== '' || to !== '') {
+      const day = r.receivedAt === '' ? null : dayOf(r.receivedAt);
+      if (day === null || !DAY.test(day)) return false;
+      if (from !== '' && day < from) return false;
+      if (to !== '' && day > to) return false;
+    }
+    return true;
+  });
+}
 
 /** OB-31: a quantity in its smallest steps → what a person reads (12 items; 2.5 kg). */
 export function quantityForPerson(quantityMinor: number, uom: string): string {
@@ -898,7 +956,9 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
             ownerLabel: ownerWords(lang, d.owner), valueNotKnown: d.valueNotKnown === true,
           }));
         return {
-          status, grnId: g.grnId, number: g.number, ...(g.reference === undefined ? {} : { reference: g.reference }), poId: g.poId, warehouseId: g.warehouseId,
+          status, grnId: g.grnId, number: g.number, ...(g.reference === undefined ? {} : { reference: g.reference }), poId: g.poId,
+          ...(g.orderNumber === undefined ? {} : { orderNumber: g.orderNumber }), ...(g.supplierId === undefined ? {} : { supplierId: g.supplierId }),
+          ...(g.supplierName === undefined ? {} : { supplierName: g.supplierName }), warehouseId: g.warehouseId,
           receivedBy: g.receivedBy, receivedAt: g.receivedAt, needsApproval: g.requiresApproval,
           discrepancyValueMinor: g.discrepancyValueMinor, currency: g.currency,
           sellableMinor: g.sellableMinor, quarantinedMinor: g.quarantinedMinor, rejectedMinor: g.rejectedMinor,

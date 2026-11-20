@@ -97,6 +97,53 @@ const VIEW_WORDS = {
 };
 const vw = (key) => VIEW_WORDS[lang]?.[key] ?? VIEW_WORDS.en[key] ?? key;
 
+// ── Batch 20a · R5 (M07-FR-01 · §27.1): look a delivery up by GRN number, order number or supplier, and the days received ──
+// The rule is the tested `receiptsMatching` (window.goodsReceiptLookup); this only keeps what was typed and says the result.
+const LOOKUP_WORDS = {
+  en: {
+    heading: 'Look up a delivery', text: 'GRN number, order number or supplier', textHelp: 'For example GRN1/26-27/00012, PO/26-27/00040 or the supplier\'s name. Every word typed must match.',
+    from: 'Received from', fromHelp: 'The first day (leave empty for no start).', to: 'Received to', toHelp: 'The last day (leave empty for no end).',
+    show: 'Show', lastMonth: 'Last month', clear: 'Clear',
+    showing: 'Showing {n} of {total} deliveries that match.', none: 'No delivery matches. Check the number or the supplier, or widen the dates.',
+    from_not_a_day: '"Received from" is not a real date.', to_not_a_day: '"Received to" is not a real date.', from_after_to: '"Received from" is after "Received to". Swap the dates.',
+    supplier: 'Supplier', order: 'Order',
+  },
+  ta: {
+    heading: 'ஒரு டெலிவரியைத் தேடு', text: 'GRN எண், ஆர்டர் எண் அல்லது சப்ளையர்', textHelp: 'உதா: GRN1/26-27/00012, PO/26-27/00040 அல்லது சப்ளையரின் பெயர். தட்டச்சு செய்த ஒவ்வொரு சொல்லும் பொருந்த வேண்டும்.',
+    from: 'பெற்ற தேதி முதல்', fromHelp: 'முதல் நாள் (தொடக்கம் இல்லையெனில் காலியாக விடவும்).', to: 'பெற்ற தேதி வரை', toHelp: 'கடைசி நாள் (முடிவு இல்லையெனில் காலியாக விடவும்).',
+    show: 'காட்டு', lastMonth: 'கடந்த மாதம்', clear: 'அழி',
+    showing: '{total} டெலிவரிகளில் பொருந்தும் {n} காட்டப்படுகின்றன.', none: 'எந்த டெலிவரியும் பொருந்தவில்லை. எண்ணையோ சப்ளையரையோ சரிபார்க்கவும், அல்லது தேதிகளை விரிவாக்கவும்.',
+    from_not_a_day: '"பெற்ற தேதி முதல்" சரியான தேதி அல்ல.', to_not_a_day: '"பெற்ற தேதி வரை" சரியான தேதி அல்ல.', from_after_to: '"பெற்ற தேதி முதல்" என்பது "பெற்ற தேதி வரை"க்குப் பின் உள்ளது. தேதிகளை மாற்றவும்.',
+    supplier: 'சப்ளையர்', order: 'ஆர்டர்',
+  },
+};
+const lw = (key) => LOOKUP_WORDS[lang]?.[key] ?? LOOKUP_WORDS.en[key] ?? key;
+/** The lookup in force (applied by Show), or null when every delivery is shown. */
+let lookup = null;
+const shopDayOf = (iso) => { const d = window.sreShopDay?.dateOf(iso) ?? ''; return d === '' ? null : d; };
+function paintLookupWords() {
+  el('lookup-heading').textContent = lw('heading');
+  el('lookup-text-label').textContent = lw('text');
+  el('lookup-text-help').textContent = lw('textHelp');
+  el('lookup-from-label').textContent = lw('from');
+  el('lookup-from-help').textContent = lw('fromHelp');
+  el('lookup-to-label').textContent = lw('to');
+  el('lookup-to-help').textContent = lw('toHelp');
+  worded(el('lookup-show'), 'search', lw('show'));
+  worded(el('lookup-last-month'), 'calendar', lw('lastMonth'));
+  worded(el('lookup-clear'), 'x', lw('clear'));
+}
+/** The deliveries the lookup keeps (all of them when none is in force), and the line that says so. */
+function lookedUp(receipts) {
+  const api = window.goodsReceiptLookup;
+  if (lookup === null || !api) { el('lookup-status').textContent = ''; return receipts; }
+  const problem = api.problem(lookup);
+  if (problem !== null) { el('lookup-status').textContent = lw(problem); return receipts; }
+  const kept = api.matching(receipts, lookup, shopDayOf);
+  el('lookup-status').textContent = kept.length === 0 ? lw('none') : lw('showing').replace('{n}', String(kept.length)).replace('{total}', String(receipts.length));
+  return kept;
+}
+
 /** OB-205: a tone's shape from the one icon set (sre-icons.js), with the session's glyph only if the set is missing. */
 function toneMark(holder, tone, glyph) {
   const mark = window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(window.sreIcon.forTone(tone), 16) : null;
@@ -152,7 +199,10 @@ function receiptNode(r) {
   headline.textContent = r.number;
   id.append(headline);
   // OB-847: under the new number, the delivery's own reference it was booked as.
-  for (const line of [r.reference ?? '', r.poId ?? t('noPo'), r.receivedAt ? shopWhen(r.receivedAt) : '']) {
+  // Batch 20a · R5: the order by its own number and the supplier by name, so the lookup's words are on the row.
+  const orderLine = r.poId === null ? t('noPo') : `${lw('order')}: ${r.orderNumber ?? r.poId}`;
+  const supplierLine = r.supplierName || r.supplierId ? `${lw('supplier')}: ${r.supplierName ?? r.supplierId}` : '';
+  for (const line of [r.reference ?? '', orderLine, supplierLine, r.receivedAt ? shopWhen(r.receivedAt) : '']) {
     if (line === '') continue;
     const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = line; id.append(sub);
   }
@@ -390,6 +440,7 @@ function paint() {
   el('col-status').textContent = vw('colStatus');
   el('col-facts').textContent = vw('colFacts');
   el('col-value').textContent = vw('colValue');
+  paintLookupWords();
   paintReturner(view);
 
   // A not-permitted / nothing-yet state has no rows: show the state line rather than an empty list.
@@ -416,8 +467,30 @@ function paint() {
   ]);
   el('list-heading').hidden = false;
   el('list-heading').textContent = t('listHeading');
-  el('rows').replaceChildren(...view.receipts.map((r) => receiptNode(r)));
+  el('rows').replaceChildren(...lookedUp(view.receipts).map((r) => receiptNode(r)));
 }
+
+// Batch 20a · R5: Show applies the lookup; Last month fills the dates with last month's first and last day; Clear shows all.
+el('lookup-show').addEventListener('click', () => {
+  lookup = { text: el('lookup-text').value, from: el('lookup-from').value, to: el('lookup-to').value };
+  if (lookup.text.trim() === '' && lookup.from === '' && lookup.to === '') lookup = null;
+  paint();
+});
+el('lookup-text').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el('lookup-show').click(); } });
+el('lookup-last-month').addEventListener('click', () => {
+  const month = window.sreShopDay?.lastMonth?.() ?? '';
+  if (!/^\d{4}-\d{2}$/.test(month)) return;
+  const [y, m] = month.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  el('lookup-from').value = `${month}-01`;
+  el('lookup-to').value = `${month}-${String(lastDay).padStart(2, '0')}`;
+  el('lookup-show').click();
+});
+el('lookup-clear').addEventListener('click', () => {
+  el('lookup-text').value = ''; el('lookup-from').value = ''; el('lookup-to').value = '';
+  lookup = null;
+  paint();
+});
 
 // GONE BACK TO THE SUPPLIER — an online write under the reader's session, on this click only; the session checks the line
 // is waiting (and not one needing a count first) before anything is sent; head office decides.

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2535,
+  "testFiles": 2543,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -283,10 +283,10 @@
       "id": "M03",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 22,
-        "integration": 24,
-        "realDb": 6,
-        "browser": 9,
+        "unit": 24,
+        "integration": 25,
+        "realDb": 7,
+        "browser": 10,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -294,6 +294,8 @@
       "files": {
         "unit": [
           "tests/unit/a-scale-label-rule-reads-one-way-only.test.ts",
+          "tests/unit/b20a-the-handheld-takes-the-pack-mrp-and-a-failed-check-and-the-box-serves-case-sizes.test.ts",
+          "tests/unit/b20a-till-loan-drop-price-check-lookup-and-cases.test.ts",
           "tests/unit/catalogue-preview.test.ts",
           "tests/unit/catalogue-snapshot-builder.test.ts",
           "tests/unit/catalogue.test.ts",
@@ -321,6 +323,7 @@
           "tests/integration/a-pack-is-published-with-one-mrp-and-a-care-contact.test.ts",
           "tests/integration/ai-data-quality-worklist.test.ts",
           "tests/integration/ai-data-quality.test.ts",
+          "tests/integration/b20a-receiving-lookup-case-packs-and-the-handhelds-mrp-and-failed-check.test.ts",
           "tests/integration/barcode-register.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
           "tests/integration/catalogue-pack-publish.test.ts",
@@ -343,6 +346,7 @@
           "tests/integration/w4-an-incomplete-product-is-kept-as-a-draft-and-never-reaches-a-pack.test.ts"
         ],
         "realDb": [
+          "tests/integration/b20a-receiving-lookup-case-packs-and-the-handhelds-mrp-and-failed-check.test.ts",
           "tests/integration/head-office-scale-label-rules-ride-the-signed-pack.test.ts",
           "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
@@ -351,6 +355,7 @@
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts"
         ],
         "browser": [
+          "tests/e2e/b20a-receive-takes-cases-times-pack-size.e2e.ts",
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
           "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
@@ -656,10 +661,10 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
-        "integration": 37,
-        "realDb": 14,
-        "browser": 14,
+        "unit": 20,
+        "integration": 38,
+        "realDb": 15,
+        "browser": 17,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -667,6 +672,8 @@
       "files": {
         "unit": [
           "tests/unit/b18a-receive-takes-the-pack-mrp-and-a-failed-quality-check.test.ts",
+          "tests/unit/b20a-the-handheld-takes-the-pack-mrp-and-a-failed-check-and-the-box-serves-case-sizes.test.ts",
+          "tests/unit/b20a-till-loan-drop-price-check-lookup-and-cases.test.ts",
           "tests/unit/d017-a-delivery-is-booked-where-the-order-says.test.ts",
           "tests/unit/d029-receive-against-an-order-with-batch-expiry-and-damaged.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -694,6 +701,7 @@
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/b18a-receive-carries-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/integration/b18c-r2-a-saved-goods-receipt-is-corrected-by-a-compensating-entry.test.ts",
+          "tests/integration/b20a-receiving-lookup-case-packs-and-the-handhelds-mrp-and-failed-check.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/d029-a-relayed-receipt-carries-expiry-and-damaged.test.ts",
@@ -730,6 +738,7 @@
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/b18a-receive-carries-the-pack-mrp-and-a-failed-quality-check.test.ts",
+          "tests/integration/b20a-receiving-lookup-case-packs-and-the-handhelds-mrp-and-failed-check.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
@@ -744,6 +753,9 @@
           "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts",
           "tests/e2e/b18a-receive-mrp-and-failed-check-and-list-search.e2e.ts",
           "tests/e2e/b18c-r2-a-saved-receipt-is-corrected-on-goods-receipt-review.e2e.ts",
+          "tests/e2e/b20a-goods-receipt-review-looks-a-delivery-up.e2e.ts",
+          "tests/e2e/b20a-receive-takes-cases-times-pack-size.e2e.ts",
+          "tests/e2e/b20a-the-handheld-takes-the-pack-mrp-and-a-failed-check.e2e.ts",
           "tests/e2e/fix-batch5-the-back-store-and-receiving-work-by-name.e2e.ts",
           "tests/e2e/goods-receipt-delivery.e2e.ts",
           "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
@@ -1189,10 +1201,10 @@
       "id": "M12",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 21,
+        "unit": 22,
         "integration": 27,
         "realDb": 7,
-        "browser": 17,
+        "browser": 18,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -1200,6 +1212,7 @@
       "files": {
         "unit": [
           "tests/unit/a-quotation-is-made-in-the-office-and-rung-up-at-the-till.test.ts",
+          "tests/unit/b20a-till-loan-drop-price-check-lookup-and-cases.test.ts",
           "tests/unit/catalogue-preview.test.ts",
           "tests/unit/catalogue.test.ts",
           "tests/unit/customer-display-frame.test.ts",
@@ -1260,6 +1273,7 @@
           "tests/integration/the-store-trades-a-day.test.ts"
         ],
         "browser": [
+          "tests/e2e/b20a-the-till-takes-a-cash-loan-a-safe-drop-and-checks-a-price.e2e.ts",
           "tests/e2e/core-one-lane.test.ts",
           "tests/e2e/the-manager-opens-a-lanes-health-from-today.e2e.ts",
           "tests/e2e/the-served-till-checks-pack-dates-bis-licences-and-recalled-returns.e2e.ts",
@@ -1395,10 +1409,10 @@
       "id": "M14",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 21,
-        "integration": 20,
-        "realDb": 8,
-        "browser": 11,
+        "unit": 22,
+        "integration": 21,
+        "realDb": 9,
+        "browser": 12,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1407,6 +1421,7 @@
         "unit": [
           "tests/unit/assess-cash.test.ts",
           "tests/unit/assess-shift.test.ts",
+          "tests/unit/b20a-till-loan-drop-price-check-lookup-and-cases.test.ts",
           "tests/unit/cash.test.ts",
           "tests/unit/day-close.test.ts",
           "tests/unit/denominations.test.ts",
@@ -1432,6 +1447,7 @@
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
+          "tests/integration/b20a-t1-a-cash-loan-and-a-safe-drop-reach-the-close-and-the-cash-office.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/day-close-reaches-the-cloud.test.ts",
@@ -1454,12 +1470,14 @@
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
+          "tests/integration/b20a-t1-a-cash-loan-and-a-safe-drop-reach-the-close-and-the-cash-office.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/m14-fr-04-a-closed-day-has-a-sealed-evidence-pack.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts"
         ],
         "browser": [
+          "tests/e2e/b20a-the-till-takes-a-cash-loan-a-safe-drop-and-checks-a-price.e2e.ts",
           "tests/e2e/cash-office-signoff-delivery.e2e.ts",
           "tests/e2e/day-reopen-delivery.e2e.ts",
           "tests/e2e/fix-batch3-the-day-close-names-its-day-and-waits-for-the-closing-checklist.e2e.ts",

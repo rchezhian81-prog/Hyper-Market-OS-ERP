@@ -198,6 +198,10 @@ export interface ReceivingScanRecord {
   readonly coldChainHeld?: Exclude<ColdChainVerdict, 'ok' | 'not_cold_chain'>;
   /** B4 · OB-504: the batch's month and year (or date) of manufacture as the worker typed it off the pack. */
   readonly manufacturedOn?: string;
+  /** Batch 20a (M07-FR-02): the MRP printed on the pack, in paise, as the worker keyed it — the assembled receipt compares it. */
+  readonly mrpMinor?: number;
+  /** Batch 20a (M07-FR-02/03): these units failed the quality check or were refused at the door (held out of stock). */
+  readonly qcFailed?: true;
 }
 
 export interface ReceivingScanDeps {
@@ -242,6 +246,8 @@ interface RelayedScan {
   readonly receivedBy: string; readonly storeId: string; readonly at: string;
   readonly temperatureC?: number;
   readonly manufacturedOn?: string;
+  readonly mrpMinor?: number;
+  readonly qcFailed?: true;
 }
 
 function readRelayedScan(body: unknown, commandId: string, now: string): RelayedScan | undefined {
@@ -254,12 +260,21 @@ function readRelayedScan(body: unknown, commandId: string, now: string): Relayed
   // B4 · OB-504: the manufacture date as text (judged below against the product master), or absent.
   const manufacturedOn = body['manufacturedOn'];
   if (!(manufacturedOn === undefined || manufacturedOn === null || typeof manufacturedOn === 'string')) return undefined;
+  // Batch 20a: the MRP on the pack in paise above zero, or absent; "failed the check" is true or absent — anything else is unreadable.
+  const mrpMinor = body['mrpMinor'];
+  if (!(mrpMinor === undefined || mrpMinor === null || (typeof mrpMinor === 'number' && Number.isSafeInteger(mrpMinor) && mrpMinor > 0))) return undefined;
+  const qcFailed = body['qcFailed'];
+  if (!(qcFailed === undefined || qcFailed === null || typeof qcFailed === 'boolean')) return undefined;
+  // A failed scan is never put on the sellable position, whatever state it names.
+  const stated = isStr(body['state']) ? body['state'] : 'on_hand';
   return {
+    ...(typeof mrpMinor === 'number' ? { mrpMinor } : {}),
+    ...(qcFailed === true ? { qcFailed: true as const } : {}),
     ...(typeof temperatureC === 'number' ? { temperatureC } : {}),
     ...(typeof manufacturedOn === 'string' && manufacturedOn.trim() !== '' ? { manufacturedOn: manufacturedOn.trim() } : {}),
     grnId: body['grnId'], productId: body['productId'], batchId: optStr(body['batchId']), quantityMinor: body['quantityMinor'],
     uom: isStr(body['uom']) ? body['uom'] : 'EA', source: isStr(body['source']) ? body['source'] : 'unknown',
-    poId: optStr(body['poId']), state: isStr(body['state']) ? body['state'] : 'on_hand', expiry: isIso(body['expiry']) ? body['expiry'] : null,
+    poId: optStr(body['poId']), state: qcFailed === true && ON_HAND_STATES.has(stated) ? 'quarantine' : stated, expiry: isIso(body['expiry']) ? body['expiry'] : null,
     receivedBy: body['receivedBy'], storeId: body['storeId'], at: isIso(body['at']) ? body['at'] : now,
   };
 }
@@ -345,6 +360,9 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
           ...(s.temperatureC === undefined ? {} : { temperatureC: s.temperatureC }),
           ...(coldChainHeld === undefined ? {} : { coldChainHeld }),
           ...(s.manufacturedOn === undefined ? {} : { manufacturedOn: s.manufacturedOn }),
+          // Batch 20a: the MRP on the pack and "failed the check / refused at the door", as the handheld sent them.
+          ...(s.mrpMinor === undefined ? {} : { mrpMinor: s.mrpMinor }),
+          ...(s.qcFailed === true ? { qcFailed: true as const } : {}),
         };
         await deps.recordScan(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {
@@ -354,6 +372,7 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
           after: {
             commandId, productId: s.productId, quantityMinor: String(s.quantityMinor), uom, state: s.state, poId: s.poId ?? '',
             storeId: s.storeId, onHandMovementId: onHandMovementId ?? '', relayedBy: ctx.userId, flags: flags.join(','),
+            mrpMinor: s.mrpMinor === undefined ? '' : String(s.mrpMinor), qcFailed: s.qcFailed === true ? 'true' : '',
           },
           correlationId: s.grnId,
         });
