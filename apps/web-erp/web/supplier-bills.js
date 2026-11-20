@@ -447,7 +447,16 @@ async function fillRatesFromItems() {
     const empty = (r.rate ?? '').trim() === '';
     return { ...r, itemBps: bps, itemBpsFor: id, ...(empty && bps !== null ? { rate: session.bpsToPercent(bps) } : {}) };
   });
-  drawTypeRows();
+  // Only the rate boxes change, in place: redrawing every line would throw away what is being typed in another box right now
+  // (and move the cursor). A line not on the page yet is drawn with its rate when it is next drawn.
+  typeRows.forEach((r, i) => {
+    const box = document.querySelector(`#type-lines tr[data-row="${i + 1}"] .t-rate`);
+    if (box === null) return;
+    if (box.value.trim() === '' && (r.rate ?? '') !== '') box.value = r.rate;
+    if (r.itemBps !== undefined && r.itemBps !== null) box.dataset.itemBps = String(r.itemBps); else delete box.dataset.itemBps;
+    const mark = box.nextElementSibling;
+    if (mark !== null) paintRateMark(mark, r);
+  });
 }
 function drawTypeRows() {
   const box = (r, i, k, field) => { const b = input(`t-${field}`, r[field], `${t('line')} ${i + 1} ${t(k)}`); b.addEventListener('input', () => { typeRows[i] = { ...typeRows[i], [field]: b.value }; }); return b; };

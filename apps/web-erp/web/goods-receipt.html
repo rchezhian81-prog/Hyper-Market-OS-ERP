@@ -96,6 +96,8 @@
       .bill-match button { font-size:16px; }
       /* Batch 20e · R6: a delivery's photos and scans — a small picture of each, its words, Open, and "attached by mistake". */
       .grn-files-btn { justify-self:start; }
+      /* Batch 20e: beside "Photos and scans", "Print GRN" keeps a full 44px touch target on a phone (WCAG 2.5.8). */
+      .print-grn, .grn-files-btn { min-width:44px; min-height:44px; flex-shrink:0; }
       .grn-files { grid-column: 2 / -1; display:grid; gap:8px; padding: var(--space-2) 0 0; border-top:1px dashed var(--line); font-size:14px; }
       .grn-files[hidden] { display:none; }
       .grn-files .d-word { font-weight:600; }
