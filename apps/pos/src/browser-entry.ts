@@ -50,6 +50,8 @@ import { readMachineReference, type MachineRefReading } from '../../../packages/
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 import { floorRefusal } from '../../../packages/price-guard/src/till-override'; // OB-500 (R7-A)
 import { operatorLabel } from './operator-label'; // OB-638
+import { priceCheck as checkPrice, type PriceCheckAnswer } from './price-check'; // Batch 20a · T2
+import { tillRuleFlagsOf as ruleFlagsOf } from '../../../packages/restricted-sales/src/till-gate'; // Batch 20a · T2
 import { APP_BUILD_VERSION, judgeClientVersion, readPackVersionPolicy, type ClientKind, type ClientVersionJudgement } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A) · OB-521 (R8-A)
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
@@ -1452,6 +1454,17 @@ export function bootPos(config?: {
     }
     return out;
   };
+  // Batch 20a · T2 (M12-FR-01 "price enquiry"): an item's price, MRP and offers by scan, keyed code or a row picked from Find —
+  // from THIS till's own signed price list and the offers it applies now. It adds nothing to the bill and calls nothing.
+  const priceCheck = (code: string): PriceCheckAnswer => {
+    const today = session.laneToday();
+    return checkPrice({
+      catalogue, code, at: session.offerClock(), offers: session.offersInForce(),
+      ...(today === undefined ? {} : { asOf: today }),
+      ...(config?.timeZone === undefined ? {} : { timeZone: config.timeZone }),
+      noOffersFor: (productId) => { const f = ruleFlagsOf(catalogue?.findByProductId(productId)?.regulatedFlags); return f.carryBag === true || f.tobacco === true; },
+    });
+  };
   // SF-01: the switched-on offers the signed pack carried — applied at checkout from the lane's own copy (P-01).
   session.loadPromotions(config?.catalogue?.promotions ?? []);
   // OB-403 "A": a till opened while the store computer's clock is 5+ minutes out starts with the box's hold on new offers.
@@ -2450,7 +2463,7 @@ export function bootPos(config?: {
   });
   const cancellableView = Object.assign(quotedView, { ringQuotationAtTill: ringQuotationRemembered, cancelBillAtTill, quotationsOnBill, billCancelWords: (lang: 'en' | 'ta') => BILL_CANCEL_WORDS[lang] });
   // ── R8-B · OB-523 — end ──
-  return Object.assign(cancellableView, { findItems, guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, keyedReturnMinor, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, operatorShown, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, couponAtTill, removeCouponAtTill: () => { session.setCoupon(null); }, couponOnBill, giftCardBalance, sellGiftCard, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
+  return Object.assign(cancellableView, { findItems, priceCheck, guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, keyedReturnMinor, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, operatorShown, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, couponAtTill, removeCouponAtTill: () => { session.setCoupon(null); }, couponOnBill, giftCardBalance, sellGiftCard, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

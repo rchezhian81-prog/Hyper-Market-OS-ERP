@@ -62,6 +62,20 @@ import { buildQueue, submitDecision, type QueueRow } from './approvals-workbench
 // ── Registers ───────────────────────────────────────────────────────────────
 
 /** One line a manager can act on: what it is, and enough of an identity to chase it. */
+/** Batch 20a · R7 (M03-FR-02): one case size of a counted product — its level's name and how many single units it holds. */
+export interface CasePackSize { readonly level: string; readonly units: number }
+
+/**
+ * Batch 20a · R7 (M07-FR-01 · M03-FR-02): "cases × pack size" → the units the receipt records. `cases` and `loose` are whole
+ * numbers, 0 or more; `units` a case's whole number of units above 1. Undefined when any is not — the screen says so and keeps
+ * nothing. Exact: 4 cases of 12 and 3 loose is 51 units, never rounded.
+ */
+export function unitsFromCases(cases: number, units: number, loose = 0): number | undefined {
+  if (!Number.isSafeInteger(cases) || cases < 0 || !Number.isSafeInteger(units) || units < 2 || !Number.isSafeInteger(loose) || loose < 0) return undefined;
+  const total = cases * units + loose;
+  return Number.isSafeInteger(total) ? total : undefined;
+}
+
 export interface RegisterItem {
   readonly id: string;
   /** Plain-English description of the single thing that is open. */
@@ -432,6 +446,12 @@ export interface ManagerConfig {
    */
   readonly packedProductIds?: readonly string[];
   /**
+   * Batch 20a · R7 (M07-FR-01 · M03-FR-02): head office's case sizes for counted products, as the store computer was told them
+   * (`{ [productId]: [{ level, units }] }`). Receive offers "cases × pack size" from it, offline; the line is still in units.
+   * Absent = not told (single units only).
+   */
+  readonly casePacks?: Readonly<Record<string, readonly CasePackSize[]>>;
+  /**
    * Fix batch 4b · D-029: the deliveries this store is waiting for (each purchase order with what is still due), as head office
    * last told the store computer — the Receive form offers them to choose from, offline. Absent = not told (type the order).
    */
@@ -629,6 +649,10 @@ export interface ManagerSession {
   coldChainAmong(productIds: readonly string[]): readonly string[];
   /** B4 · OB-504: which of these products are PACKED by head office's list (they need a month and year of manufacture). */
   packedAmong(productIds: readonly string[]): readonly string[];
+  /** Batch 20a · R7: the product's case sizes (largest first), or [] when it has none or the store computer was not told. */
+  casePacksOf(productId: string): readonly CasePackSize[];
+  /** Batch 20a · R7: "cases × pack size" (+ loose units) → the units the line records; undefined when not whole numbers. */
+  unitsFromCases(cases: number, units: number, loose?: number): number | undefined;
   /** Fix batch 4b · D-029: the purchase orders this store is waiting for, to choose from (absent = the store computer was not told). */
   openDeliveries(): { readonly known: true; readonly orders: readonly OpenDelivery[]; readonly asAt?: string } | { readonly known: false };
   /** Fix batch 4b · D-029: a chosen order's lines, each by name with what is still due (nothing already received in full). */
@@ -894,6 +918,8 @@ export function createManagerSession(
 
     receivingChecklist: () => config.receivingChecklist,
     coldChainAmong: (productIds) => coldChainAmong(config.receivingChecklist, productIds),
+    unitsFromCases: (cases, units, loose) => unitsFromCases(cases, units, loose ?? 0),
+    casePacksOf: (productId) => [...(config.casePacks?.[productId] ?? [])].sort((a, b) => b.units - a.units),
     packedAmong: (productIds) => (config.packedProductIds === undefined ? [] : [...new Set(productIds)].filter((p) => config.packedProductIds!.includes(p)).sort()),
 
     openDeliveries: () => (config.openDeliveries === undefined ? { known: false } : {

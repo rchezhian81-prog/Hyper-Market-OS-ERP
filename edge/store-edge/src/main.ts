@@ -138,7 +138,7 @@ import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
 import { blockingOpen, checklistBodiesOf, closingChecklistId, dayTheBoxCloses, foldClosingChecklist, tickRecord, TICK_AUTHORITY, TICK_WORDS, type TickRefusal } from './closing-checklist';
 import {
-  readTillCashRecord, foldTillCash, decideCashMovement, decideShiftClose, shiftFigures, tillCashEventFactory, TILL_CASH_WORDS,
+  readTillCashRecord, foldTillCash, decideCashMovement, decideShiftClose, shiftFigures, tillCashEventFactory, TILL_CASH_WORDS, drawerOfClose,
   type TillCashRecord, type TillShiftCloseRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
 } from './till-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
@@ -1608,9 +1608,11 @@ export async function startEdge(
     const records = await tillCashRecords();
     const prior = records.find((r) => r.kind === 'close' && r.shiftId === req.shiftId);
     if (prior !== undefined && prior.kind === 'close') {
+      const drawer = drawerOfClose(prior); // Batch 20a · T1
       return {
         closed: true, alreadyClosed: true, shiftId: prior.shiftId, tradingDay: prior.tradingDay, countedMinor: prior.countedMinor,
         varianceMinor: prior.varianceMinor, exceptionRaised: prior.exceptionRaised, reasonCode: prior.reasonCode, laneMessage: 'This shift was already closed.',
+        ...(drawer === undefined ? {} : { drawer }),
       };
     }
     const state = foldTillCash(records, laneId);
@@ -1630,6 +1632,8 @@ export async function startEdge(
     return {
       closed: true, shiftId: r.shiftId, tradingDay: r.tradingDay, countedMinor: r.countedMinor, varianceMinor: r.varianceMinor,
       exceptionRaised: r.exceptionRaised, reasonCode: r.reasonCode,
+      // Batch 20a · T1: the float, cash loans, pickups and safe drops of the shift — the count is already made.
+      ...(drawerOfClose(r) === undefined ? {} : { drawer: drawerOfClose(r)! }),
       laneMessage: r.exceptionRaised ? 'Closed, with a difference the cash office will review.' : 'Closed.',
     };
   };

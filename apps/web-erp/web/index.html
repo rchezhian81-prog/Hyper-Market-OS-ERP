@@ -178,7 +178,8 @@
       /* Fix batch 4b · D-029: each delivery line's received / damaged / batch / expiry boxes, big enough for a thumb. */
       .line-row .line-edit { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
       .line-row .line-edit label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); grid-template-rows: 1fr auto; align-items: end; } /* batch 18a: a two-line label keeps its box in line with the others */
-      .line-row .line-edit input { min-height: 44px; font-size: 17px; min-width: 0; }
+      .line-row .line-edit input, .line-row .line-edit select { min-height: 44px; font-size: 17px; min-width: 0; }
+      .line-row .cases-math { grid-column: 1 / -1; color: var(--ink-2); font-weight: 600; } /* batch 20a R7: "4 × 12 + 3 loose = 51 units" */
       .line-row .short { grid-column: 1 / -1; color: var(--warn); font-weight: 700; }
       /* OB-172: the receiving checklist — one Pass / Fail pair per check, big enough for a thumb at the back door. */
       .rc { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin: 12px 0; }

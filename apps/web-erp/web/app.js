@@ -90,6 +90,9 @@ const WORDS = {
     dueWord: 'due', receivedLabel: 'Arrived', damagedLabel: 'Damaged', batchLabel: 'Batch number', expiryLabel: 'Expiry (best before)',
     mfgShort: 'Month of manufacture', tempShort: 'Temperature °C',
     qcFailLabel: 'Failed quality check / refused at the door', mrpLabel: 'MRP on the pack (₹)', qcFailWord: 'failed the check', mrpWord: 'MRP ₹',
+    // Batch 20a · R7 (M03-FR-02): "cases × pack size" for an item head office gave case sizes; the line still records units.
+    casesLabel: 'Cases of {n}', caseSizeLabel: 'Pack size', looseLabel: 'Loose units', caseOf: '{level} of {n}',
+    casesMath: '{cases} × {n} + {loose} loose = {total} units', needCases: 'Cases and loose units must be whole numbers, 0 or more.',
     needMrp: 'MRP on the pack must be an amount in rupees above 0, with at most 2 decimals (for example 120 or 99.50).',
     needQcFail: '"Failed quality check" must be a whole number, 0 or more.',
     shortBy: 'Short by {n}', moreBy: '{n} more than due', damagedWord: 'damaged', batchWord: 'batch', expWord: 'expires',
@@ -199,6 +202,8 @@ const WORDS = {
     dueWord: 'வர வேண்டியது', receivedLabel: 'வந்தது', damagedLabel: 'சேதமானவை', batchLabel: 'பேட்ச் எண்', expiryLabel: 'காலாவதி தேதி',
     mfgShort: 'தயாரிப்பு மாதம்', tempShort: 'வெப்பநிலை °C',
     qcFailLabel: 'தரச் சோதனையில் தோல்வி / வாசலில் மறுக்கப்பட்டது', mrpLabel: 'பொதியில் உள்ள MRP (₹)', qcFailWord: 'சோதனையில் தோல்வி', mrpWord: 'MRP ₹',
+    casesLabel: '{n} கொண்ட பெட்டிகள்', caseSizeLabel: 'பொதி அளவு', looseLabel: 'தனி அலகுகள்', caseOf: '{n} கொண்ட {level}',
+    casesMath: '{cases} × {n} + {loose} தனி = {total} அலகுகள்', needCases: 'பெட்டிகளும் தனி அலகுகளும் 0 அல்லது அதற்கு மேற்பட்ட முழு எண்களாக இருக்க வேண்டும்.',
     needMrp: 'பொதியில் உள்ள MRP 0-க்கு மேற்பட்ட ரூபாய்த் தொகையாக, அதிகபட்சம் 2 தசம இடங்களுடன் இருக்க வேண்டும் (உதா: 120 அல்லது 99.50).',
     needQcFail: '"தரச் சோதனையில் தோல்வி" 0 அல்லது அதற்கு மேற்பட்ட முழு எண்ணாக இருக்க வேண்டும்.',
     shortBy: '{n} குறைவு', moreBy: 'வர வேண்டியதை விட {n} அதிகம்', damagedWord: 'சேதம்', batchWord: 'பேட்ச்', expWord: 'காலாவதி',
@@ -1592,6 +1597,8 @@ function renderChecklist() {
   el('receive-checklist-action-label').textContent = t('rcAction');
 }
 
+// Batch 20a · R7: the cases and loose units typed for a line, kept beside it (never sent — the receipt records units only).
+const casesOf = new WeakMap();
 function renderLines() {
   renderChecklist();
   el('receive-empty').hidden = receiptLines.length > 0;
@@ -1626,9 +1633,9 @@ function renderLines() {
     // lines (filled in from the order) are completed in place. The session judges them again when the delivery is saved.
     const edit = document.createElement('div');
     edit.className = 'line-edit';
-    const box = (cls, labelKey, type, value, onChange, attrs) => {
+    const box = (cls, labelKey, type, value, onChange, attrs, labelWords) => {
       const label = document.createElement('label');
-      const span = document.createElement('span'); span.textContent = t(labelKey);
+      const span = document.createElement('span'); span.textContent = labelWords ?? t(labelKey);
       const input = document.createElement('input');
       input.type = type; input.className = cls; input.dataset.index = String(index); input.value = value ?? '';
       for (const [k, v] of Object.entries(attrs ?? {})) input.setAttribute(k, v);
@@ -1636,11 +1643,45 @@ function renderLines() {
       label.append(span, input);
       return label;
     };
+    // Batch 20a · R7 (M07-FR-01 · M03-FR-02): an item head office gave case sizes is counted as "cases × pack size" plus loose
+    // units — the line still records UNITS (Arrived is worked out and shown). Typing Arrived directly clears the cases.
+    const sizes = session && typeof session.casePacksOf === 'function' ? session.casePacksOf(line.productId) : [];
+    const byCase = casesOf.get(line);
+    const size = sizes.find((z) => z.level === byCase?.level) ?? sizes[0];
+    const applyCases = (next) => {
+      const total = session.unitsFromCases(next.cases, size.units, next.loose);
+      if (total === undefined) { tell(t('read'), t('needCases')); return; }
+      casesOf.set(line, { ...next, level: size.level });
+      line.quantityMinor = total;
+    };
+    const caseBoxes = size === undefined ? [] : [
+      ...(sizes.length > 1 ? [(() => {
+        const label = document.createElement('label');
+        const span = document.createElement('span'); span.textContent = t('caseSizeLabel');
+        const select = document.createElement('select');
+        select.className = 'case-size'; select.dataset.index = String(index);
+        select.replaceChildren(...sizes.map((z) => { const o = document.createElement('option'); o.value = z.level; o.textContent = fill(t('caseOf'), { level: z.level, n: String(z.units) }); return o; }));
+        select.value = size.level;
+        select.addEventListener('change', () => { const cur = casesOf.get(line) ?? { cases: 0, loose: 0 }; casesOf.set(line, { ...cur, level: select.value }); const z = sizes.find((x) => x.level === select.value); if (z && cur.cases !== undefined) { const total = session.unitsFromCases(cur.cases, z.units, cur.loose); if (total !== undefined) line.quantityMinor = total; } renderLines(); });
+        label.append(span, select);
+        return label;
+      })()] : []),
+      box('cases', 'casesLabel', 'number', byCase ? String(byCase.cases) : '', (v) => {
+        const cases = v === '' ? 0 : Number(v);
+        applyCases({ cases, loose: byCase?.loose ?? 0 });
+      }, { min: '0', step: '1', inputmode: 'numeric' }, fill(t('casesLabel'), { n: String(size.units) })),
+      box('loose', 'looseLabel', 'number', byCase ? String(byCase.loose) : '', (v) => {
+        const loose = v === '' ? 0 : Number(v);
+        applyCases({ cases: byCase?.cases ?? 0, loose });
+      }, { min: '0', step: '1', inputmode: 'numeric' }),
+    ];
     edit.append(
+      ...caseBoxes,
       box('arrived', 'receivedLabel', 'number', String(line.quantityMinor), (v) => {
         const n = Number(v);
         if (v === '' || !Number.isInteger(n) || n < 0) { tell(t('read'), t('needArrived')); return; }
         line.quantityMinor = n;
+        casesOf.delete(line); // typed in units: the cases no longer say it
       }, { min: '0', step: '1', inputmode: 'numeric' }),
       box('damaged', 'damagedLabel', 'number', line.damagedMinor ? String(line.damagedMinor) : '', (v) => {
         if (v === '') { delete line.damagedMinor; return; }
@@ -1676,6 +1717,13 @@ function renderLines() {
       }, { inputmode: 'decimal', autocomplete: 'off' })] : []),
     );
     row.append(edit);
+    // Batch 20a · R7: the sum in words, so "4 × 12 + 3 loose = 51 units" is checked by eye before saving.
+    if (byCase !== undefined && size !== undefined) {
+      const sum = document.createElement('span');
+      sum.className = 'cases-math';
+      sum.textContent = fill(t('casesMath'), { cases: String(byCase.cases), n: String(size.units), loose: String(byCase.loose), total: String(line.quantityMinor) });
+      row.append(sum);
+    }
     // Short, or more than due, against what the order still had due (head office works the same out from its own order).
     if (line.dueMinor !== undefined && line.quantityMinor !== line.dueMinor) {
       const note = document.createElement('span');

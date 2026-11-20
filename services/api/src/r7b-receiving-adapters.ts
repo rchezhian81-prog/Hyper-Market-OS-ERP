@@ -17,9 +17,11 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import {
   STREAM, streamName, goodsReceiptAdapter, foldPurchaseOrders, effectiveGrants, liveSupplierInvoices, productMasterAdapter, categoryRegisterAdapter,
-  STOCK_COST_ADJUSTMENTS_STREAM,
+  STOCK_COST_ADJUSTMENTS_STREAM, packHierarchyAdapter,
 } from './adapters';
 import { STORE_MANAGER_ROLE_ID } from './roles';
+import { unitsPerLevel, validatePack } from '../../../packages/product/src/pack';
+import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import { receiptCostHooks } from './receipt-cost-adapters';
 import type { GoodsReceiptDeps, GrnRecord, OrderLineCost, ProductReceiptFacts, SupplierBillForReceipt } from '../../inventory/src/goods-receipt';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
@@ -74,6 +76,27 @@ export async function packedProductIdsFor(input: Base, tenantId: string): Promis
   const products = await productMasterAdapter(input).products(tenantId);
   const kinds = await regulatedKindsOf(input, tenantId);
   return products.map((p) => p.productId).filter((id) => (kinds(id) ?? []).includes('packed')).sort();
+}
+
+/** Batch 20a · R7 (M07-FR-01 · M03-FR-02): one pack level of a counted product above the single unit, and how many units it holds. */
+export interface CasePackLevel { readonly level: string; readonly units: number }
+
+/**
+ * Batch 20a · R7: the store-pack section `casePacks` — for every product COUNTED IN PIECES whose pack ladder head office holds,
+ * each level above the single unit with its exact number of units (an inner of 6, a case of 12). Receive (office) offers
+ * "cases × pack size" from it with no network; the receipt is still recorded in units. A pack that does not convert exactly
+ * is left out (validatePack refuses it), never rounded; weighed products (kg, L) are left out (their pack sizes are not counts).
+ */
+export async function casePacksFor(input: Base, tenantId: string): Promise<Readonly<Record<string, readonly CasePackLevel[]>>> {
+  const packs = await packHierarchyAdapter(input).packs(tenantId);
+  const out: Record<string, CasePackLevel[]> = {};
+  for (const [productId, pack] of [...packs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    if (normaliseUom(pack.baseUom) !== 'ea') continue;
+    try { validatePack(pack); } catch { continue; }
+    const levels = pack.levels.slice(1).map((l) => ({ level: l.level, units: unitsPerLevel(pack, l.level) })).filter((l) => l.units > 1);
+    if (levels.length > 0) out[productId] = levels;
+  }
+  return out;
 }
 
 /** OB-513: is this product FOOD (its department regulated `food`)? undefined when head office cannot tell. */

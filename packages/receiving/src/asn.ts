@@ -151,7 +151,9 @@ export type ReceiveOutcome =
   /** OB-521: the handheld's app is withdrawn or too old, and this scan would START receiving a delivery. */
   | 'app_version_too_old'
   /** OB-773 · OB-623: the person signed in on the handheld may not receive a delivery (a Warehouse user) — nothing scanned. */
-  | 'not_your_kind_of_stock_movement';
+  | 'not_your_kind_of_stock_movement'
+  /** Batch 20a: the MRP typed off the pack on the handheld is not an amount above zero — nothing received. */
+  | 'mrp_not_an_amount';
 
 export interface ReceiveResult {
   readonly commandId: string;

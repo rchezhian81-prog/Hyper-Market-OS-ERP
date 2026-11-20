@@ -58,6 +58,9 @@ export interface ClosedShiftRecord {
   readonly pickupsMinor?: number;
   readonly cashRefundsMinor?: number;
   readonly toleranceMinor?: number;
+  /** Batch 20a · T1 (M14-FR-01): of the float, the CASH LOANS; of the pickups, the SAFE DROPS — as the box kept them by kind. */
+  readonly loansMinor?: number;
+  readonly safeDropsMinor?: number;
   readonly relayed?: true;
   readonly flags?: readonly ShiftGovernanceFlag[];
 }
@@ -201,6 +204,9 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
           ...(laneId === undefined ? {} : { laneId }), ...(openedAt === undefined ? {} : { openedAt }),
           openingFloatMinor: n('openingFloatMinor'), cashSalesMinor: n('cashSalesMinor'), pickupsMinor: n('pickupsMinor'), cashRefundsMinor: n('cashRefundsMinor'),
           toleranceMinor: n('toleranceMinor'), relayed: true,
+          // Batch 20a · T1: the loans and safe drops inside those totals, kept by kind when the box sent them (never more than the total).
+          ...(Number.isSafeInteger(b['loansMinor']) && (b['loansMinor'] as number) >= 0 && (b['loansMinor'] as number) <= n('openingFloatMinor') ? { loansMinor: b['loansMinor'] as number } : {}),
+          ...(Number.isSafeInteger(b['safeDropsMinor']) && (b['safeDropsMinor'] as number) >= 0 && (b['safeDropsMinor'] as number) <= n('pickupsMinor') ? { safeDropsMinor: b['safeDropsMinor'] as number } : {}),
           ...(flags.length === 0 ? {} : { flags: flags as ShiftGovernanceFlag[] }),
         };
         await deps.recordShiftClose(ctx.tenantId, record);
@@ -241,6 +247,8 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
             varianceMinor: r.varianceMinor, reasonCode: r.reasonCode, denominations: r.denominations ?? null,
             // A relayed close and what the cloud found when it re-verified it (SP-4c), for the cash office (P-08).
             laneId: r.laneId ?? null, relayed: r.relayed === true, flags: r.flags ?? [],
+            // Batch 20a · T1: the shift's cash loans and safe drops, so the cash office sees each kind (null: not kept).
+            loansMinor: r.loansMinor ?? null, safeDropsMinor: r.safeDropsMinor ?? null,
             reviewed: review !== undefined,
             reviewedBy: review?.reviewedBy ?? null,
             disposition: review?.disposition ?? null,

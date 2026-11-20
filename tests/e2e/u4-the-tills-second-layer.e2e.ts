@@ -136,7 +136,7 @@ describe.skipIf(!HAVE_BROWSER)('U4: the till\'s second layer — More under head
       'h:Returns & exchanges', 'b:Refund', 'b:Exchange',
       'h:Bills & payments', 'b:Print a copy of a bill by its number', 'b:Sell a gift card', // W3 (OB-677): a gift card is sold from the bills group
       'h:This line & delivery', 'b:Deliver this bill',
-      'h:Customer', 'b:Loyalty member',
+      'h:Customer', 'b:Price check (does not add to the bill)', 'b:Loyalty member', // batch 20a T2
       'h:This till', 'b:Scan speed',
     ]);
     // A heading is words, never a target: the audit still passes and every button is a 56px row.

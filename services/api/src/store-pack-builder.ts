@@ -61,7 +61,7 @@ import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { PackSigner } from '../../catalogue/src/pack';
 import { weighingScalesSectionFor } from './r2-till-adapters';
 import { receivingChecklistSectionFor } from './r2-ops-adapters';
-import { packedProductIdsFor } from './r7b-receiving-adapters'; // B4 · OB-504
+import { packedProductIdsFor, casePacksFor } from './r7b-receiving-adapters'; // B4 · OB-504 · batch 20a R7
 import { dsdCheckInAdapter } from './r3-ops-adapters';
 import { rosterPackSection, certificationsPackSection } from './r7d-workforce-adapters'; // Round 7 · OB-507 · OB-502
 import { wasteWriteOffsSectionFor, categoryPolicySectionFor } from './r2-screen-feeds'; // screen gap audit Round A
@@ -521,6 +521,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   if (receiving !== undefined) sections['receivingChecklist'] = receiving;
   // B4 · OB-504: the PACKED products — always sent, so a screen tells "none are packed" from "not told".
   sections['packedProductIds'] = await packedProductIdsFor({ store, now }, tenantId);
+  // Batch 20a · R7 (M03-FR-02): each counted product's case sizes, so Receive (office) takes "4 cases × 12" offline — always sent.
+  sections['casePacks'] = await casePacksFor({ store, now }, tenantId);
   const range = await assortmentAdapter({ store, now }).entries(tenantId, storeId);
   if (range.length > 0) sections['assortment'] = range;
   const contracts = (await spacePerformanceAdapter({ store, now }).contracts(tenantId)).filter((c) => c.storeId === storeId);

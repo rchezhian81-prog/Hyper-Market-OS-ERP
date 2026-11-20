@@ -161,7 +161,8 @@ describe.skipIf(!HAVE_BROWSER)('batch 18a — the pack MRP and a failed check on
     await shot(page, 'b18a-receive-mrp-and-failed-check-ta-1366.png');
   }, 120_000);
 
-  for (const [path, listIds] of [['/goods-receipt/', ['rows']], ['/suppliers/', ['rows']], ['/waste/', ['rows']], ['/approvals/', ['waiting', 'mine']]] as const) {
+  // Batch 20a · R5: Goods receipt review's plain box became the real lookup (tests/e2e/b20a-*.e2e.ts).
+  for (const [path, listIds] of [['/suppliers/', ['rows']], ['/waste/', ['rows']], ['/approvals/', ['waiting', 'mine']]] as const) {
     it(`B3: ${path} has a search box — every word must be in a row; nothing matching says so and clears`, async () => {
       const edge = await box();
       const page = await managerPage(edge, path);

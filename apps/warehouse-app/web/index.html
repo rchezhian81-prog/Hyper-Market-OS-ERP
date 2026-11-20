@@ -219,6 +219,7 @@
       #recv-temp-field { margin: var(--space-2) 0 10px; }
       #dsd-batch, #dsd-expiry, #dsd-mfg { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); }
       #recv-mfg { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); margin-top: var(--space-2); }
+      #recv-mrp, #receive-failed { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); margin-top: var(--space-2); }
       #recv-temp { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
       .keypad button, .choices button, .direction button { min-height: 56px; font-size: 19px; background: var(--panel); }
@@ -329,6 +330,10 @@
         <button id="recv-temp" type="button" class="wide">Arrival temperature (chilled or frozen goods): not taken</button>
         <!-- B4 · OB-504: the month of manufacture on a packed product's pack, keyed as YYYYMM; it rides on every scan. -->
         <button id="recv-mfg" type="button" class="wide">Month of manufacture (packed goods): not entered</button>
+        <!-- Batch 20a (M07-FR-02/03 · as on Receive (office)): the MRP printed on the pack, for the NEXT item scanned, and the
+             goods that failed the quality check or were refused at the door — received, but held out of stock for a second person. -->
+        <button id="recv-mrp" type="button" class="wide">MRP on the pack (next item): not entered</button>
+        <button id="receive-failed" type="button" class="wide">Failed quality check / refused at the door</button>
       </div>
       <h2 class="section" id="sent-heading" hidden>—</h2>
       <div id="sent-work"></div>

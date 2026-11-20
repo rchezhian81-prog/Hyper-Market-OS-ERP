@@ -7425,6 +7425,16 @@ export function goodsReceiptAdapter(input: {
       };
     },
     orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
+    // Batch 20a · R5: each order's number and supplier, for looking a delivery up on the receipts list.
+    orderFactsForList: async (tenantId) => {
+      const [orders, suppliers] = await Promise.all([foldPurchaseOrders(input.store, tenantId), foldSupplierRecords(input.store, tenantId)]);
+      const out = new Map<string, { orderNumber: string; supplierId: string; supplierName?: string }>();
+      for (const po of orders.values()) {
+        const name = suppliers.get(po.supplierId)?.name;
+        out.set(po.poId, { orderNumber: po.documentNumber ?? po.number, supplierId: po.supplierId, ...(name === undefined || name.trim() === '' ? {} : { supplierName: name }) });
+      }
+      return out;
+    },
     // SF-02: under the order's guard when the receipt posts against it — two receipts never spend the same remainder.
     // OB-847: the receipt's number (GRN1/26-27/00001 — the store's own range) is taken in the SAME save as the receipt.
     commit: async (tenantId, record, movements, key, poReceipt, orderGuard) => {

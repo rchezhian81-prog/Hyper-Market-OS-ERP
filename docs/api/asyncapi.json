@@ -5251,6 +5251,12 @@
           "toleranceMinor": {
             "type": "number"
           },
+          "loansMinor": {
+            "type": "number"
+          },
+          "safeDropsMinor": {
+            "type": "number"
+          },
           "relayed": {
             "type": "boolean",
             "const": true

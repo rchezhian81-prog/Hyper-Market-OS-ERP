@@ -110,6 +110,13 @@ const WORDS = {
     mfgLabel: 'Month of manufacture (packed goods)', mfgNotEntered: 'not entered',
     mfgTitle: 'Month of manufacture — key it as YYYYMM', mfgHint: 'From the pack, for example 202609 for September 2026. It goes with every scan until you change it. Key 0 to clear it.',
     needMfg: 'The month of manufacture is not readable', needMfgDetail: 'Key the year and month as six digits, for example 202609. Nothing was set.',
+    // Batch 20a (M07-FR-02/03): the MRP on the pack (for the next item) and goods that failed the check / were refused at the door.
+    mrpLabel: 'MRP on the pack (next item)', mrpNotEntered: 'not entered', mrpTitle: 'MRP printed on the pack, ₹',
+    mrpHint: 'Key the MRP from the pack, for example 120 or 99.50. It goes with the next item you scan only. Clear removes it.', mrpClear: 'Clear',
+    needMrp: 'The MRP must be an amount in rupees', needMrpDetail: 'Key the MRP from the pack as rupees above 0, for example 120 or 99.50. Nothing was set.',
+    recvFailed: 'Failed quality check / refused at the door', scanFailed: 'Scan an item that failed the check or was refused',
+    recvFailedHowMany: 'How many failed the check or were refused?', recvFailedHint: 'Key how many. They are received but held back — not put on sale — for a second person to decide.',
+    receivedFailed: 'Received and held back — failed the check', mrp_not_an_amount: 'The MRP on the pack is not an amount',
     scanBarcode: 'Scan the delivery barcode', scanBin: 'Scan the bin to put it in',
     pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', units: 'units',
@@ -213,6 +220,12 @@ const WORDS = {
     mfgLabel: 'தயாரிப்பு மாதம் (பொதி செய்த பொருட்கள்)', mfgNotEntered: 'உள்ளிடப்படவில்லை',
     mfgTitle: 'தயாரிப்பு மாதம் — YYYYMM என உள்ளிடவும்', mfgHint: 'பொதியில் உள்ளபடி, உதாரணமாக செப்டம்பர் 2026க்கு 202609. மாற்றும் வரை ஒவ்வொரு ஸ்கேனுடனும் செல்லும். அழிக்க 0 அழுத்தவும்.',
     needMfg: 'தயாரிப்பு மாதம் படிக்க முடியவில்லை', needMfgDetail: 'ஆண்டையும் மாதத்தையும் ஆறு இலக்கங்களாக அழுத்தவும், உதாரணமாக 202609. எதுவும் அமைக்கப்படவில்லை.',
+    mrpLabel: 'பொதியில் உள்ள MRP (அடுத்த பொருள்)', mrpNotEntered: 'உள்ளிடப்படவில்லை', mrpTitle: 'பொதியில் அச்சிட்ட MRP, ₹',
+    mrpHint: 'பொதியில் உள்ள MRP-ஐ அழுத்தவும், உதாரணமாக 120 அல்லது 99.50. அடுத்து ஸ்கேன் செய்யும் பொருளுடன் மட்டும் செல்லும். அழி அழுத்தினால் நீங்கும்.', mrpClear: 'அழி',
+    needMrp: 'MRP ரூபாய்த் தொகையாக இருக்க வேண்டும்', needMrpDetail: 'பொதியில் உள்ள MRP-ஐ 0-க்கு மேற்பட்ட ரூபாயாக அழுத்தவும், உதாரணமாக 120 அல்லது 99.50. எதுவும் அமைக்கப்படவில்லை.',
+    recvFailed: 'தரச் சோதனையில் தோல்வி / வாசலில் மறுக்கப்பட்டது', scanFailed: 'சோதனையில் தோல்வியடைந்த அல்லது மறுக்கப்பட்ட பொருளை ஸ்கேன் செய்யவும்',
+    recvFailedHowMany: 'எத்தனை சோதனையில் தோல்வி அல்லது மறுக்கப்பட்டன?', recvFailedHint: 'எண்ணிக்கையை அழுத்தவும். அவை பெறப்படும் ஆனால் விற்பனைக்கு வைக்கப்படாமல் தடுத்து வைக்கப்படும் — இரண்டாவது நபர் முடிவு செய்வார்.',
+    receivedFailed: 'பெறப்பட்டு தடுத்து வைக்கப்பட்டது — சோதனையில் தோல்வி', mrp_not_an_amount: 'பொதியில் உள்ள MRP ஒரு தொகை அல்ல',
     scanBarcode: 'வரவின் பார்கோடை ஸ்கேன் செய்யவும்', scanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', units: 'அலகுகள்',
@@ -369,6 +382,8 @@ function paintHeader() {
 
 let arrivalTempC = null; // Wave 3 · SF-07 part 3: the keyed arrival reading, °C, or null (declared early: the first render reads it)
 let manufacturedOn = null; // B4 · OB-504: the keyed month of manufacture (YYYY-MM) for packed goods, or null
+let packMrpMinor = null; // Batch 20a: the MRP keyed off the pack (paise) for the NEXT item scanned only, or null
+let keypadMode = 'temp'; // Batch 20a: the decimal keypad sheet serves the temperature and the pack's MRP
 let selected = null; // the goods-in item chosen to put away
 let selectedPick = null; // the pick-list line (by id) chosen by a tap; a bin scan from the list needs no tap
 let pickStep = null; // where a pick in progress is: 'bin' | 'item' | 'confirm' | null
@@ -466,6 +481,7 @@ el('temp-keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9
   return button;
 }));
 el('recv-temp').addEventListener('click', () => {
+  keypadMode = 'temp';
   say(el('temp-title'), t('tempTitle'), 'thermometer');
   el('temp-hint').textContent = t('tempHint');
   el('temp-none').textContent = t('tempNone');
@@ -493,10 +509,41 @@ el('recv-mfg').addEventListener('click', async () => {
   manufacturedOn = `${text.slice(0, 4)}-${text.slice(4)}`;
   renderMfg();
 });
+// ── The MRP on the pack (batch 20a · M07-FR-02, as on Receive (office)) ──────────────────────────────────────────────
+// Keyed on the same decimal keypad, in rupees; it goes with the NEXT item scanned only (MRPs differ item to item), then clears.
+function renderMrp() {
+  say(el('recv-mrp'), `${t('mrpLabel')}: ${packMrpMinor === null ? t('mrpNotEntered') : `₹${(packMrpMinor / 100).toFixed(2)}`}`, 'tag');
+}
+el('recv-mrp').addEventListener('click', () => {
+  keypadMode = 'mrp';
+  say(el('temp-title'), t('mrpTitle'), 'tag');
+  el('temp-hint').textContent = t('mrpHint');
+  el('temp-none').textContent = t('mrpClear');
+  el('temp-cancel').textContent = t('cancel');
+  el('temp-ok').textContent = t('ok');
+  el('temp-entry').textContent = packMrpMinor === null ? '—' : (packMrpMinor / 100).toFixed(2);
+  el('temp').hidden = false;
+});
 el('temp-cancel').addEventListener('click', () => { el('temp').hidden = true; });
-el('temp-none').addEventListener('click', () => { arrivalTempC = null; el('temp').hidden = true; renderTemp(); });
+el('temp-none').addEventListener('click', () => {
+  el('temp').hidden = true;
+  if (keypadMode === 'mrp') { packMrpMinor = null; renderMrp(); return; }
+  arrivalTempC = null; renderTemp();
+});
 el('temp-ok').addEventListener('click', () => {
   const text = el('temp-entry').textContent;
+  if (keypadMode === 'mrp') {
+    el('temp').hidden = true;
+    if (text === '—') { packMrpMinor = null; renderMrp(); return; }
+    if (!/^\d{1,7}(\.\d{1,2})?$/.test(text) || Number(text) <= 0) {
+      feltResult({ feedback: 'reject', code: 'needMrp', detail: t('needMrpDetail'), sound: 'error', vibrateMs: 300 });
+      return;
+    }
+    const [rupees, paise = ''] = text.split('.');
+    packMrpMinor = Number(rupees) * 100 + Number(paise.padEnd(2, '0'));
+    renderMrp();
+    return;
+  }
   if (text === '—') { arrivalTempC = null; el('temp').hidden = true; renderTemp(); return; }
   if (!/^-?\d+(\.\d+)?$/.test(text) || Math.abs(Number(text)) > 60) {
     el('temp').hidden = true;
@@ -623,6 +670,8 @@ function render() {
   renderDeliveries();
   renderTemp();
   renderMfg();
+  renderMrp(); // batch 20a
+  say(el('receive-failed'), t('recvFailed'), 'shield-alert'); // batch 20a
   // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
   say(el('done-receiving'), t('doneReceiving'), 'send');
   el('done-receiving').hidden = !(real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId));
@@ -960,6 +1009,8 @@ function renderDeliveries() {
   const mustChoose = list.length > 0 && !(data && data.grnId);
   el('receive').disabled = mustChoose;
   el('receive').title = mustChoose ? t('chooseDelivery') : '';
+  el('receive-failed').disabled = mustChoose; // batch 20a: the same order is chosen first
+  el('receive-failed').title = mustChoose ? t('chooseDelivery') : '';
   el('deliveries-choose').hidden = !mustChoose;
   el('deliveries-choose').textContent = mustChoose ? t('chooseDelivery') : '';
   // P-08: how fresh this list is — an order issued after it shows once the store computer next hears from head office.
@@ -990,8 +1041,35 @@ el('receive').addEventListener('click', async () => {
     commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: howMany, source: 'po',
     ...(arrivalTempC === null ? {} : { temperatureC: arrivalTempC }),
     ...(manufacturedOn === null ? {} : { manufacturedOn }),
+    ...(packMrpMinor === null ? {} : { mrpMinor: packMrpMinor }), // batch 20a: the pack's MRP, for this one scan
   });
   feltResult(out.signal);
+  if (out.signal.feedback === 'accept') packMrpMinor = null;
+  render();
+  if (out.signal.feedback === 'accept') void syncToBox();
+});
+
+/**
+ * Batch 20a (M07-FR-02/03 · as on Receive (office)): goods that FAILED THE QUALITY CHECK or were refused at the door. The same
+ * receiving engine and the same order; they are received (they count against the order) but held out of stock (quarantine)
+ * for a second person to decide — never put where they sell. The pack's MRP, when keyed, goes with this scan too.
+ */
+el('receive-failed').addEventListener('click', async () => {
+  const notYours = real !== undefined && typeof real.receivingRefusal === 'function' ? real.receivingRefusal() : undefined;
+  if (notYours !== undefined) { feltResult(notYours); return; }
+  const code = await awaitScan(t('scanFailed'));
+  if (code === null || real === undefined) return;
+  const known = Array.isArray(data?.barcodes) ? data.barcodes.find((b) => b.barcode === code) : undefined;
+  const howMany = known === undefined ? 1 : await awaitQty(`${t('recvFailedHowMany')} — ${nameOf(known.productId)}`, t('recvFailedHint'), '1');
+  if (howMany === null || !Number.isInteger(howMany) || howMany < 1) return;
+  const out = real.receive({
+    commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: howMany, source: 'po', qcFailed: true,
+    ...(arrivalTempC === null ? {} : { temperatureC: arrivalTempC }),
+    ...(manufacturedOn === null ? {} : { manufacturedOn }),
+    ...(packMrpMinor === null ? {} : { mrpMinor: packMrpMinor }),
+  });
+  feltResult(out.signal.feedback === 'accept' ? { ...out.signal, detail: `${t('receivedFailed')} — ${out.signal.detail}` } : out.signal);
+  if (out.signal.feedback === 'accept') packMrpMinor = null;
   render();
   if (out.signal.feedback === 'accept') void syncToBox();
 });

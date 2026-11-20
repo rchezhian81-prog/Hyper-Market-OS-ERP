@@ -65,6 +65,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'price_change_refused', 'not_on_order',
   // B4 · OB-504: a packed product scanned with no month and year of manufacture
   'manufacture_date_required',
+  // Batch 20a: the MRP typed off the pack is not an amount above zero (nothing is received)
+  'mrp_not_an_amount',
   // OB-521 (R8-A): new work refused on a withdrawn or too-old build (the work in hand is finished)
   'app_version_too_old',
   // OB-773 · OB-623: the person signed in may not receive a delivery (a Warehouse user) — refused before any scan
@@ -145,6 +147,17 @@ export interface ReceiveInput {
   readonly temperatureC?: number;
   /** B4 · OB-504: the batch's month and year of manufacture (YYYY-MM) as printed on the pack — required for a packed product. */
   readonly manufacturedOn?: string;
+  /**
+   * Batch 20a (M07-FR-02 · the office Receive's batch 18a R3, on the handheld): the MRP printed on the pack, in paise. Head office
+   * compares it with its product master's MRP and flags a difference for the buyer. Absent = not typed (nothing compared).
+   */
+  readonly mrpMinor?: number;
+  /**
+   * Batch 20a (M07-FR-02/03 · batch 18a R4, on the handheld): these units FAILED THE QUALITY CHECK or were refused at the door.
+   * They are received (they count against the order, as on Receive (office)) but held out of stock — head office books them as
+   * a line with the check failed, quarantined for a second person to decide. Never put where they sell.
+   */
+  readonly qcFailed?: boolean;
 }
 
 export interface ReceiveActionResult {
@@ -864,6 +877,11 @@ export class WarehouseSession {
     if (notYours !== undefined) return { result: { commandId: input.commandId, outcome: NOT_YOURS_TO_RECEIVE, accepted: false, quantityMinor: 0, detail: notYours.detail }, signal: notYours };
     const barred = this.newWorkRefusal(() => this.receiptScansOf(input.grnId.trim()).length > 0);
     if (barred !== undefined) return { result: { commandId: input.commandId, outcome: 'app_version_too_old', accepted: false, quantityMinor: 0, detail: barred.detail }, signal: barred };
+    // Batch 20a: an MRP that is not a whole number of paise above zero is refused here, offline — nothing is received or queued.
+    if (input.mrpMinor !== undefined && (!Number.isSafeInteger(input.mrpMinor) || input.mrpMinor <= 0)) {
+      const detail = 'The MRP on the pack must be an amount in rupees above 0. Nothing was received — key the MRP again, or clear it.';
+      return { result: { commandId: input.commandId, outcome: 'mrp_not_an_amount', accepted: false, quantityMinor: 0, detail }, signal: signalFor('reject', 'mrp_not_an_amount', detail) };
+    }
     const declared = input.declaredUnitCostMinor === undefined ? undefined : money(input.declaredUnitCostMinor, this.currency);
     const command = {
       commandId: input.commandId,
@@ -905,8 +923,11 @@ export class WarehouseSession {
     const productId = result.productId!;
     this.receivedSoFar[productId] = (this.receivedSoFar[productId] ?? 0) + result.quantityMinor;
     const batchId = input.batchId ?? null;
-    const state: StockState = input.stockState ?? 'on_hand';
-    const key = gKey(productId, batchId);
+    // Batch 20a: units that failed the check or were refused at the door are held out of stock (quarantine) — never on sale.
+    const state: StockState = input.qcFailed === true ? 'quarantine' : (input.stockState ?? 'on_hand');
+    // Batch 20a: goods held out (failed the check, damaged, quarantined) wait APART from the good ones of the same product and
+    // batch — before, a later held scan turned the good units held too. Put-away still finds only the good ones (gKey).
+    const key = state === 'on_hand' ? gKey(productId, batchId) : `${gKey(productId, batchId)}|${state}`;
     const prior = this.goods.get(key);
     this.goods.set(key, {
       productId, batchId,
@@ -932,6 +953,9 @@ export class WarehouseSession {
         storeId: this.assignment.storeId, at: command.at,
         ...(input.temperatureC === undefined || !Number.isFinite(input.temperatureC) ? {} : { temperatureC: input.temperatureC }),
         ...(input.manufacturedOn === undefined || input.manufacturedOn.trim() === '' ? {} : { manufacturedOn: input.manufacturedOn.trim() }),
+        // Batch 20a: the MRP on the pack and "failed the check / refused at the door" — head office judges both, as for Receive (office).
+        ...(input.mrpMinor === undefined ? {} : { mrpMinor: input.mrpMinor }),
+        ...(input.qcFailed === true ? { qcFailed: true } : {}),
       },
     }));
 

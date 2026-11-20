@@ -1534,6 +1534,12 @@ export interface StorePack {
    */
   readonly packedProductIds?: Register<readonly unknown[]>;
   /**
+   * Batch 20a · R7 (M07-FR-01 · M03-FR-02) — each COUNTED product's case sizes from head office's pack ladder,
+   * `{ [productId]: [{ level, units }] }` (an inner of 6, a case of 12). Receive (office) offers "cases × pack size" from it with
+   * no network and still records units. Absent → not told (Receive then takes single units only). Optional for older packs.
+   */
+  readonly casePacks?: Register<unknown>;
+  /**
    * Round 7 · OB-507 (M25-FR-01) — the store's COMMITTED roster as head office holds it: its people, its shifts from a week
    * ago on, who is on each, and which shifts belong to a published week. Staff see their own shift from it with the line
    * down (read by `workforce-pack.ts`). Absent → the box was not told, and says so. Optional so an older pack type-checks.
@@ -1727,6 +1733,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     giftCards: notKnown(why),
     receivingChecklist: notKnown(why),
     packedProductIds: notKnown(why),
+    casePacks: notKnown(why),
     roster: notKnown(why),
     certifications: notKnown(why),
     versionPolicy: notKnown(why),
@@ -1884,6 +1891,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     giftCards: section<unknown>('giftCards'),
     receivingChecklist: section<unknown>('receivingChecklist'),
     packedProductIds: section<readonly unknown[]>('packedProductIds'),
+    casePacks: section<unknown>('casePacks'),
     roster: section<unknown>('roster'),
     certifications: section<unknown>('certifications'),
     versionPolicy: section<unknown>('versionPolicy'),

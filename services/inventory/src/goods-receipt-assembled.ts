@@ -81,16 +81,17 @@ export function linesFromScans(input: {
 }): readonly AssembledLine[] {
   // Wave 3 · SF-07 part 3: a cold-chain scan head office HELD (no reading, or out of range) is its own line, so a good scan of the
   // same product that went on-hand is never judged by — or blamed for — the held one; each line carries its readings.
-  interface Group { productId: string; batchId: string | null; posture: ScanPosture; coldHeld: boolean; uom: string; expiry: string | null; manufacturedOn: string | null; counted: number; onHand: number; commandIds: string[]; onHandMovementIds: string[]; temps: (number | undefined)[] }
+  interface Group { productId: string; batchId: string | null; posture: ScanPosture; coldHeld: boolean; uom: string; expiry: string | null; manufacturedOn: string | null; mrpMinor: number | null; counted: number; onHand: number; commandIds: string[]; onHandMovementIds: string[]; temps: (number | undefined)[] }
   const groups = new Map<string, Group>();
   const productOrder: string[] = [];
   for (const s of input.scans) {
     const posture = postureOf(s.state);
     const coldHeld = s.coldChainHeld !== undefined;
     // B4 · OB-504: a batch's manufacture date is part of what it IS — two dates on one batch number stay two lines, never merged.
-    const key = `${s.productId}|${s.batchId ?? ''}|${posture}|${coldHeld ? 'cold-held' : ''}|${s.manufacturedOn ?? ''}`;
+    // Batch 20a (M07-FR-02): two MRPs keyed off the packs of one product stay two lines too — each is compared with the master.
+    const key = `${s.productId}|${s.batchId ?? ''}|${posture}|${coldHeld ? 'cold-held' : ''}|${s.manufacturedOn ?? ''}|${s.mrpMinor ?? ''}`;
     if (!productOrder.includes(s.productId)) productOrder.push(s.productId);
-    const g = groups.get(key) ?? { productId: s.productId, batchId: s.batchId, posture, coldHeld, uom: s.uom, expiry: null, manufacturedOn: s.manufacturedOn ?? null, counted: 0, onHand: 0, commandIds: [], onHandMovementIds: [], temps: [] };
+    const g = groups.get(key) ?? { productId: s.productId, batchId: s.batchId, posture, coldHeld, uom: s.uom, expiry: null, manufacturedOn: s.manufacturedOn ?? null, mrpMinor: s.mrpMinor ?? null, counted: 0, onHand: 0, commandIds: [], onHandMovementIds: [], temps: [] };
     g.counted += s.quantityMinor;
     g.temps.push(s.temperatureC);
     g.commandIds.push(s.commandId);
@@ -124,6 +125,8 @@ export function linesFromScans(input: {
         unitCost: { minor: input.unitCostMinorOf(productId) ?? 0, currency: 'INR' },
         condition: g.posture === 'damaged' ? 'damaged' : 'good',
         ...(g.posture === 'held' ? { qc: 'failed' as const } : {}),
+        // Batch 20a: the MRP printed on the pack — the capture engine compares it with head office's master MRP (as for Receive (office)).
+        ...(g.mrpMinor === null ? {} : { mrp: { minor: g.mrpMinor, currency: 'INR' } }),
         // Wave 3 · SF-07 part 3: the line's reading for the capture engine. A held line with ANY scan unread carries none (held:
         // not recorded); otherwise its first reading — out of range by construction, so the engine holds it for the same reason
         // head office held the scan. A line that went on-hand carries a reading that passed.
