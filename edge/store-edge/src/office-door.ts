@@ -40,6 +40,8 @@ export const OFFICE_WORK_AUTHORITY: Readonly<Record<string, (payload: Record<str
   ApprovalDecided: (p) => (typeof p['subjectType'] === 'string' ? SUBJECT_AUTHORITY[p['subjectType']] : undefined),
   SupplierInvoiceCaptured: () => 'purchase.invoice.capture',
   GoodsReceived: () => 'inventory.movement.append',
+  // A photo or scan kept with a delivery (R6): the same receiving right as the delivery itself.
+  GoodsReceiptAttachmentCaptured: () => 'inventory.movement.append',
   StockCounted: () => 'inventory.movement.append',
   FloorIndentRequested: () => 'inventory.indent.request',
   FloorIndentReceived: () => 'inventory.movement.append',
