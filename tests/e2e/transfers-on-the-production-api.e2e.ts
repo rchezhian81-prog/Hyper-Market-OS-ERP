@@ -83,7 +83,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
   };
   const look = async (page: Page, id: string): Promise<void> => {
     await page.locator(`#register tbody tr[data-transfer="${id}"] button[data-act="view"]`).click();
-    await says(page, 'd-title', new RegExp(`^${id}$`));
+    await says(page, 'd-title', new RegExp(`^([A-Z]+\\d*/\\d{2}-\\d{2}/\\d{5}|${id})$`)); // batch 20b: titled by its document number
   };
 
   it('the br-1 manager sends a transfer he did not propose — head office names him the approver and values it at its own cost; counting it in himself, and an over-draw, are refused in head office\'s words', async () => {

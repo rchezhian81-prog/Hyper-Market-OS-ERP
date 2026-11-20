@@ -97,7 +97,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Count 
   };
   const viewPlan = async (page: Page, id: string): Promise<void> => {
     await page.locator(`#register tbody tr[data-plan="${id}"] button[data-act="view"]`).click();
-    await says(page, 'd-title', new RegExp(`^${id}$`));
+    await says(page, 'd-title', new RegExp(`^([A-Z]+\\d*/\\d{2}-\\d{2}/\\d{5}|${id})$`)); // batch 20b: titled by its document number
     await page.locator('#d-lines li').first().waitFor({ timeout: 15_000 });
   };
 

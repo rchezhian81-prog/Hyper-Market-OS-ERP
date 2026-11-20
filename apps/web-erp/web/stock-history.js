@@ -71,7 +71,7 @@ function writeOffs(section) {
   const f = frame(section, 'wo', 'woH', 'woLede');
   const fromHost = node('div', { className: 'sh-day' }); const toHost = node('div', { className: 'sh-day' });
   const itemLabel = node('label', { htmlFor: 'wo-item' }); const item = node('input', { id: 'wo-item', type: 'text', autocomplete: 'off', className: 'sre-input' });
-  const show = node('button', { id: 'wo-show', type: 'button', className: 'sre-btn sre-btn-primary' });
+  const show = node('button', { id: 'wo-show', type: 'button', className: 'sre-btn sre-btn-secondary' });
   f.controls.append(fromHost, toHost, node('div', { className: 'field' }, itemLabel, item), show);
   dateBox(fromHost, 'wo-from', 'from', daysBefore(today(), 29)); dateBox(toHost, 'wo-to', 'to', today());
   const o = office(); if (o && typeof o.pickable === 'function') o.pickable(item, 'product', both('woItem'));
@@ -118,7 +118,7 @@ function counts(section) {
   const api = window.countHistorySession;
   const f = frame(section, 'ch', 'chH', 'chLede');
   const fromHost = node('div', { className: 'sh-day' }); const toHost = node('div', { className: 'sh-day' });
-  const show = node('button', { id: 'ch-show', type: 'button', className: 'sre-btn sre-btn-primary' });
+  const show = node('button', { id: 'ch-show', type: 'button', className: 'sre-btn sre-btn-secondary' });
   f.controls.append(fromHost, toHost, show);
   dateBox(fromHost, 'ch-from', 'from', daysBefore(today(), 29)); dateBox(toHost, 'ch-to', 'to', today());
   let current = null; let table = null;
@@ -165,7 +165,7 @@ function stockout(section) {
   const pickLabel = node('label', { htmlFor: 'so-days' });
   const pick = node('select', { id: 'so-days', className: 'sre-input' }, ...SH.periods.map((d) => node('option', { value: String(d), textContent: String(d) })));
   pick.value = '28';
-  const show = node('button', { id: 'so-show', type: 'button', className: 'sre-btn sre-btn-primary' });
+  const show = node('button', { id: 'so-show', type: 'button', className: 'sre-btn sre-btn-secondary' });
   f.controls.append(node('div', { className: 'field' }, pickLabel, pick), show);
   const basisH = node('h4', { id: 'so-basis-h' }); const basis = node('ul', { id: 'so-basis', className: 'sh-basis' });
   f.extra.append(basisH, basis);
