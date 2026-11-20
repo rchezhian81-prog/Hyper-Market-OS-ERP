@@ -1848,10 +1848,11 @@ describe('the reporting screen, fed by the box', () => {
     expect(outcome.detail).toContain('what is thrown away recorded');
   });
 
-  it('refuses a report this BUILD cannot compute, and does not blame the shop', async () => {
-    // The shop records everything `shrinkage` names and there is no code here that works it out.
+  it('sends a report the store computer does not work out to head office, and does not blame the shop', async () => {
+    // The shop records everything `shrinkage` names but the store computer does not work it out.
     // Judged on the pack's records alone it would open with no figures and no rows, under its own
-    // name, and be read as "no shrinkage".
+    // name, and be read as "no shrinkage". Since batch 20c (O2) head office works it out for the
+    // period, so the store computer says so rather than showing an empty report.
     const base = await serve(snapshotOf({
       pack: pack({
         reportingRecords: known([
@@ -1864,7 +1865,7 @@ describe('the reporting screen, fed by the box', () => {
     const outcome = reporting.run('shrinkage');
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
-    expect(outcome.refusal).toBe('this_version_cannot_produce_that_yet');
+    expect(outcome.refusal).toBe('worked_out_at_head_office');
     expect(outcome.missing, 'the shop was blamed for our gap').toEqual([]);
   });
 
