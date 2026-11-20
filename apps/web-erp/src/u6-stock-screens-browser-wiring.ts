@@ -9,6 +9,11 @@ import { createStockAdjustmentsSession } from './stock-adjustments-session';
 import type { HeadOfficeHttp } from './head-office-http';
 import { createShelfReturnSession } from './shelf-return-session';
 import { createReceiptCorrectionSession } from './receipt-correction-session';
+import {
+  createPastWriteOffsSession, createCountHistorySession, createStockoutSession, createTransferSuggestionsSession,
+  words as stockHistoryWords, fill, dayWords, qty, percent, failureWords, STOCKOUT_PERIODS,
+} from './stock-history-session';
+import { rupees } from './head-office-http';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
@@ -22,4 +27,11 @@ export function wireStockScreens(win: Record<string, unknown>, viewerIdentity: (
   win['shelfReturnSession'] = createShelfReturnSession(viewerIdentity(win['quarantineData']), http());
   // R2 (batch 18c · OB-873): "Correct a saved receipt" on Goods receipt review, for the person who may move stock.
   win['receiptCorrectionSession'] = createReceiptCorrectionSession(viewerIdentity(win['goodsReceiptData']), http());
+  // Batch 20b: earlier write-offs (S2) on Waste & write-off, earlier counts and their accuracy (S3) on Stock counts, what the
+  // empty shelves cost (S4) on Stock health, suggested transfers (S5) on Transfers — each for its own page's viewer.
+  win['stockHistory'] = Object.freeze({ words: stockHistoryWords, fill, dayWords, qty, percent, failureWords, rupees, periods: STOCKOUT_PERIODS });
+  if (win['wasteData'] !== undefined) win['pastWriteOffsSession'] = createPastWriteOffsSession(viewerIdentity(win['wasteData']), http());
+  if (win['countsData'] !== undefined) win['countHistorySession'] = createCountHistorySession(viewerIdentity(win['countsData']), http());
+  if (win['stockHealthData'] !== undefined) win['stockoutSession'] = createStockoutSession(viewerIdentity(win['stockHealthData']), http());
+  if (win['transfersData'] !== undefined) win['transferSuggestionsSession'] = createTransferSuggestionsSession(viewerIdentity(win['transfersData']), http());
 }

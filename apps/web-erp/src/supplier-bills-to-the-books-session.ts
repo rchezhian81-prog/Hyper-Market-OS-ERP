@@ -124,7 +124,11 @@ const enc = encodeURIComponent;
 // ── Supplier bills: the second person's check, and debit notes ─────────────────────────────────────────────────────────
 
 /** The typed bill exactly as head office will check it — the capture body (`typedCaptureBody`'s) and its invoice id. */
-export interface TypedBill { readonly invoiceId: string; readonly body: Readonly<Record<string, unknown>> }
+export interface TypedBill {
+  readonly invoiceId: string; readonly body: Readonly<Record<string, unknown>>;
+  /** Batch 20b · A2: lines whose typed GST rate differs from the item's — named in the check's summary for the second person. */
+  readonly secondLook?: readonly string[];
+}
 export interface AskedCheck {
   readonly requestId: string; readonly kind: string; readonly subjectRef: string; readonly status: 'waiting' | 'approved' | 'rejected' | 'expired' | 'used';
   readonly valueMinor: number | null; readonly summary: string; readonly details: Readonly<Record<string, unknown>>;
@@ -201,8 +205,8 @@ export function createBillCheckSession(input: { readonly viewer: Viewer; readonl
         kind: SUPPLIER_INVOICE_CHECK, subjectRef: bill.invoiceId, valueMinor: total,
         // Exactly the bill as it will be saved (head office compares the saved bill with this, field by field).
         details: { ...bill.body, invoiceId: bill.invoiceId },
-        summary: `Supplier bill ${bill.invoiceId} from ${supplier}: ₹${(total / 100).toFixed(2)}`,
-        reason: 'Check the typed bill against the paper',
+        summary: `Supplier bill ${bill.invoiceId} from ${supplier}: ₹${(total / 100).toFixed(2)}${(bill.secondLook ?? []).length === 0 ? '' : ` — look again at the GST rate: ${(bill.secondLook ?? []).join('; ')}`}`,
+        reason: (bill.secondLook ?? []).length === 0 ? 'Check the typed bill against the paper' : 'Check the typed bill against the paper — a GST rate differs from the item\'s',
       });
     },
     asked: async () => {

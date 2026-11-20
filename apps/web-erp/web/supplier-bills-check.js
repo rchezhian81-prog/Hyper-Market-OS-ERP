@@ -28,6 +28,16 @@ function typedBill() {
   });
 }
 
+/** Batch 20b · A2: the typed lines whose GST rate differs from the item's — the bill itself is sent unchanged. */
+function rateSecondLook() {
+  const lines = [...document.querySelectorAll('#type-lines tr[data-row]')].map((tr) => {
+    const rate = tr.querySelector('.t-rate');
+    const bps = rate?.dataset.itemBps;
+    return { productId: tr.querySelector('.t-productId')?.value ?? '', rate: rate?.value ?? '', itemBps: bps === undefined || bps === '' ? undefined : Number(bps) };
+  }).filter((l) => l.productId.trim() !== '');
+  return typeof bc.rateSecondLook === 'function' ? bc.rateSecondLook(lines) : [];
+}
+
 function paintChecks() {
   const ul = $('chk-list'); ul.replaceChildren();
   if (asked === null) return;
@@ -138,7 +148,7 @@ if (bc !== null && (bc.session.may.capture || bc.session.may.match)) {
   $('type-ask').addEventListener('click', async () => {
     const typed = typedBill();
     if (!typed.ok) { $('type-status').dataset.result = 'invalid'; $('type-status').textContent = w(typed.problem === 'needs_invoice_supplier_total' ? 'needBill' : 'notMoney'); return; }
-    const out = await bc.session.askCheck({ invoiceId: typed.invoiceId, body: typed.body });
+    const out = await bc.session.askCheck({ invoiceId: typed.invoiceId, body: typed.body, secondLook: rateSecondLook() });
     status($('type-status'), out, 'askedCheck');
     if (out.result === 'ok') await showChecks();
   });

@@ -40,6 +40,7 @@
       .badges b.warn { background:var(--warn-surface); color:var(--on-warn-surface); } .badges b.muted { background:var(--panel-2); color:var(--muted); font-weight:500; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state.tone-error { color:var(--danger-text); }
+      .sh-section { display:grid; gap:10px; } .sh-controls { display:flex; flex-wrap:wrap; gap:12px; align-items:end; } .sh-basis { margin:0; padding-left:20px; color:var(--muted); font-size:14px; } .sh-kind { margin:0; }
     </style>
   </head>
   <body>
@@ -66,11 +67,14 @@
 
       <ul class="rows" id="rows" aria-label="Recorded losses"></ul>
       <div class="state" id="state" hidden></div>
+      <!-- Batch 20b · S2: earlier write-offs by date range and item, with totals (stock-history.js) -->
+      <section class="sh-section" id="past-write-offs-section" hidden></section>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./waste.js" type="module"></script>
+    <script src="./stock-history.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

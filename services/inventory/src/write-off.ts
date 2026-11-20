@@ -26,6 +26,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, approvalNamedIn, fingerprintOf, type ApprovalPort } from '../../identity/src/approval-requests';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 const LOSS_TYPES: readonly LossType[] = ['wastage', 'damage', 'expiry', 'donation', 'destruction'];
 
@@ -402,14 +403,30 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
       permission: 'waste.view',
       handler: async (ctx) => {
         const locationId = ctx.query['locationId'];
-        const productId = ctx.query['productId'];
+        const productId = ctx.query['productId'] === '' ? undefined : ctx.query['productId'];
+        // Batch 20b · S2 (M28-FR-01 · M08-FR-03 "adjustment reports"): ?from=&to= — shop days (YYYY-MM-DD), both included.
+        const from = ctx.query['from'] === '' ? undefined : ctx.query['from'];
+        const to = ctx.query['to'] === '' ? undefined : ctx.query['to'];
+        const DAY = /^\d{4}-\d{2}-\d{2}$/;
+        if ((from !== undefined && !DAY.test(from)) || (to !== undefined && !DAY.test(to)) || (from !== undefined && to !== undefined && from > to)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_date_range',
+            whatHappened: 'The dates could not be read: give a "from" and a "to" day (YYYY-MM-DD), the "from" day not after the "to" day.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Choose the two days again. Nothing was changed.',
+          });
+        }
         const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches
         const all = await deps.writeOffs(ctx.tenantId);
         const filtered = all.filter((r) => scope.covers(r.locationId)
           && (locationId === undefined || r.locationId === locationId)
-          && (productId === undefined || r.productId === productId));
+          && (productId === undefined || r.productId === productId)
+          && (from === undefined || shopDateIn(r.at) >= from) && (to === undefined || shopDateIn(r.at) <= to));
         const totalLossMinor = filtered.reduce((s, r) => s + Math.abs(r.valueMinor), 0);
-        return { status: 200, body: { count: filtered.length, totalLossMinor, writeOffs: filtered, scope: scope.scope, asAt: deps.now() } };
+        // S2: the totals by kind of loss, so a range reads at a glance (each kind's count and value).
+        const byLossType: Record<string, { count: number; valueMinor: number }> = {};
+        for (const r of filtered) { const k = byLossType[r.lossType] ?? { count: 0, valueMinor: 0 }; k.count += 1; k.valueMinor += Math.abs(r.valueMinor); byLossType[r.lossType] = k; }
+        return { status: 200, body: { count: filtered.length, totalLossMinor, byLossType, ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }), writeOffs: filtered, scope: scope.scope, asAt: deps.now() } };
       },
     },
   ];

@@ -243,7 +243,7 @@ function paintApprover(view) {
   const chosen = select.value;
   select.replaceChildren(...view.approvable.map((i) => {
     const opt = document.createElement('option'); opt.value = i.indentId;
-    opt.textContent = `${i.indentId} · ${i.lines.map((l) => `${pname(l.productId)} × ${l.requestedMinor}`).join(', ')} · ${t('requestedByLabel')} ${i.requestedBy}`;
+    opt.textContent = `${i.documentNumber || i.indentId} · ${i.lines.map((l) => `${pname(l.productId)} × ${l.requestedMinor}`).join(', ')} · ${t('requestedByLabel')} ${i.requestedBy}`;
     return opt;
   }));
   if (chosen && view.approvable.some((i) => i.indentId === chosen)) select.value = chosen;
@@ -294,7 +294,7 @@ function paintReceiver(view) {
   const chosen = select.value;
   select.replaceChildren(...receivable.map((r) => {
     const opt = document.createElement('option'); opt.value = `${r.indentId}|${r.issue.issueId}`;
-    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${r.issue.lines.map((l) => `${pname(l.productId)} × ${session.quantityText(l.quantityMinor, session.unitOf(r.indentId, l.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
+    opt.textContent = `${r.documentNumber || r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${r.issue.lines.map((l) => `${pname(l.productId)} × ${session.quantityText(l.quantityMinor, session.unitOf(r.indentId, l.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
     return opt;
   }));
   if (chosen && receivable.some((r) => `${r.indentId}|${r.issue.issueId}` === chosen)) select.value = chosen;
@@ -353,7 +353,7 @@ function paintResolver(view) {
   const chosen = select.value;
   select.replaceChildren(...resolvable.map((r) => {
     const opt = document.createElement('option'); opt.value = `${r.indentId}|${r.issue.issueId}`;
-    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${t('issueShortWord')}: ${(r.issue.shortfall ?? []).map((s) => `${pname(s.productId)} × ${session.quantityText(s.quantityMinor, session.unitOf(r.indentId, s.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
+    opt.textContent = `${r.documentNumber || r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${t('issueShortWord')}: ${(r.issue.shortfall ?? []).map((s) => `${pname(s.productId)} × ${session.quantityText(s.quantityMinor, session.unitOf(r.indentId, s.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
     return opt;
   }));
   if (chosen && resolvable.some((r) => `${r.indentId}|${r.issue.issueId}` === chosen)) select.value = chosen;

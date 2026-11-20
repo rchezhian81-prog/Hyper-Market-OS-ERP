@@ -67,7 +67,7 @@ export type CopyKey =
 export const WASTE_REVIEW_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Waste & write-off', langName: 'தமிழ்',
-    lead: 'What left as loss in the last 30 days, by type and value. Older write-offs are kept in head office’s records and reports, not shown here. The material losses — the ones big enough to need a second person’s approval — come first. Recording a write-off is done where it is approved, never here.',
+    lead: 'What left as loss in the last 30 days, by type and value. For any other days, use “Earlier write-offs” below. The material losses — the ones big enough to need a second person’s approval — come first. Recording a write-off is done where it is approved, never here.',
     lossWastage: 'Wastage', lossDamage: 'Damage', lossExpiry: 'Expired', lossDonation: 'Donation', lossDestruction: 'Destruction',
     neededApproval: 'Needed approval', evidenceOnFile: 'Evidence on file', noEvidence: 'No evidence',
     raisedByLabel: 'Raised by', totalLoss: 'Total loss recorded',
@@ -80,7 +80,7 @@ export const WASTE_REVIEW_COPY: BilingualCopy<CopyKey> = {
   },
   ta: {
     title: 'கழிவு & நீக்கம்', langName: 'English',
-    lead: 'கடந்த 30 நாட்களில் இழப்பாக என்ன வெளியேறியது, வகை மற்றும் மதிப்பின்படி. பழைய நீக்கங்கள் தலைமை அலுவலகத்தின் பதிவுகளிலும் அறிக்கைகளிலும் உள்ளன, இங்கு காட்டப்படாது. இரண்டாவது நபரின் ஒப்புதல் தேவைப்படும் அளவு பெரிய இழப்புகள் முதலில். நீக்கத்தைப் பதிவு செய்வது ஒப்புதல் அளிக்கும் இடத்தில் செய்யப்படும், இங்கு அல்ல.',
+    lead: 'கடந்த 30 நாட்களில் இழப்பாக என்ன வெளியேறியது, வகை மற்றும் மதிப்பின்படி. வேறு நாட்களுக்கு, கீழே உள்ள “முந்தைய தள்ளுபடிகள்” பகுதியைப் பயன்படுத்தவும். இரண்டாவது நபரின் ஒப்புதல் தேவைப்படும் அளவு பெரிய இழப்புகள் முதலில். நீக்கத்தைப் பதிவு செய்வது ஒப்புதல் அளிக்கும் இடத்தில் செய்யப்படும், இங்கு அல்ல.',
     lossWastage: 'கழிவு', lossDamage: 'சேதம்', lossExpiry: 'காலாவதி', lossDonation: 'நன்கொடை', lossDestruction: 'அழிப்பு',
     neededApproval: 'ஒப்புதல் தேவைப்பட்டது', evidenceOnFile: 'ஆதாரம் உள்ளது', noEvidence: 'ஆதாரம் இல்லை',
     raisedByLabel: 'பதிவு செய்தவர்', totalLoss: 'பதிவான மொத்த இழப்பு',

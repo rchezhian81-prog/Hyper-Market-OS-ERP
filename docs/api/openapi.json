@@ -9633,6 +9633,50 @@
         }
       }
     },
+    "/v1/catalogue/item-gst-rates": {
+      "get": {
+        "operationId": "getCatalogueItemGstRates",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.invoice.capture",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCatalogueItemGstRatesReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.invoice.capture\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/label-facts-outstanding": {
       "get": {
         "operationId": "getCatalogueLabelFactsOutstanding",
@@ -58234,6 +58278,50 @@
         }
       }
     },
+    "/v1/inventory/count-history": {
+      "get": {
+        "operationId": "getInventoryCountHistory",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "count.view",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryCountHistoryReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"count.view\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/count-plans": {
       "get": {
         "operationId": "getInventoryCountPlans",
@@ -63780,6 +63868,50 @@
         }
       }
     },
+    "/v1/inventory/stockout-estimate": {
+      "get": {
+        "operationId": "getInventoryStockoutEstimate",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryStockoutEstimateReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/stockout-impact": {
       "post": {
         "operationId": "postInventoryStockoutImpact",
@@ -63846,6 +63978,50 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/transfer-suggestions": {
+      "get": {
+        "operationId": "getInventoryTransferSuggestions",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryTransferSuggestionsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -128087,6 +128263,38 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/master-data.ts"
       },
+      "GetCatalogueItemGstRatesReply": {
+        "type": "object",
+        "required": [
+          "rates",
+          "source",
+          "asAt"
+        ],
+        "properties": {
+          "rates": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/index.ts"
+      },
       "GetCatalogueLabelFactsOutstandingReply": {
         "type": "object",
         "required": [
@@ -146980,6 +147188,50 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/index.ts"
       },
+      "GetInventoryCountHistoryReply": {
+        "type": "object",
+        "required": [
+          "counts",
+          "accuracy",
+          "productUoms",
+          "scope",
+          "asAt",
+          "from",
+          "to"
+        ],
+        "properties": {
+          "counts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CountHistoryRow"
+            }
+          },
+          "accuracy": {
+            "$ref": "#/components/schemas/CountAccuracy"
+          },
+          "productUoms": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "scope": {
+            "$ref": "#/components/schemas/BranchScope"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/stock-history.ts"
+      },
       "GetInventoryCountPlansByPlanIdReply": {
         "type": "object",
         "required": [
@@ -150959,6 +151211,123 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/shelf-returns.ts"
       },
+      "GetInventoryStockoutEstimateReply": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "days",
+          "rows",
+          "knownLostMarginMinor",
+          "notKnownCount",
+          "productUoms",
+          "isEstimate",
+          "basis",
+          "scope",
+          "asAt"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "days": {
+            "type": "number"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StockoutEstimateRow"
+            }
+          },
+          "knownLostMarginMinor": {
+            "type": "number"
+          },
+          "notKnownCount": {
+            "type": "number"
+          },
+          "productUoms": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "isEstimate": {
+            "type": "boolean"
+          },
+          "basis": {
+            "type": "object",
+            "required": [
+              "emptyDay",
+              "normalSales",
+              "marginEach",
+              "estimate"
+            ],
+            "properties": {
+              "emptyDay": {
+                "type": "string"
+              },
+              "normalSales": {
+                "type": "string"
+              },
+              "marginEach": {
+                "type": "string"
+              },
+              "estimate": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "scope": {
+            "$ref": "#/components/schemas/BranchScope"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/stock-history.ts"
+      },
+      "GetInventoryTransferSuggestionsReply": {
+        "type": "object",
+        "required": [
+          "suggestions",
+          "productUoms",
+          "suggestionOnly",
+          "scope",
+          "asAt"
+        ],
+        "properties": {
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransferSuggestionRow"
+            }
+          },
+          "productUoms": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "suggestionOnly": {
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/BranchScope"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/stock-history.ts"
+      },
       "GetInventoryValuationReply": {
         "type": "object",
         "required": [
@@ -151124,19 +151493,14 @@
       "GetInventoryWriteOffsReply": {
         "type": "object",
         "required": [
-          "count",
-          "totalLossMinor",
           "writeOffs",
           "scope",
-          "asAt"
+          "asAt",
+          "count",
+          "totalLossMinor",
+          "byLossType"
         ],
         "properties": {
-          "count": {
-            "type": "number"
-          },
-          "totalLossMinor": {
-            "type": "number"
-          },
           "writeOffs": {
             "type": "array",
             "items": {
@@ -151148,6 +151512,37 @@
           },
           "asAt": {
             "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "count": {
+            "type": "number"
+          },
+          "totalLossMinor": {
+            "type": "number"
+          },
+          "byLossType": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "count",
+                "valueMinor"
+              ],
+              "properties": {
+                "count": {
+                  "type": "number"
+                },
+                "valueMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
           }
         },
         "additionalProperties": true,
@@ -284432,6 +284827,64 @@
         },
         "additionalProperties": true
       },
+      "CountAccuracy": {
+        "type": "object",
+        "required": [
+          "counts",
+          "matched",
+          "short",
+          "over",
+          "exactBp",
+          "unitsBp",
+          "shortValueMinor",
+          "overValueMinor",
+          "withoutValue"
+        ],
+        "properties": {
+          "counts": {
+            "type": "number"
+          },
+          "matched": {
+            "type": "number"
+          },
+          "short": {
+            "type": "number"
+          },
+          "over": {
+            "type": "number"
+          },
+          "exactBp": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "unitsBp": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "shortValueMinor": {
+            "type": "number"
+          },
+          "overValueMinor": {
+            "type": "number"
+          },
+          "withoutValue": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "CountAge": {
         "type": "object",
         "required": [
@@ -284497,6 +284950,102 @@
             "type": "number"
           },
           "day": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CountHistoryRow": {
+        "type": "object",
+        "required": [
+          "countId",
+          "documentNumber",
+          "productId",
+          "locationId",
+          "shopDate",
+          "at",
+          "expectedMinor",
+          "countedMinor",
+          "varianceMinor",
+          "valueMinor",
+          "uom",
+          "requiredApproval",
+          "counterId",
+          "approvedBy",
+          "reasonCode"
+        ],
+        "properties": {
+          "countId": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "productId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "shopDate": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "expectedMinor": {
+            "type": "number"
+          },
+          "countedMinor": {
+            "type": "number"
+          },
+          "varianceMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "uom": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "requiredApproval": {
+            "type": "boolean"
+          },
+          "counterId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "reasonCode": {
             "type": "string"
           }
         },
@@ -298827,6 +299376,9 @@
             "type": "string"
           },
           "writeOffId": {
+            "type": "string"
+          },
+          "writeOffDocumentNumber": {
             "type": "string"
           },
           "movementIds": {
@@ -326274,6 +326826,87 @@
         },
         "additionalProperties": true
       },
+      "StockoutEstimateRow": {
+        "type": "object",
+        "required": [
+          "productId",
+          "locationId",
+          "daysCarried",
+          "daysEmpty",
+          "emptyBp",
+          "onHandNowMinor",
+          "normalDailyMinor",
+          "lostUnitsMinor",
+          "lostMarginMinor",
+          "notKnownBecause"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "daysCarried": {
+            "type": "number"
+          },
+          "daysEmpty": {
+            "type": "number"
+          },
+          "emptyBp": {
+            "type": "number"
+          },
+          "onHandNowMinor": {
+            "type": "number"
+          },
+          "normalDailyMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "lostUnitsMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "lostMarginMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "notKnownBecause": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "empty_every_day",
+                  "margin_not_held",
+                  "nothing_sold_anywhere"
+                ]
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
       "StockoutRow": {
         "type": "object",
         "required": [
@@ -333906,6 +334539,47 @@
                 "additionalProperties": true
               }
             ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "TransferSuggestionRow": {
+        "type": "object",
+        "required": [
+          "productId",
+          "toLocationId",
+          "fromLocationId",
+          "fromKind",
+          "heldAtSourceMinor",
+          "onHandHereMinor",
+          "soldHereLast7DaysMinor"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "toLocationId": {
+            "type": "string"
+          },
+          "fromLocationId": {
+            "type": "string"
+          },
+          "fromKind": {
+            "type": "string",
+            "enum": [
+              "another_store",
+              "head_office_warehouse",
+              "own_back_store"
+            ]
+          },
+          "heldAtSourceMinor": {
+            "type": "number"
+          },
+          "onHandHereMinor": {
+            "type": "number"
+          },
+          "soldHereLast7DaysMinor": {
+            "type": "number"
           }
         },
         "additionalProperties": true

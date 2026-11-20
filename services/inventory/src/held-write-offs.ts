@@ -55,6 +55,8 @@ export interface HeldWriteOffApplied {
   readonly appliedBy: string;
   readonly appliedAt: string;
   readonly writeOffId: string;
+  /** Batch 20b: the write-off's own `WOF1/26-27/00001` (OB-850), when the read could name it — what the page shows. */
+  readonly writeOffDocumentNumber?: string;
   readonly movementIds: readonly string[];
 }
 

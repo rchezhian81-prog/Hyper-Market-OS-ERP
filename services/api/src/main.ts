@@ -174,6 +174,8 @@ import { wasteRoutes } from '../../inventory/src/waste';
 import { writeOffRoutes } from '../../inventory/src/write-off';
 import { shelfReturnRoutes } from '../../inventory/src/shelf-returns'; // S1 (batch 18c)
 import { shelfReturnsAdapter, receiptCorrectionsAdapter } from './b18c-adapters'; // S1, R2 (batch 18c)
+import { stockHistoryRoutes } from '../../inventory/src/stock-history'; // S3, S4, S5 (batch 20b)
+import { stockHistoryAdapter } from './b20b-adapters'; // S3, S4, S5 (batch 20b)
 import { goodsReceiptCorrectionRoutes } from '../../inventory/src/goods-receipt-corrections'; // R2 (batch 18c)
 import { coldChainRoutes } from '../../inventory/src/cold-chain';
 import { expiryRoutes } from '../../inventory/src/expiry';
@@ -1312,6 +1314,8 @@ export function buildSurface(deps: {
     // S1 (batch 18c · OB-872): expired, near-expiry or damaged shelf stock goes back to the supplier — RTS number, ledger
     // movement, issued SDN debit note, e-way-bill rule, and the same approval as a write-off of that value.
     ...(store === undefined ? [] : shelfReturnRoutes({ ...shelfReturnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze })),
+    // Batch 20b (S3 · S4 · S5): earlier counts and count accuracy, what the empty shelves cost, how to share stock — reads only.
+    ...(store === undefined ? [] : stockHistoryRoutes({ ...stockHistoryAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) })),
     ...calendared(productionRoutes)(store === undefined ? { // OB-607: USE BY on the shop's clock
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},
       onHand: empty(0), priorConsumption: empty({}),

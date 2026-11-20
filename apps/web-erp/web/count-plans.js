@@ -137,7 +137,7 @@ function lineNode(line) {
 
 function sheetNode(line) {
   const li = node('li', { dataset: { product: line.productId, todo: line.toDo } });
-  const word = line.toDo === 'count' ? t('count') : line.toDo === 'recount' ? `${t('recount')} (${t('recountOfCount')} ${line.recountOf})` : t('done');
+  const word = line.toDo === 'count' ? t('count') : line.toDo === 'recount' ? t('recount') : t('done');
   li.append(node('b', { textContent: `${line.productId} — ${word}` }));
   if (line.toDo !== 'done' && current.sheet.state === 'counting' && session.may.count) {
     const qty = node('input', { className: 'qty', inputMode: 'decimal', 'aria-label': `${t('qty')}: ${line.productId}`, placeholder: t('qty'), autocomplete: 'off' });
@@ -158,7 +158,8 @@ function sheetNode(line) {
 function paintDrawer() {
   if (current === null) return;
   const view = current.view;
-  $('d-title').textContent = current.planId;
+  // Batch 20b: the count is named by its number (CNT1/26-27/00001, OB-850); only a plan from before numbering shows its id.
+  $('d-title').textContent = planName();
   if (view === null) { $('d-state').textContent = ''; for (const id of ['d-lines', 'd-sheet', 'd-breaches', 'd-held']) $(id).replaceChildren(); return; }
   const p = view.plan;
   const by = p.state === 'approved' ? ` · ${t('approvedBy')} ${p.approvedBy}` : p.state === 'cancelled' ? ` · ${t('cancelledBy')} ${p.cancelledBy}` : '';
@@ -179,7 +180,7 @@ function paintDrawer() {
     : view.freezeBreaches.map((b) => { const x = session.breachView(lang, b); return node('li', { className: 'tone-error', dataset: { movement: x.movementId } }, node('b', { textContent: `${x.productId} — ${x.kindWord} (${x.effectMinor > 0 ? '+' : ''}${x.effectMinor})` }), node('span', { className: 'muted', textContent: `${x.movementId} · ${window.sreShopDay?.dateTimeOf(x.occurredAt) ?? ''}` })); })));
   $('d-held').replaceChildren(...(view.heldWriteOffs.length === 0
     ? [node('li', { className: 'muted', textContent: t('noHeld') })]
-    : view.heldWriteOffs.map((h) => { const x = session.heldView(lang, h); return node('li', { className: x.state === 'applied' ? 'tone-ok' : 'tone-degraded', dataset: { held: x.heldId, state: x.state } }, node('b', { textContent: `${x.productId} — ${qtyText(x.quantityMinor, x.uom)} · ${x.value}` }), node('span', { className: 'muted', textContent: `${x.stateWord}${x.applied === null ? '' : ` · ${x.applied.writeOffId}`}` })); })));
+    : view.heldWriteOffs.map((h) => { const x = session.heldView(lang, h); return node('li', { className: x.state === 'applied' ? 'tone-ok' : 'tone-degraded', dataset: { held: x.heldId, state: x.state } }, node('b', { textContent: `${x.productId} — ${qtyText(x.quantityMinor, x.uom)} · ${x.value}` }), node('span', { className: 'muted', textContent: `${x.stateWord}${x.applied === null ? '' : ` · ${x.applied.writeOffDocumentNumber || x.applied.writeOffId}`}` })); })));
 }
 
 async function refreshDrawer() {
@@ -189,6 +190,12 @@ async function refreshDrawer() {
   current.sheet = sheet !== null && sheet.result === 'ok' ? sheet.sheet : null;
   paintDrawer();
   await loadList();
+}
+
+/** The count's human number (OB-850) — from what head office said about the plan, else the list's row. */
+function planName() {
+  if (current === null) return '';
+  return current.view?.plan?.documentNumber || plans?.find((p) => p.planId === current.planId)?.documentNumber || current.planId;
 }
 
 async function openDrawer(planId) {
@@ -306,7 +313,7 @@ if (session !== null) {
     $('d-status').textContent = ''; $('d-status').className = 'status';
     // U1 · OB-698: the consequence-and-confirm sheet before the corrections are posted — Go back sends nothing.
     const tt = current?.view?.totals;
-    const sub = (l, key) => String(session.text(l, key)).replace('{plan}', current.planId).replace('{place}', current.view?.plan?.locationId ?? '').replace('{counted}', String(tt?.counted ?? '?')).replace('{products}', String(tt?.products ?? '?')).replace('{loss}', tt ? session.rupees(tt.lossMinor) : (office()?.words('notKnown') ?? 'Not known')).replace('{gain}', tt ? session.rupees(tt.gainMinor) : (office()?.words('notKnown') ?? 'Not known'));
+    const sub = (l, key) => String(session.text(l, key)).replace('{plan}', planName()).replace('{place}', current.view?.plan?.locationId ?? '').replace('{counted}', String(tt?.counted ?? '?')).replace('{products}', String(tt?.products ?? '?')).replace('{loss}', tt ? session.rupees(tt.lossMinor) : (office()?.words('notKnown') ?? 'Not known')).replace('{gain}', tt ? session.rupees(tt.gainMinor) : (office()?.words('notKnown') ?? 'Not known'));
     // With no reason written the session says so, and nothing is sent — no sheet for that.
     const answer = $('d-reason').value.trim() === '' ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
     if (answer === 'unavailable') { $('d-status').className = 'status err'; $('d-status').textContent = t('confirmUnavailable'); return; }
