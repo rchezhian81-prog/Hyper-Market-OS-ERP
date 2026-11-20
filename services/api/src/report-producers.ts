@@ -14,7 +14,7 @@
 // rows. Read-only by construction: nothing in this file appends an event (the AI and reporting never write — rule #5).
 
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
-import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
+import { tradingDayIn, tradingDayWindow, shiftDate, type TradingCalendar } from '../../../packages/calendar/src/index';
 import { tenderSplit } from '../../../packages/reporting/src/index';
 import type { SourceTransaction } from '../../../packages/owner-control/src/index';
 import type { BranchScope } from '../../kernel/src/index';
@@ -93,7 +93,16 @@ export interface ProduceOptions {
    * that department (units_by_category). A report that does not carry a filter is never asked with it (the drill refuses).
    */
   readonly filters?: { readonly tender?: string; readonly categoryId?: string };
+  /**
+   * Batch 20c · O2 (M29-FR-02): a PERIOD of trading days (both inclusive) instead of one day — the store computer's Reports
+   * page asks for exactly the days the person chose. A period report covers it (capped at today, said in its `period`); a
+   * report about how things stand NOW (stock on hand, loyalty, expiry) is unchanged — the page says it is about now.
+   */
+  readonly period?: { readonly from: string; readonly to: string };
 }
+
+/** Batch 20c · O2 · OB-877 A: why the cost of goods for a period other than today is not known at head office. */
+export const HEAD_OFFICE_COST_FOR_PERIOD = 'Not known for this period — head office keeps only today\'s average buying cost, not the cost on each earlier day (owner, OB-877 A)';
 
 export interface ReportProducers {
   readonly produced: readonly string[];
@@ -208,7 +217,11 @@ export function reportProducers(input: {
 
   const produce = async (tenantId: string, reportId: string, options: ProduceOptions): Promise<ProducedReport> => {
     const calendar = await input.calendar(tenantId);
-    const day = options.tradingDay ?? tradingDayIn(input.now(), calendar);
+    const today = tradingDayIn(input.now(), calendar);
+    // Batch 20c · O2: a period runs to today at the latest (a day after today has no records yet), and says so.
+    const asked = options.period === undefined ? undefined : { from: options.period.from, to: options.period.to > today ? today : options.period.to };
+    const day = asked?.to ?? options.tradingDay ?? today;
+    const inAsked = (instant: string): boolean => { const d = tradingDayIn(instant, calendar); return asked === undefined || (d >= asked.from && d <= asked.to); };
     const neverSales = 'no till has ever sent a sale to head office, so there is nothing to report yet';
 
     switch (reportId) {
@@ -385,7 +398,8 @@ export function reportProducers(input: {
 
       case 'purchases_by_supplier': {
         // Purchase orders are company records (head-office buying); a branch-limited reader is told, not shown a partial.
-        const orders = [...(await foldPurchaseOrders(input.store, tenantId)).values()];
+        // Batch 20c · O2: for a period, the orders RAISED in it (by the shop's trading day); without one, every order.
+        const orders = [...(await foldPurchaseOrders(input.store, tenantId)).values()].filter((o) => inAsked(o.at));
         // As at the newest fact on the order register (a raise, an approval, a receipt posted against an order).
         const asAt = newestOf((await input.store.readStream(tenantId, PURCHASE_ORDERS())).map((e) => e.event.occurredAt));
         const now = input.now();
@@ -405,6 +419,7 @@ export function reportProducers(input: {
         }
         const ordered = [...by.entries()].sort((a, b) => b[1].ordered - a[1].ordered || a[0].localeCompare(b[0]));
         return {
+          ...(asked === undefined ? {} : { period: asked }),
           sources: [sourceFreshness({ source: 'purchase orders', domain: 'purchasing', lastEventAt: asAt, now, ...thresholds })],
           figures: ordered.map(([supplier, t]) => mk(supplier, t.ordered, 'minor_currency')),
           rows: ordered.map(([supplier, t]) => ({ supplierId: supplier, orders: String(t.orders), orderedMinor: String(t.ordered) })),
@@ -517,24 +532,33 @@ export function reportProducers(input: {
         // Money in the bank: the month's card and UPI takings against the provider's settlement files, and the provider's
         // payouts against the bank statements — the same independent evidence the month close is signed on.
         const now = input.now();
-        const period = day.slice(0, 7);
         if (options.scope !== 'all') {
           return { sources: [], rows: [], drill: {}, figures: [figure({ name: 'Card and UPI takings', unit: 'minor_currency', asAt: null, now, notAvailableBecause: 'the bank is company-wide; this needs company-wide report access' })] };
         }
-        const e = await independentEvidenceAdapter({ store: input.store, now: input.now }).evidenceFor(tenantId, period);
+        // The settlement and bank checks are made BY MONTH (the month close's own evidence). Batch 20c · O2: a period is
+        // covered by the whole months it touches — said in `period`, so nobody reads a month's check as one week's.
+        const months: string[] = [];
+        for (let m = (asked?.from ?? day).slice(0, 7); m <= day.slice(0, 7); m = shiftDate(`${m}-01`, 32).slice(0, 7)) months.push(m);
         const { sources, asAt } = await salesOf(tenantId, day, 'all');
         const mk = at(asAt, neverSales);
         const figures: Figure[] = [];
-        for (const c of e.checks) {
-          figures.push(mk(`${c.name} — ours`, c.leftMinor, 'minor_currency'), mk(`${c.name} — theirs`, c.rightMinor, 'minor_currency'), mk(`${c.name} — difference`, c.leftMinor - c.rightMinor, 'minor_currency'));
+        const rows: Record<string, string>[] = [];
+        const label = (m: string, text: string): string => (months.length === 1 ? text : `${m} — ${text}`);
+        for (const month of months) {
+          const e = await independentEvidenceAdapter({ store: input.store, now: input.now }).evidenceFor(tenantId, month);
+          for (const c of e.checks) {
+            figures.push(mk(label(month, `${c.name} — ours`), c.leftMinor, 'minor_currency'), mk(label(month, `${c.name} — theirs`), c.rightMinor, 'minor_currency'), mk(label(month, `${c.name} — difference`), c.leftMinor - c.rightMinor, 'minor_currency'));
+            rows.push({ ...(months.length === 1 ? {} : { month }), check: c.name, ourMinor: String(c.leftMinor), theirMinor: String(c.rightMinor), differenceMinor: String(c.leftMinor - c.rightMinor) });
+          }
+          if (e.checks.length === 0) figures.push(mk(label(month, 'Card and UPI takings'), undefined, 'minor_currency', 'no provider settlement file or bank statement has been imported for this month'));
+          figures.push(mk(label(month, 'Card and UPI payments not yet settled'), e.unsettledTenders.length, 'count'), mk(label(month, 'Payouts not yet in the bank'), e.payoutsNotInBank.length, 'count'));
+          for (const why of e.notChecked) figures.push(mk(label(month, why.split(':')[0] ?? why), undefined, 'minor_currency', why));
         }
-        if (e.checks.length === 0) figures.push(mk('Card and UPI takings', undefined, 'minor_currency', 'no provider settlement file or bank statement has been imported for this month'));
-        figures.push(mk('Card and UPI payments not yet settled', e.unsettledTenders.length, 'count'), mk('Payouts not yet in the bank', e.payoutsNotInBank.length, 'count'));
-        for (const why of e.notChecked) figures.push(mk(why.split(':')[0] ?? why, undefined, 'minor_currency', why));
+        const lastOfMonth = (m: string): string => shiftDate(`${shiftDate(`${m}-01`, 32).slice(0, 7)}-01`, -1);
+        const end = lastOfMonth(months[months.length - 1]!);
         return {
-          tradingDay: day, sources, figures,
-          rows: e.checks.map((c) => ({ check: c.name, ourMinor: String(c.leftMinor), theirMinor: String(c.rightMinor), differenceMinor: String(c.leftMinor - c.rightMinor) })),
-          drill: {},
+          tradingDay: day, sources, figures, rows, drill: {},
+          ...(asked === undefined ? {} : { period: { from: `${months[0]!}-01`, to: end > today ? today : end } }),
         };
       }
 
@@ -547,6 +571,36 @@ export function reportProducers(input: {
         const now = input.now();
         if (options.scope !== 'all') {
           return { sources: [], rows: [], drill: {}, figures: [figure({ name: 'Profit', unit: 'minor_currency', asAt: null, now, notAvailableBecause: 'the books are company-wide; this needs company-wide report access' })] };
+        }
+        // Batch 20c · O2: over a period, revenue is every day's posted book added up (a day with sales whose book is not
+        // posted is NAMED, and the revenue is then not known — never a short total); the cost of goods is the average buying
+        // cost head office holds TODAY, so for any period but today alone it is NOT KNOWN (owner, OB-877 A) — and so is the
+        // profit.
+        if (asked !== undefined && !(asked.from === today && asked.to === today)) {
+          const days: string[] = [];
+          for (let d = asked.from; d <= asked.to; d = shiftDate(d, 1)) days.push(d);
+          const book = dayBookAdapter({ store: input.store, now: input.now });
+          const unposted: string[] = [];
+          let periodRevenue = 0;
+          for (const d of days) {
+            const js = await book.dayBookJournals(tenantId, d);
+            if (js.length === 0) { if ((await salesOf(tenantId, d, 'all')).sales.length > 0) unposted.push(d); continue; }
+            periodRevenue += js.flatMap((j) => j.lines).filter((l) => l.accountCode === 'sales_revenue').reduce((t, l) => t + l.creditMinor - l.debitMinor, 0);
+          }
+          const postedAt = (await input.store.latestOfType(tenantId, STREAM.finance, 'JournalPosted'))?.event.occurredAt ?? null;
+          const notPosted = unposted.length === 0 ? undefined : `Not known — the day book is not posted yet for ${unposted.join(', ')} (sales were made that day), so the period's revenue would be short`;
+          const mkP = at(postedAt ?? (notPosted === undefined ? null : now), 'no day book has ever been posted at head office');
+          const mkCost = at(postedAt ?? now, HEAD_OFFICE_COST_FOR_PERIOD);
+          return {
+            tradingDay: day, period: asked,
+            sources: [sourceFreshness({ source: 'day book', domain: 'books', lastEventAt: postedAt, now, ...thresholds })],
+            figures: [
+              mkP('Revenue net of GST and returns', notPosted === undefined ? periodRevenue : undefined, 'minor_currency', notPosted),
+              mkCost('Cost of goods sold', undefined, 'minor_currency', HEAD_OFFICE_COST_FOR_PERIOD),
+              mkCost('Profit', undefined, 'minor_currency', HEAD_OFFICE_COST_FOR_PERIOD),
+            ],
+            rows: [], drill: {},
+          };
         }
         const journals = await dayBookAdapter({ store: input.store, now: input.now }).dayBookJournals(tenantId, day);
         const posted = await input.store.latestOfType(tenantId, STREAM.finance, 'JournalPosted');
@@ -650,7 +704,7 @@ export function reportProducers(input: {
       }
 
       default:
-        if (PRODUCED_FROM_DOMAIN_REGISTERS.includes(reportId)) return more(tenantId, reportId, { scope: options.scope }, day, calendar);
+        if (PRODUCED_FROM_DOMAIN_REGISTERS.includes(reportId)) return more(tenantId, reportId, { scope: options.scope, ...(asked === undefined ? {} : { period: asked }) }, day, calendar);
         // Unreachable through the route: it refuses a report not in `PRODUCED_AT_HEAD_OFFICE` before it gets here.
         // Thrown rather than answered with the dashboard — an unrelated figure under a report's name is the audit's fault.
         throw new Error(`no head-office producer for report "${reportId}"`);

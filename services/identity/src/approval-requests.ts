@@ -70,6 +70,13 @@ const makingCatalogueChange = new AsyncLocalStorage<string>();
 export function whileMakingACatalogueChange<T>(requestId: string, fn: () => Promise<T>): Promise<T> {
   return makingCatalogueChange.run(requestId, fn);
 }
+/**
+ * C-7 (M03-FR-02 · batch 20d): the approved catalogue change head office is making right now, if any — so a route that
+ * may run ONLY as an approved change (a barcode removed from an item, or moved to another) refuses a direct call.
+ */
+export function catalogueChangeBeingMade(): string | undefined {
+  return makingCatalogueChange.getStore();
+}
 
 /** OB-613: the role whose holder raised a request decides whether `whenTheOwnerAsks` applies. */
 export const OWNER_ASKS_ROLE = 'owner';
@@ -420,6 +427,10 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     // (a published item's HSN), M03 §28 (a change to an existing GST rate) and OB-503 (an item made age-limited or tobacco)
     // protect. His approval therefore also stands as that second approval, narrowly (see `standsInFor`, `takeApproval`).
     standsInFor: ['hsn_class_change', 'tax_rate_change', 'regulated_product_publish'],
+    // C-7 (batch 20d · decided under OB-801, the OB-613 pattern): a wrongly keyed barcode is removed or moved only as a
+    // proposal a second person approves — the owner included. When the OWNER proposes one himself, the store's accountant
+    // (who holds `catalogue.tax.approve`) approves it; the owner never approves his own.
+    whenTheOwnerAsks: { checkerPermission: 'catalogue.tax.approve', checkerRole: OWNER_REQUEST_CHECKER_ROLE },
   },
   // ── OB-288 till side — end
   // ── OB-288 commercial desks (M22 · M24 · M27) — begin

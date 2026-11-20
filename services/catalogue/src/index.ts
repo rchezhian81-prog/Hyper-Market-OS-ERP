@@ -6,7 +6,7 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
-import { notFound, requireStepUp } from '../../kernel/src/index';
+import { apiError, notFound, requireStepUp } from '../../kernel/src/index';
 import { publishStepUpNeeded, PUBLISH_STEP_UP } from './publish-step-up';
 import type { CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import {
@@ -253,6 +253,24 @@ export function catalogueRoutes(deps: CatalogueDeps): readonly Route[] {
     try { await run; } finally { running.delete(tenantId); }
   };
   return [
+    {
+      // Batch 20b · A2 (M07-FR-04 · D-043): each item's GST rate as the published catalogue holds it, for the person typing
+      // a supplier bill from paper — a STARTING value they check against the bill and may change. Only rates are said (no
+      // price, no cost); an item with no rate held is named as such, never given a guessed one. Read-only.
+      api: 'API-02', method: 'GET', path: '/v1/catalogue/item-gst-rates',
+      permission: 'purchase.invoice.capture',
+      handler: async (ctx) => {
+        const asked = [...new Set((ctx.query['productIds'] ?? '').split(',').map((s) => s.trim()).filter((s) => s !== ''))];
+        if (asked.length === 0 || asked.length > 500) {
+          throw apiError(400, { code: 'not_readable_as_an_item_list', whatHappened: 'Name the items (?productIds=a,b,c — at most 500).', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
+        }
+        const pack = await deps.currentPack(ctx.tenantId);
+        const held = new Map((pack?.snapshot.products ?? []).map((p) => [p.productId, p.taxBps] as const));
+        const rates: Record<string, number | null> = {};
+        for (const id of asked) { const r = held.get(id); rates[id] = typeof r === 'number' && Number.isInteger(r) && r >= 0 ? r : null; }
+        return { status: 200, body: { rates, source: 'published_catalogue', asAt: deps.now() } };
+      },
+    },
     {
       api: 'API-02', method: 'GET', path: '/v1/catalogue/pack',
       permission: 'catalogue.pack.read',

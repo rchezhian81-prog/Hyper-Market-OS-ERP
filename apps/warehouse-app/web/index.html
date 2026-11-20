@@ -219,7 +219,7 @@
       #recv-temp-field { margin: var(--space-2) 0 10px; }
       #dsd-batch, #dsd-expiry, #dsd-mfg { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); }
       #recv-mfg { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); margin-top: var(--space-2); }
-      #recv-mrp, #receive-failed { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); margin-top: var(--space-2); }
+      #recv-mrp, #receive-failed, #recv-photo { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); margin-top: var(--space-2); }
       #recv-temp { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
       .keypad button, .choices button, .direction button { min-height: 56px; font-size: 19px; background: var(--panel); }
@@ -334,7 +334,14 @@
              goods that failed the quality check or were refused at the door — received, but held out of stock for a second person. -->
         <button id="recv-mrp" type="button" class="wide">MRP on the pack (next item): not entered</button>
         <button id="receive-failed" type="button" class="wide">Failed quality check / refused at the door</button>
+        <!-- Batch 20e · R6 (M07-FR-04 · OB-904 – OB-906): a photo of the delivery note, the supplier's challan or damage, taken
+             with this phone's camera, kept with the delivery. Shrunk on the phone; it goes on its own queue — receiving never
+             waits for it — and each photo says where it has got to below. -->
+        <!-- The camera itself is a file picker the script makes (there is nothing to type into on this screen). -->
+        <button id="recv-photo" type="button" class="wide">Take a photo of the delivery note, challan or damage</button>
       </div>
+      <h2 class="section" id="photos-heading" hidden>—</h2>
+      <div id="photos-sent"></div>
       <h2 class="section" id="sent-heading" hidden>—</h2>
       <div id="sent-work"></div>
     </main>
@@ -451,6 +458,17 @@
       </div>
     </div>
 
+    <!-- Batch 20e · R6: what the photo is — one tap, then the camera opens. -->
+    <div class="sheet" id="photo-kind" hidden role="dialog" aria-modal="true" aria-labelledby="photo-kind-title">
+      <div class="sheet-inner">
+        <h2 id="photo-kind-title">—</h2>
+        <div class="hint" id="photo-kind-hint"></div>
+        <div class="choices" id="photo-kinds"></div>
+        <div class="sheet-actions">
+          <button id="photo-kind-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
     <div class="sheet" id="adjust" hidden role="dialog" aria-modal="true" aria-labelledby="adjust-title">
       <div class="sheet-inner">
         <h2 id="adjust-title">—</h2>

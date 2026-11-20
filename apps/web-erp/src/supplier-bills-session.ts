@@ -546,6 +546,56 @@ export function typedLinesFromOrder(order: unknown): { readonly lines: readonly 
   return { lines, left };
 }
 
+// ── Batch 20b · A2 (M07-FR-04 · D-043): the GST RATE of each typed line, filled from the item as a STARTING value ──────────
+// The typing form's "GST rate (%)" box is filled from the item master's rate (the published catalogue's, through head
+// office) and marked "from the item — check against the bill". The person keeps it or types what the bill says. A typed
+// rate that differs from the item's is FLAGGED for a second look — never changed back, never changed silently. The rate is a
+// check only: it is NOT sent with the bill, and nothing about how GST is worked out, checked or posted changes (the CGST and
+// SGST amounts are still typed from the paper). Pure.
+
+/** A rate typed as a person writes it ("5", "18%", "2.5") → basis points; undefined when it is not a GST rate. */
+export function percentToBps(text: string): number | undefined {
+  const t = text.trim().replace(/%$/, '').trim();
+  if (!/^\d{1,2}(\.\d{1,2})?$/.test(t)) return undefined;
+  const bps = Math.round(Number(t) * 100);
+  return bps >= 0 && bps <= 4_000 ? bps : undefined;
+}
+/** Basis points as the rate a bill prints: 500 → "5", 250 → "2.5", 1800 → "18". */
+export const bpsToPercent = (bps: number): string => (bps / 100).toFixed(2).replace(/\.?0+$/, '');
+
+export type GstRateMark =
+  | { readonly kind: 'not_looked_up' }
+  /** The box holds the item's own rate — "from the item — check against the bill". */
+  | { readonly kind: 'from_item'; readonly itemPercent: string }
+  /** The typed rate differs from the item's — flagged for a second look. */
+  | { readonly kind: 'differs'; readonly itemPercent: string; readonly typedPercent: string }
+  /** The item has no rate held — the person types it from the bill. */
+  | { readonly kind: 'no_item_rate' }
+  /** What was typed is not a rate. */
+  | { readonly kind: 'not_a_rate' };
+
+/** The mark beside a line's rate box. `itemBps`: undefined = not looked up yet; null = the item has no rate held. */
+export function gstRateMark(typed: string, itemBps: number | null | undefined): GstRateMark {
+  if (itemBps === undefined) return { kind: 'not_looked_up' };
+  const text = typed.trim();
+  if (text !== '' && percentToBps(text) === undefined) return { kind: 'not_a_rate' };
+  if (itemBps === null) return { kind: 'no_item_rate' };
+  const item = bpsToPercent(itemBps);
+  if (text === '') return { kind: 'from_item', itemPercent: item };
+  const bps = percentToBps(text)!;
+  return bps === itemBps ? { kind: 'from_item', itemPercent: item } : { kind: 'differs', itemPercent: item, typedPercent: bpsToPercent(bps) };
+}
+
+/** The lines whose typed rate differs from the item's, as the second person's check names them ("line 2: typed 12%, the item says 5%"). */
+export function gstRateSecondLook(lines: readonly { readonly productId: string; readonly rate: string; readonly itemBps: number | null | undefined }[]): readonly string[] {
+  const out: string[] = [];
+  lines.forEach((l, i) => {
+    const m = gstRateMark(l.rate, l.itemBps);
+    if (m.kind === 'differs') out.push(`line ${i + 1} (${l.productId}): GST typed ${m.typedPercent}%, the item says ${m.itemPercent}%`);
+  });
+  return out;
+}
+
 export interface SupplierBillsSession {
   /** Whether the signed-in person may hand in, confirm and type bills (`purchase.invoice.capture`). */
   readonly mayCapture: boolean;
@@ -579,6 +629,11 @@ export interface SupplierBillsSession {
   markOtherCharges(invoiceId: string, kind: 'cost' | 'tax', reason: string): Promise<OtherChargesAnswer>;
   otherChargesWords(lang: BillMatchLang, answer: OtherChargesAnswer): { readonly good: boolean; readonly text: string };
   otherChargesSaid(lang: BillMatchLang, o: OtherChargesView): string;
+  /** Batch 20b · A2: each item's GST rate as the item master holds it (null = none held) — a starting value to check. */
+  itemGstRates(productIds: readonly string[]): Promise<Answer<Readonly<Record<string, number | null>>>>;
+  /** Batch 20b · A2: the mark beside a typed line's rate box (`gstRateMark`). */
+  rateMark(typed: string, itemBps: number | null | undefined): GstRateMark;
+  readonly bpsToPercent: (bps: number) => string;
 }
 
 export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { readonly permissions: readonly string[] }): SupplierBillsSession {
@@ -589,6 +644,14 @@ export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { reado
     mayView: may.has('purchase.invoice.read'),
     mayReadBills: may.has('purchase.commitment.read'),
     billsToCheck: async () => answerOf(await call({ method: 'GET', path: '/v1/purchase/invoices' }), billsToCheckOf),
+    itemGstRates: async (productIds) => {
+      const ids = [...new Set(productIds.map((p) => p.trim()).filter((p) => p !== ''))];
+      if (ids.length === 0) return { ok: true, value: {} };
+      return answerOf(await call({ method: 'GET', path: `/v1/catalogue/item-gst-rates?productIds=${ids.map(encodeURIComponent).join(',')}` }),
+        (b) => { const r = (b as { rates?: unknown } | null)?.rates; const out: Record<string, number | null> = {}; if (r !== null && typeof r === 'object') for (const [k, v] of Object.entries(r as Record<string, unknown>)) out[k] = typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null; return out; });
+    },
+    rateMark: gstRateMark,
+    bpsToPercent,
     linesFromOrder: async (poId) => answerOf(await call({ method: 'GET', path: `/v1/purchase/orders/${encodeURIComponent(poId.trim())}` }), (b) => typedLinesFromOrder((b as { order?: unknown } | null)?.order)),
     register: async () => answerOf(await call({ method: 'GET', path: '/v1/purchase/invoice-documents' }), (b) => b as BillRegister),
     handIn: async (file, named) => {

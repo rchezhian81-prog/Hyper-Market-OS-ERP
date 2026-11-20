@@ -5,7 +5,7 @@
 import {
   createBillCheckSession, createPayablesBooksSession, createApTallySession, supplierBooksWords, supplierBooksOutcomeWords, rupees, payablesReasonWords,
 } from './supplier-bills-to-the-books-session';
-import { typedCaptureBody } from './supplier-bills-session';
+import { typedCaptureBody, gstRateSecondLook } from './supplier-bills-session';
 import { createReceiptDecisionsSession, receiptDecisionWords, receiptDecisionOutcomeWords } from './goods-receipt-session';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
@@ -14,7 +14,7 @@ export function wireW4Finance(win: Record<string, unknown>, viewerIdentity: (raw
   const common = { words: supplierBooksWords, outcomeWords: supplierBooksOutcomeWords, rupees };
   // WF-05: Supplier bills — the second person's check of a typed bill, and debit notes for goods sent back.
   if (win['supplierBillsData'] !== undefined) {
-    win['billCheck'] = { session: createBillCheckSession({ viewer: viewerIdentity(win['supplierBillsData']) }), typedBody: typedCaptureBody, ...common };
+    win['billCheck'] = { session: createBillCheckSession({ viewer: viewerIdentity(win['supplierBillsData']) }), typedBody: typedCaptureBody, rateSecondLook: gstRateSecondLook, ...common };
   }
   // WF-05 · M23-FR-01: Day book — supplier bills in the books.
   if (win['dayBookData'] !== undefined) {

@@ -71,6 +71,8 @@ export interface PrintView {
   readonly totalMinor: number | null;
   readonly currency: string;
   readonly statement?: PrintStatementAmounts;
+  /** Batch 20e · R6 (M07-FR-04): a goods receipt's photos and scans kept with it (and how many were marked attached by mistake). */
+  readonly attachments?: { readonly kept: number; readonly mistaken: number };
   /** When head office read it (ISO). */
   readonly readAt: string;
 }
@@ -89,6 +91,8 @@ const WORDS = {
     gstNote: 'GST rates are each item\'s rate on the product master. GST amounts are stated on the supplier\'s tax invoice.',
     unknownGst: 'Not on record',
     sigPrepared: 'Prepared by', sigApproved: 'Approved by', sigSupplier: 'Supplier\'s acknowledgement', sigReceived: 'Received by (store)', sigChecked: 'Checked by', sigDelivered: 'Delivered by (supplier)', sigAccounts: 'Accounts', sigConfirmed: 'Supplier\'s confirmation',
+    attachments: '{n} attachments (photos and scans) are kept with this receipt — see Goods receipt review.', attachmentOne: '1 attachment (a photo or scan) is kept with this receipt — see Goods receipt review.',
+    attachmentsNone: 'No photo or scan is kept with this receipt.', attachmentsMistaken: '{n} more marked attached by mistake (kept).',
     printedAt: 'Read from head office at {t}', copyNote: 'Printed from the copy kept on this computer (read from head office at {t}). Head office could not be reached just now.',
   },
   ta: {
@@ -102,6 +106,8 @@ const WORDS = {
     gstNote: 'GST விகிதம் ஒவ்வொரு பொருளுக்கும் பொருள் பதிவேட்டில் உள்ளது. GST தொகை விநியோகஸ்தரின் வரி விலைப்பட்டியலில் இருக்கும்.',
     unknownGst: 'பதிவில் இல்லை',
     sigPrepared: 'தயாரித்தவர்', sigApproved: 'அனுமதித்தவர்', sigSupplier: 'விநியோகஸ்தர் ஒப்புகை', sigReceived: 'பெற்றவர் (கடை)', sigChecked: 'சரிபார்த்தவர்', sigDelivered: 'கொடுத்தவர் (விநியோகஸ்தர்)', sigAccounts: 'கணக்குப் பிரிவு', sigConfirmed: 'விநியோகஸ்தர் உறுதிப்படுத்தல்',
+    attachments: 'இந்தப் பெறுதலுடன் {n} இணைப்புகள் (புகைப்படங்கள், ஸ்கேன்கள்) வைக்கப்பட்டுள்ளன — சரக்கு பெறுதல் மதிப்பாய்வில் பார்க்கவும்.', attachmentOne: 'இந்தப் பெறுதலுடன் 1 இணைப்பு (புகைப்படம் அல்லது ஸ்கேன்) வைக்கப்பட்டுள்ளது — சரக்கு பெறுதல் மதிப்பாய்வில் பார்க்கவும்.',
+    attachmentsNone: 'இந்தப் பெறுதலுடன் புகைப்படமோ ஸ்கேனோ இல்லை.', attachmentsMistaken: 'மேலும் {n} தவறாக இணைக்கப்பட்டது எனக் குறிக்கப்பட்டது (வைக்கப்பட்டுள்ளது).',
     printedAt: 'தலைமை அலுவலகத்திலிருந்து படித்த நேரம் {t}', copyNote: 'இந்தக் கணினியில் வைத்திருந்த நகலிலிருந்து அச்சிடப்பட்டது (தலைமை அலுவலகத்திலிருந்து படித்த நேரம் {t}). இப்போது தலைமை அலுவலகத்தை அடைய முடியவில்லை.',
   },
 } as const;
@@ -133,6 +139,14 @@ export interface PrintLayout {
   readonly totals: readonly { readonly label: string; readonly value: string; readonly strong?: boolean }[];
   readonly notes: readonly string[];
   readonly signatures: readonly string[];
+}
+
+/** Batch 20e · R6: on a printed GRN, how many photos and scans are kept with it (none said too, so the paper is never silent). */
+function attachmentNote(view: PrintView, w: (k: WordKey) => string): string[] {
+  if (view.kind !== 'goods_receipt' || view.attachments === undefined) return [];
+  const { kept, mistaken } = view.attachments;
+  const head = kept === 0 ? w('attachmentsNone') : kept === 1 ? w('attachmentOne') : w('attachments').replace('{n}', String(kept));
+  return [mistaken > 0 ? `${head} ${w('attachmentsMistaken').replace('{n}', String(mistaken))}` : head];
 }
 
 /** The A4 page's words for a document, in English or Tamil. Nothing is invented: a missing fact reads "Not on record". */
@@ -181,7 +195,7 @@ export function printLayout(view: PrintView, lang: PrintLang): PrintLayout {
       ? { head: [], end: [], rows: [], empty: '' }
       : { head: [w('colN'), w('colItem'), w('colHsn'), w('colQty'), w('colRate'), w('colGst'), w('colValue')], end: [false, false, false, true, true, true, true], rows: lines, empty: w('noLines') },
     totals,
-    notes: isStatement ? [] : [w('gstNote')],
+    notes: isStatement ? [] : [w('gstNote'), ...attachmentNote(view, w)],
     signatures,
   };
 }

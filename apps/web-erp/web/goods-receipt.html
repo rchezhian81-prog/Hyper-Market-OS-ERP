@@ -94,11 +94,29 @@
       .bill-match label { flex-basis:100%; font-size:14px; color: var(--ink-2); font-weight:600; }
       .bill-match input { flex:1 1 220px; min-width:0; font-size:16px; }
       .bill-match button { font-size:16px; }
+      /* Batch 20e · R6: a delivery's photos and scans — a small picture of each, its words, Open, and "attached by mistake". */
+      .grn-files-btn { justify-self:start; }
+      /* Batch 20e: beside "Photos and scans", "Print GRN" keeps a full 44px touch target on a phone (WCAG 2.5.8). */
+      .print-grn, .grn-files-btn { min-width:44px; min-height:44px; flex-shrink:0; }
+      .grn-files { grid-column: 2 / -1; display:grid; gap:8px; padding: var(--space-2) 0 0; border-top:1px dashed var(--line); font-size:14px; }
+      .grn-files[hidden] { display:none; }
+      .grn-files .d-word { font-weight:600; }
+      .grn-file-list { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+      .grn-file { display:grid; grid-template-columns: 72px minmax(0,1fr) auto; gap:6px 12px; align-items:center; }
+      .grn-file .thumb { width:72px; height:72px; border:1px solid var(--line); border-radius:6px; overflow:hidden; display:grid; place-items:center; background: var(--panel); }
+      .grn-file .thumb img { width:100%; height:100%; object-fit:cover; }
+      .grn-file .thumb .pdf { font-weight:700; color: var(--ink-2); }
+      .grn-file-words { display:grid; gap:2px; min-width:0; overflow-wrap:anywhere; }
+      .grn-file[data-mistake="true"] .grn-file-title { color: var(--ink-2); }
+      .grn-file-mistake-form, .grn-file-add { grid-column: 1 / -1; display:flex; flex-wrap:wrap; gap:6px 12px; align-items:flex-end; }
+      .grn-file-mistake-form label, .grn-file-add label { flex-basis:100%; font-weight:600; color: var(--ink-2); }
+      .grn-file-mistake-form input { flex:1 1 220px; min-width:0; font-size:16px; }
+      @media (max-width: 560px) { .grn-file { grid-template-columns: 56px minmax(0,1fr); } .grn-file .thumb { width:56px; height:56px; } .grn-file-open { grid-column: 1 / -1; justify-self:start; } }
       @container (max-width: 760px) {
         .reg-head { display:none; }
         li.row { grid-template-columns:minmax(0, 1fr) auto; }
         .row .c-id { grid-column:1; } .row .c-val { grid-column:2; grid-row:1; }
-        .row .status, .row .facts, ul.diffs, ul.returns, .bill-match { grid-column:1 / -1; }
+        .row .status, .row .facts, ul.diffs, ul.returns, .bill-match, .grn-files { grid-column:1 / -1; }
       }
 
       /* An empty, not-permitted or not-known list: a shape and words, never a blank box. */

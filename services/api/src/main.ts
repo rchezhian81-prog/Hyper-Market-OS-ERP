@@ -174,7 +174,11 @@ import { wasteRoutes } from '../../inventory/src/waste';
 import { writeOffRoutes } from '../../inventory/src/write-off';
 import { shelfReturnRoutes } from '../../inventory/src/shelf-returns'; // S1 (batch 18c)
 import { shelfReturnsAdapter, receiptCorrectionsAdapter } from './b18c-adapters'; // S1, R2 (batch 18c)
+import { stockHistoryRoutes } from '../../inventory/src/stock-history'; // S3, S4, S5 (batch 20b)
+import { stockHistoryAdapter } from './b20b-adapters'; // S3, S4, S5 (batch 20b)
 import { goodsReceiptCorrectionRoutes } from '../../inventory/src/goods-receipt-corrections'; // R2 (batch 18c)
+import { goodsReceiptAttachmentRoutes } from '../../inventory/src/goods-receipt-attachments'; // R6 (batch 20e)
+import { receiptAttachmentsAdapter, receiptAttachmentCounts } from './b20e-adapters'; // R6 (batch 20e)
 import { coldChainRoutes } from '../../inventory/src/cold-chain';
 import { expiryRoutes } from '../../inventory/src/expiry';
 import { lotTraceRoutes } from '../../inventory/src/lot-trace';
@@ -331,6 +335,7 @@ import { sweepDrafts } from '../../ai/src/auto-approve';
 import { autoApproveDeps } from './ai-auto-approve-store';
 import { autoApprovePlacer, ruleAwareAuthority } from './ai-auto-approve-executor';
 import { catalogueChangeSurface } from './catalogue-change-proposals'; // OB-773
+import { barcodeLinkChangeRoutes } from './barcode-link-changes'; // C-7 (batch 20d)
 import { approvedStockChangeSurface } from './approved-stock-change-applies'; // OB-808 A
 import { exactActsFor, otherStockAtStoreFor } from './ai-auto-approve-acts';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
@@ -724,7 +729,8 @@ export function buildSurface(deps: {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
     purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {}, commitLineReturn: () => {},
-  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...receiptCostHooks({ store }) /* R6 M07-FR-01 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */, ...r8bReceiptHooks({ store }) /* R8 OB-529 */ };
+  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...receiptCostHooks({ store }) /* R6 M07-FR-01 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */, ...r8bReceiptHooks({ store }) /* R8 OB-529 */,
+    attachmentCountsForList: (tenantId: string) => receiptAttachmentCounts(store, tenantId) /* R6 batch 20e */ };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
   } : { ...syncedGoodsReceiptAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
@@ -1309,9 +1315,14 @@ export function buildSurface(deps: {
     } : { ...writeOffAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze }),
     // R2 (batch 18c · OB-873): a saved goods receipt corrected by a compensating entry, a second person approving.
     ...(store === undefined ? [] : goodsReceiptCorrectionRoutes({ ...receiptCorrectionsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) })),
+    // R6 (batch 20e · M07-FR-04 · OB-904 – OB-907): photos and scans kept with a goods receipt — from the store computer and the
+    // handheld (relayed) or added at head office; never deleted, a wrong one marked "attached by mistake" with a reason.
+    ...(store === undefined ? [] : goodsReceiptAttachmentRoutes({ ...receiptAttachmentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) })),
     // S1 (batch 18c · OB-872): expired, near-expiry or damaged shelf stock goes back to the supplier — RTS number, ledger
     // movement, issued SDN debit note, e-way-bill rule, and the same approval as a write-off of that value.
     ...(store === undefined ? [] : shelfReturnRoutes({ ...shelfReturnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze })),
+    // Batch 20b (S3 · S4 · S5): earlier counts and count accuracy, what the empty shelves cost, how to share stock — reads only.
+    ...(store === undefined ? [] : stockHistoryRoutes({ ...stockHistoryAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) })),
     ...calendared(productionRoutes)(store === undefined ? { // OB-607: USE BY on the shop's clock
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},
       onHand: empty(0), priorConsumption: empty({}),
@@ -2476,6 +2487,7 @@ export function buildSurface(deps: {
   floorDevicesSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
   fg4BuyingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-4 (M04-FR-04 · M06-FR-03 · D03-FR-04/05 · A12 · OB-386 · M02-FR-02 · SEC-03)
   productsPricesSurface(surface, { store, now, calendar: shopCalendar, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Round 4a (M03-FR-01..04 · M05-FR-01 · OB-291): product and price audit, the price basis
+  barcodeLinkChangeRoutes(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // C-7 (M03-FR-02 · batch 20d): a wrongly keyed barcode removed or moved — only as an approved catalogue change; the item's barcode history
   catalogueChangeSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-773 (choice 3 B · audit C-8): the store manager proposes an item, barcode or GST change; the owner approves and head office makes it
   approvedStockChangeSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-808 A (owner, 16 Nov 2026) · D-013: approving a write-off writes it off at once, in the asker's name
   spaceSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Wave 2 (M04-FR-01..04 · D02-FR-02/06 · OB-625): space audit, product checks

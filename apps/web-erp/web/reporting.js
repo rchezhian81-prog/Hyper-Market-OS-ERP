@@ -73,6 +73,13 @@ const WORDS = {
     periodShowing: 'Showing: {period}',
     itemsIn: 'Items in {dept}', itemCol: 'Item', itemsCol: 'Items', weighedCol: 'Weighed', takenCol: 'Taken', marginCol: 'Margin', marginPctCol: 'Margin %',
     itemsLabel: 'Each item in this department', noItems: 'This store computer did not send the items for this department.',
+    // Batch 20c · O2: the reports head office works out, and printing a report
+    byHeadOffice: 'Worked out by head office', asking: 'Asking head office for this report…',
+    coversHo: 'Store {store} · {period} · worked out by head office from its own records, read at {time}',
+    coversNow: 'Store {store} · how things stand now · worked out by head office from its own records, read at {time}',
+    coversHoNone: 'Store {store} · worked out by head office',
+    printIt: 'Print / Save as PDF', printCovers: 'Covers', printFooter: 'Printed from Reports at {t}. What it covers is written above.',
+    notesTitle: 'Read beside the figures', figuresHead: 'Figures', valueHead: 'Value',
   },
   ta: {
     title: 'அறிக்கைகள்',
@@ -113,6 +120,12 @@ const WORDS = {
     periodShowing: 'காட்டப்படுவது: {period}',
     itemsIn: '{dept} இல் உள்ள பொருட்கள்', itemCol: 'பொருள்', itemsCol: 'பொருட்கள்', weighedCol: 'எடை', takenCol: 'வசூல்', marginCol: 'லாப வரம்பு', marginPctCol: 'லாப வரம்பு %',
     itemsLabel: 'இந்தத் துறையின் ஒவ்வொரு பொருளும்', noItems: 'இந்தத் துறையின் பொருட்களைக் கடை கணினி அனுப்பவில்லை.',
+    byHeadOffice: 'தலைமை அலுவலகம் கணக்கிடுகிறது', asking: 'இந்த அறிக்கையைத் தலைமை அலுவலகத்திடம் கேட்கிறது…',
+    coversHo: 'கடை {store} · {period} · தலைமை அலுவலகம் அதன் சொந்தப் பதிவுகளிலிருந்து கணக்கிட்டது, படித்த நேரம் {time}',
+    coversNow: 'கடை {store} · இப்போது உள்ள நிலை · தலைமை அலுவலகம் அதன் சொந்தப் பதிவுகளிலிருந்து கணக்கிட்டது, படித்த நேரம் {time}',
+    coversHoNone: 'கடை {store} · தலைமை அலுவலகம் கணக்கிடுகிறது',
+    printIt: 'அச்சிடு / PDF ஆகச் சேமி', printCovers: 'காலம்', printFooter: 'அறிக்கைகள் பக்கத்திலிருந்து {t} அன்று அச்சிடப்பட்டது. இது எந்தக் காலத்தை உள்ளடக்குகிறது என்பது மேலே எழுதப்பட்டுள்ளது.',
+    notesTitle: 'எண்களுடன் சேர்த்துப் படிக்கவும்', figuresHead: 'எண்கள்', valueHead: 'மதிப்பு',
   },
 };
 let lang = 'en';
@@ -123,6 +136,11 @@ const RUN_REFUSAL_WORDS = {
   no_such_report: {
     en: 'There is no report by that name.',
     ta: 'அந்தப் பெயரில் அறிக்கை எதுவும் இல்லை.',
+  },
+  // Batch 20c · O2: never shown in practice — the page asks head office for these — but named, in both languages.
+  worked_out_at_head_office: {
+    en: 'Head office works this report out from its own records.',
+    ta: 'இந்த அறிக்கையைத் தலைமை அலுவலகம் அதன் சொந்தப் பதிவுகளிலிருந்து கணக்கிடுகிறது.',
   },
   this_shop_does_not_record_that_yet: {
     en: 'This shop does not record what that report needs yet. Showing it as nought would be a number somebody acts on.',
@@ -188,7 +206,7 @@ function show(name) {
   for (const tab of TABS) el(`tab-${tab}`).setAttribute('aria-current', tab === name ? 'page' : 'false');
 }
 for (const name of TABS) el(`tab-${name}`).addEventListener('click', () => { show(name); });
-el('back').addEventListener('click', () => { show('reports'); });
+el('back').addEventListener('click', () => { openReportId = null; current = null; show('reports'); });
 
 // ── How current everything here is ──────────────────────────────────────────
 
@@ -276,7 +294,7 @@ function paintCards(ready, blocked, backlog) {
     { label: t('cardBacklog'), value: backlog, note: t('cardNote'), icon: 'list-plus' },
   ]);
 }
-document.addEventListener('sre:chrome', () => { paintPeriod(); paintCards(...cardCounts); if (openReportId !== null) { const o = session.run(openReportId); if (o.ok) renderReport(o); } });
+document.addEventListener('sre:chrome', () => { paintPeriod(); paintCards(...cardCounts); if (openReportId !== null && current !== null) { if (current.kind === 'ho') renderReport(current.outcome); else { const o = session.run(openReportId); if (o.ok) renderReport(o); } } });
 /** The report finder: every word typed must be in a report's name or what it answers; the list says when none match. */
 function findReports() {
   const words = el('find-report').value.trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
@@ -306,6 +324,13 @@ function reportRow(entry, ready) {
   // A blocked report says WHICH fact is missing, not "no data".
   sub.textContent = ready ? reportAnswers(entry.report) : entry.availability.why;
   what.append(name, sub);
+  // Batch 20c · O2: a report head office works out says so — it needs head office to answer (the internet).
+  if (ready && typeof session.atHeadOffice === 'function' && session.atHeadOffice(entry.report.id)) {
+    const ho = document.createElement('small');
+    ho.className = 'by-head-office';
+    ho.textContent = t('byHeadOffice');
+    what.append(ho);
+  }
   row.append(what);
 
   if (ready) {
@@ -320,13 +345,34 @@ function reportRow(entry, ready) {
 
 // ── One report ──────────────────────────────────────────────────────────────
 
-function openReport(reportId) {
+// Batch 20c · O2: what is on the report view now — this box's own report, or one head office worked out (kept, so a
+// language switch redraws it without asking head office again).
+let current = null;
+async function openReport(reportId) {
+  if (typeof session.atHeadOffice === 'function' && session.atHeadOffice(reportId)) {
+    openReportId = reportId;
+    current = null;
+    show('report');
+    const entry = session.catalogue().find((e) => e.report.id === reportId);
+    el('report-title').textContent = entry ? reportName(entry.report) : reportId;
+    el('report-answers').textContent = entry ? reportAnswers(entry.report) : '';
+    el('report-covers').textContent = t('asking');
+    for (const id of ['report-figures', 'report-rows', 'report-chart']) el(id).replaceChildren();
+    el('report-notes').hidden = true;
+    el('print-report').hidden = true;
+    const ho = await session.runAtHeadOffice(reportId, window.reportingHeadOffice);
+    if (openReportId !== reportId || ho === undefined) return;
+    current = { kind: 'ho', ho, outcome: { ok: true, report: ho.report, result: { figures: ho.figures }, rows: ho.rows } };
+    renderReport(current.outcome);
+    return;
+  }
   const outcome = session.run(reportId);
   if (!outcome.ok) {
     tell(t('read'), `${words(RUN_REFUSAL_WORDS, outcome.refusal)} ${outcome.detail}`);
     return;
   }
   openReportId = reportId;
+  current = { kind: 'local', outcome };
   show('report');
   renderReport(outcome);
 }
@@ -337,6 +383,17 @@ const shopTime = (at) => (at ? window.sreShopDay?.dateTimeOf(at) || at : '');
 const fillIn = (text, values) => Object.entries(values).reduce((w, [k, v]) => w.split(`{${k}}`).join(String(v)), text);
 function coversLine() {
   const d = window.reportingData ?? {};
+  if (current?.kind === 'ho') {
+    const ho = current.ho;
+    const store = d.storeName || d.branchId || d.storeId || t('notToldStore');
+    const time = shopTime(ho.readAt ?? d.now) || t('notToldStore');
+    if (ho.state === 'shown' && ho.now) return fillIn(t('coversNow'), { store, time });
+    if (ho.state === 'shown' && ho.covers) {
+      const span = ho.covers.from === ho.covers.to ? fillIn(t('periodOne'), { day: dayWords(ho.covers.from) }) : fillIn(t('periodRange'), { from: dayWords(ho.covers.from), to: dayWords(ho.covers.to) });
+      return fillIn(t('coversHo'), { store, period: span, time });
+    }
+    return fillIn(t('coversHoNone'), { store });
+  }
   // Batch 18b · O1: EXACTLY the period the figures cover, and what is not known in it.
   if (real !== undefined && typeof session.period === 'function') {
     return fillIn(t('coversPeriod'), { store: d.storeName || d.branchId || d.storeId || t('notToldStore'), period: periodWords(session.period()), time: shopTime(d.now) || t('notToldStore') });
@@ -484,7 +541,19 @@ function renderReport(outcome) {
   el('export-note').textContent = t('exportNote');
   el('back').textContent = t('back');
 
-  el('report-figures').replaceChildren(...outcome.result.figures.map(figureBox));
+  el('report-figures').replaceChildren(...outcome.result.figures.map((f) => figureBox(f, outcome.report)));
+  // Batch 20c · O2: head office's notes beside the figures; the old file button is this box's own reports only (a head-
+  // office report downloads from its list, "Download to Excel"); every report prints.
+  const isHo = current?.kind === 'ho';
+  const notes = isHo ? current.ho.notes : [];
+  el('report-notes').replaceChildren(...notes.map((n) => { const li = document.createElement('li'); li.textContent = reason(n); return li; }));
+  el('report-notes').hidden = notes.length === 0;
+  el('report-notes').setAttribute('aria-label', t('notesTitle'));
+  el('export').hidden = isHo;
+  el('export-note').hidden = isHo;
+  const printButton = el('print-report');
+  printButton.textContent = t('printIt');
+  printButton.hidden = !(window.srePrint && typeof window.srePrint.openLayoutPrint === 'function');
 
   if (outcome.rows.length === 0) {
     el('report-rows').replaceChildren(emptyLine(t('noRows')));
@@ -572,17 +641,33 @@ const COLUMN_WORDS = {
   weighed: { en: 'Weighed', ta: 'எடை' }, units: { en: 'Items sold', ta: 'விற்ற பொருட்கள்' }, totalMinor: { en: 'Taken', ta: 'வசூல்' },
   // D-057: the margin per department (before GST, at the average buying cost), and as a share of what it took before GST.
   marginMinor: { en: 'Margin', ta: 'லாப வரம்பு' }, marginPercent: { en: 'Margin %', ta: 'லாப வரம்பு %' },
+  // Batch 20c · O2: the columns of the reports head office works out.
+  supplierId: { en: 'Supplier', ta: 'சப்ளையர்' }, orders: { en: 'Orders', ta: 'ஆர்டர்கள்' }, orderedMinor: { en: 'Ordered', ta: 'ஆர்டர் செய்தது' },
+  orderedUnits: { en: 'Units ordered', ta: 'ஆர்டர் செய்த அலகுகள்' }, receivedUnits: { en: 'Units received', ta: 'பெற்ற அலகுகள்' },
+  invoiceId: { en: 'Bill', ta: 'பில்' }, invoicedMinor: { en: 'Billed', ta: 'பில் போட்டது' }, payableMinor: { en: 'Payable', ta: 'செலுத்த வேண்டியது' }, differenceMinor: { en: 'Difference', ta: 'வேறுபாடு' },
+  productId: { en: 'Item', ta: 'பொருள்' }, locationId: { en: 'Place', ta: 'இடம்' }, onHandMinor: { en: 'On hand', ta: 'கையிருப்பு' }, valueMinor: { en: 'Value', ta: 'மதிப்பு' }, unitCostMinor: { en: 'Cost each', ta: 'ஒன்றின் விலை' },
+  countId: { en: 'Count', ta: 'எண்ணிக்கை' }, varianceMinor: { en: 'Difference counted', ta: 'எண்ணிய வேறுபாடு' }, batchId: { en: 'Batch', ta: 'தொகுதி' }, expiry: { en: 'Expiry', ta: 'காலாவதி' },
+  quantity: { en: 'Quantity', ta: 'அளவு' }, action: { en: 'What to do', ta: 'செய்ய வேண்டியது' }, daysToExpiry: { en: 'Days to expiry', ta: 'காலாவதிக்கு நாட்கள்' },
+  writeOffId: { en: 'Write-off', ta: 'தள்ளுபடி' }, lossType: { en: 'Kind of loss', ta: 'இழப்பு வகை' }, valueSource: { en: 'Value from', ta: 'மதிப்பு எங்கிருந்து' },
+  month: { en: 'Month', ta: 'மாதம்' }, basis: { en: 'Return', ta: 'ரிட்டர்ன்' }, taxableMinor: { en: 'Taxable sales', ta: 'வரிக்குட்பட்ட விற்பனை' }, cgstMinor: { en: 'CGST', ta: 'CGST' }, sgstMinor: { en: 'SGST', ta: 'SGST' }, igstMinor: { en: 'IGST', ta: 'IGST' },
+  nilMinor: { en: 'Nil-rated and exempt', ta: 'பூஜ்ய விகிதம், விலக்கு' }, claimableMinor: { en: 'Purchase GST you may claim', ta: 'கோரக்கூடிய கொள்முதல் ஜிஎஸ்டி' },
+  check: { en: 'Check', ta: 'சரிபார்ப்பு' }, ourMinor: { en: 'Ours', ta: 'நம்முடையது' }, theirMinor: { en: 'Theirs', ta: 'அவர்களுடையது' },
+  visits: { en: 'Visits', ta: 'வருகைகள்' }, customers: { en: 'Customers', ta: 'வாடிக்கையாளர்கள்' }, points: { en: 'Points', ta: 'புள்ளிகள்' }, memberRef: { en: 'Member', ta: 'உறுப்பினர்' },
 };
 function columnLabel(k) { return COLUMN_WORDS[k]?.[lang] ?? COLUMN_WORDS[k]?.en ?? k; }
 
-function figureBox(f) {
+/** Batch 20c · O2: a sentence the page itself wrote, in the reader's language (the session holds both). */
+const reason = (text) => (typeof session.reasonIn === 'function' ? session.reasonIn(lang, text ?? '') : (text ?? ''));
+
+function figureBox(f, report) {
   const box = document.createElement('div');
   const unavailable = f.valueMinor === undefined;
   box.className = `figure ${unavailable ? 'unavailable' : f.staleness}`;
 
   const name = document.createElement('span');
   name.className = 'name';
-  name.textContent = figureName(f.name);
+  // Batch 20c · O2: a figure named for the whole report (head office not reached) reads as the report's own name.
+  name.textContent = report && f.name === report.name ? reportName(report) : figureName(f.name);
 
   const value = document.createElement('span');
   if (unavailable) {
@@ -590,7 +675,7 @@ function figureBox(f) {
     // never a blank — "Waste: ₹0" is a number somebody puts in a board pack.
     value.className = 'value none';
     // A reason that already begins "Not known —" (D-057's margin) says it itself; it is not prefixed a second time.
-    value.textContent = /^Not known\b/.test(f.notAvailableBecause) ? f.notAvailableBecause : `${t('notAvailable')} — ${f.notAvailableBecause}`;
+    value.textContent = /^Not known\b|^Not shown\b/.test(f.notAvailableBecause) ? reason(f.notAvailableBecause) : `${t('notAvailable')} — ${f.notAvailableBecause}`;
   } else {
     value.className = 'value';
     value.textContent = f.unit === 'minor_currency'
@@ -610,6 +695,30 @@ function figureBox(f) {
   box.append(name, value, asat);
   return box;
 }
+
+// Batch 20c · O2 (M31-FR-02): print exactly what the report shows — what it covers, every figure (or why it is not known),
+// every row — on the shared A4 sheet (`window.srePrint`), with the browser's own Print / Save as PDF. Nothing is fetched.
+function figureText(f) {
+  if (f.valueMinor === undefined) return /^Not known\b|^Not shown\b/.test(f.notAvailableBecause ?? '') ? reason(f.notAvailableBecause) : `${t('notAvailable')} — ${f.notAvailableBecause ?? ''}`;
+  return f.unit === 'minor_currency' ? inr(f.valueMinor) : f.unit === 'basis_points' ? `${(f.valueMinor / 100).toFixed(2)}%` : String(f.valueMinor);
+}
+el('print-report').addEventListener('click', () => {
+  if (current === null || !window.srePrint?.openLayoutPrint) return;
+  const outcome = current.outcome;
+  const keys = [];
+  for (const row of outcome.rows) for (const key of Object.keys(row)) if (!keys.includes(key)) keys.push(key);
+  const cell = (r, k) => (r[k] === undefined ? '' : /Minor$/.test(k) && r[k] !== '' && Number.isFinite(Number(r[k])) ? inr(Number(r[k])) : String(r[k]));
+  window.srePrint.openLayoutPrint({
+    kind: `report:${outcome.report.id}`,
+    title: reportName(outcome.report),
+    head: [{ label: t('printCovers'), value: coversLine() }],
+    parties: [], facts: [],
+    table: { head: keys.map(columnLabel), end: keys.map((k) => /Minor$/.test(k)), rows: outcome.rows.map((r) => keys.map((k) => cell(r, k))), empty: t('noRows') },
+    totals: outcome.result.figures.map((f) => ({ label: f.name === outcome.report.name ? reportName(outcome.report) : figureName(f.name), value: figureText(f) })),
+    notes: current.kind === 'ho' ? current.ho.notes.map(reason) : [],
+    signatures: [],
+  }, fillIn(t('printFooter'), { t: shopTime(window.reportingData?.now ?? '') || t('notToldStore') }));
+});
 
 el('export').addEventListener('click', () => {
   if (openReportId === null) return;
@@ -645,9 +754,9 @@ function paintChrome() {
   renderFreshness();
   renderCatalogue();
   findReports();
-  if (openReportId !== null) {
-    const outcome = session.run(openReportId);
-    if (outcome.ok) renderReport(outcome);
+  if (openReportId !== null && current !== null) {
+    if (current.kind === 'ho') renderReport(current.outcome);
+    else { const outcome = session.run(openReportId); if (outcome.ok) { current = { kind: 'local', outcome }; renderReport(outcome); } }
   }
 }
 

@@ -288,6 +288,12 @@
       .pill.refused { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); border-left-color: var(--error); }
       .pill.retrying, .pill.saved_here, .pill.handed_to_box { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); border-left-color: var(--degraded); }
       #saved-title { margin: var(--space-6) 0 4px; font-size: var(--fs-lg); }
+      /* Batch 20e · R6: the files kept with a delivery — one per row, its words and where it has got to. */
+      .file-list { list-style: none; margin: var(--space-2) 0; padding: 0; display: grid; gap: 6px; }
+      .file-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 6px var(--space-3); border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+      .file-list li .what { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
+      .file-list li .blocked { flex-basis: 100%; }
+      #receive-files-sent-title { margin: var(--space-6) 0 4px; font-size: var(--fs-lg); }
       /* An empty list and one that could not be read never look alike: a shape and words for each, and the reason. */
       .state-block { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-5); background: var(--panel); border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); color: var(--ink-2); font-size: 16px; }
       .state-block > .sre-icon { flex: none; width: 24px; height: 24px; color: var(--ok); }
@@ -622,7 +628,31 @@
           </div>
         </fieldset>
         <p class="hint" id="receive-checklist-missing" role="status" hidden>This store computer was not sent the receiving checklist.</p>
+        <!-- Batch 20e · R6 (M07-FR-04 · OB-904 – OB-906): photos and scans kept WITH the delivery (the delivery note, the supplier's
+             challan, a damage photo for a line). They go on this screen's own queue when the delivery is saved; the delivery
+             never waits for them, and each file says where it has got to below. -->
+        <fieldset id="receive-files" class="rc">
+          <legend id="receive-files-title">Photos and scans with this delivery</legend>
+          <p class="hint" id="receive-files-lead"></p>
+          <div class="field">
+            <label for="receive-file-kind" id="receive-file-kind-label">What is it?</label>
+            <select id="receive-file-kind"></select>
+          </div>
+          <div class="field" id="receive-file-item-field" hidden>
+            <label for="receive-file-item" id="receive-file-item-label">Which item (for a damage photo)</label>
+            <select id="receive-file-item"></select>
+          </div>
+          <div class="field">
+            <label for="receive-file" id="receive-file-label">Choose a photo or scan</label>
+            <input id="receive-file" type="file" accept="image/jpeg,image/png,application/pdf,image/*" multiple />
+          </div>
+          <ul id="receive-file-list" class="file-list"></ul>
+          <p class="hint" id="receive-file-status" role="status"></p>
+        </fieldset>
         <button id="save-receipt" type="button" class="primary wide sre-btn sre-btn-primary">Save the delivery</button>
+        <h3 id="receive-files-sent-title" hidden>Photos and scans</h3>
+        <p class="lead" id="receive-files-sent-lead" hidden></p>
+        <ul id="receive-files-sent" class="file-list"></ul>
       </section>
 
       <!--

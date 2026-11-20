@@ -105,6 +105,12 @@ export interface IncomingSaleLine {
   readonly packCheck?: { readonly packMinimumMinor?: number };
   /** B19: a carry-bag line's material and thickness as the till judged them. A record. */
   readonly carryBag?: { readonly material?: string; readonly thicknessMicrons?: number };
+  /**
+   * C-7 (M03-FR-02 · batch 20d): the plain barcode the till scanned for this line, as its pack mapped it to `productId`. A
+   * record, never a control: head office raises the line when the code now names another item (or none) — a till that sold
+   * on an older pack after the barcode was removed or moved (`barcode_changed_since_the_tills_pack`). Absent: not scanned.
+   */
+  readonly scannedCode?: string;
 }
 
 export interface IncomingTender {
@@ -263,6 +269,8 @@ export type SaleExceptionKind =
   | 'tender_does_not_sum_to_total'
   /** Priced from a pack far behind the current one. */
   | 'sold_on_a_stale_pack'
+  /** C-7: a barcode the till scanned now names another item, or none — removed or moved after the till's pack was built. */
+  | 'barcode_changed_since_the_tills_pack'
   /** Two different sales claiming one receipt number. */
   | 'receipt_number_reused'
   /** OB-81: numbered under the store computer's own store prefix — head office never issued the till one (multi-store). */
@@ -354,6 +362,11 @@ export interface IntakeContext {
   /** The cloud catalogue as it stands now — which is not what the lane priced from. */
   readonly catalogue: ReadonlyMap<string, CatalogueProduct>;
   readonly currentPackVersion: number;
+  /**
+   * C-7 (M03-FR-02): the item each plain barcode names in the CURRENT pack (code → product id). Absent when nobody looked:
+   * no barcode finding is raised then.
+   */
+  readonly barcodeOwners?: ReadonlyMap<string, string>;
   /**
    * Which sale, if any, already holds this sale's receipt number — and whether this exact sale
    * has already been banked.
@@ -835,6 +848,22 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
 
   // OB-500 · OB-501: the till's own controls, re-checked by head office (a record each — the sale stands).
   exceptions.push(...tillOverrideFindings(sale, ctx), ...clientVersionFindings(sale, ctx));
+
+  // ── C-7 (M03-FR-02 · hard rule 10): a code the till scanned that head office has since removed or moved ───────────────
+  // The till sold what its pack said (P-01, by design offline); the bill stands. When the code now names another item (or
+  // none) and the till's pack is older than the current one, the line may have sold the wrong item — a person looks.
+  if (ctx.barcodeOwners !== undefined && sale.packVersion < ctx.currentPackVersion) {
+    for (const l of sale.lines) {
+      const code = typeof l.scannedCode === 'string' ? l.scannedCode.trim() : '';
+      if (code === '') continue;
+      const owner = ctx.barcodeOwners.get(code);
+      if (owner === l.productId) continue;
+      add('barcode_changed_since_the_tills_pack', 'material',
+        `barcode ${code} was sold as ${l.productId} by a till on catalogue v${sale.packVersion}; head office's catalogue v${ctx.currentPackVersion} ${owner === undefined ? 'no longer has this barcode on any item' : `has it on ${owner}`}`,
+        `The barcode was removed or moved at head office after this till last took its catalogue pack, so the till sold it as the old item. The bill stands as the customer was charged. Check which item really left the shelf; if it was ${owner === undefined ? 'another item' : owner}, correct the stock of both items with an adjustment. Make sure the till takes the new pack.`,
+        { productId: l.productId });
+    }
+  }
 
   // ── The lane's own state ───────────────────────────────────────────────────
   const behind = ctx.currentPackVersion - sale.packVersion;

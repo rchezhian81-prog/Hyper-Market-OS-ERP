@@ -195,6 +195,11 @@ export interface ScanResult {
   readonly batch?: { readonly batchId?: string; readonly expiry?: string; readonly gtin: string };
   /** D-20 — the scanned batch is under an approved markdown: the line is charged this unit price, not the product's. */
   readonly markdownPriceMinor?: number;
+  /**
+   * C-7 (M03-FR-02): the plain barcode in this pack that found the product (a 1D code, or a 2D code's GTIN) — kept on the
+   * sale line so head office can see a code removed or moved since this pack. Absent for a weight or price label.
+   */
+  readonly scannedCode?: string;
 }
 
 /**
@@ -465,6 +470,7 @@ export class CatalogueCache {
         product,
         barcodeKind: direct.kind,
         quantityMinor: 1,
+        scannedCode: direct.code,
         ...this.age(product),
       };
     }
@@ -537,6 +543,7 @@ export class CatalogueCache {
       product,
       barcodeKind: hit!.kind,
       quantityMinor: 1,
+      scannedCode: hit!.code,
       batch: { gtin: read.gtin, ...(read.batch === undefined ? {} : { batchId: read.batch }), ...(read.expiry === undefined ? {} : { expiry: read.expiry }) },
       ...(markdown === undefined ? {} : { markdownPriceMinor: markdown }),
       ...this.age(product),

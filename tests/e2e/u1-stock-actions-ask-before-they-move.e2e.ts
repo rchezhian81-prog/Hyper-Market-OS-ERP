@@ -77,10 +77,10 @@ describe.skipIf(!existsSync(CHROMIUM))('U1: stock-moving office actions ask the 
     const s = await open('/count-plans', '#register tbody tr[data-plan="cp-u1"]');
     const writes = writeCounter(s.page);
     await s.page.locator('#register tbody tr[data-plan="cp-u1"] button[data-act="view"]').click();
-    await says(s.page, 'd-title', /^cp-u1$/);
+    await says(s.page, 'd-title', /^(CNT\d*\/\d{2}-\d{2}\/\d{5}|cp-u1)$/); // batch 20b: titled by its document number
     await s.page.locator('#d-approve:not([hidden])').waitFor({ timeout: 15_000 });
     await s.page.fill('#d-reason', 'aisle 1 counted');
-    const title = await askedThenConfirmed(s.page, () => s.page.click('#d-approve'), /Approve count cp-u1 at S1-BACK: 1 of 1 products counted, loss ₹/, writes);
+    const title = await askedThenConfirmed(s.page, () => s.page.click('#d-approve'), /Approve count (CNT\d*\/\d{2}-\d{2}\/\d{5}|cp-u1) at S1-BACK: 1 of 1 products counted, loss ₹/, writes);
     expect(title).toContain('gain ₹');
     await says(s.page, 'd-status', /./);
     expect(writes()).toBe(1);
@@ -92,7 +92,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U1: stock-moving office actions ask the 
     const s = await open('/transfers', '#register tbody tr[data-transfer="t-u1"]');
     const writes = writeCounter(s.page);
     await s.page.locator('#register tbody tr[data-transfer="t-u1"] button[data-act="view"]').click();
-    await says(s.page, 'd-title', /^t-u1$/);
+    await says(s.page, 'd-title', /^(TRF\d*\/\d{2}-\d{2}\/\d{5}|t-u1)$/); // batch 20b: titled by its document number
     const title = await askedThenConfirmed(s.page, () => s.page.click('#d-dispatch'), /p-milk × 10 .*will leave .*S1-BACK → .*S1/, writes);
     expect(title).toMatch(/^p-milk × 10/);
     await says(s.page, 'd-state', /On the road/);

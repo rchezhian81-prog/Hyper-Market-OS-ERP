@@ -47,6 +47,11 @@ const WORDS = {
     typeFreight: 'Freight on the bill (₹)', typeDuty: 'Duty on the bill (₹)', typeOther: 'Other charges on the bill (₹)',
     typeRoundOff: 'Round off on the bill (₹, for example −0.40)', roundOff: 'Round off',
     roundOffNotMoney: 'The round off is not an amount of money — type it as the bill prints it, for example −0.40 or 0.40, or leave it blank.',
+    // Batch 20b · A2: each line's GST rate, filled from the item as a starting value — a check only, not sent with the bill.
+    rate: 'GST rate (%)', rateFromItem: 'from the item ({rate}%) — check against the bill', rateDiffers: 'differs from the item\'s {rate}% — ask a second person to look again',
+    rateNoItem: 'no GST rate is held for this item — type the rate the bill shows', rateNotARate: 'not a GST rate — type it as the bill prints it, for example 5 or 18',
+    rateLookupFailed: 'The items\' GST rates could not be read from head office, so none was filled in — type each rate from the bill.',
+    rateSecondLook: 'A line\'s GST rate differs from the item\'s — ask a second person to check this bill.',
     chargesNotMoney: 'Freight, duty or other charges is not an amount of money — leave it blank if the bill has none.',
     otherCharges: 'other charges', charges: 'Freight and other charges',
     otherReason: 'Why do you say so (for example, what the supplier\'s bill calls them)', otherCost: 'They are freight / part of the goods\' cost', otherTax: 'They are a tax, not part of the goods\' cost',
@@ -111,6 +116,10 @@ const WORDS = {
     typeFreight: 'பில்லில் சரக்குக் கட்டணம் (₹)', typeDuty: 'பில்லில் தீர்வை (₹)', typeOther: 'பில்லில் பிற கட்டணங்கள் (₹)',
     typeRoundOff: 'பில்லில் முழுமையாக்கல் (₹, உதாரணமாக −0.40)', roundOff: 'முழுமையாக்கல்',
     roundOffNotMoney: 'முழுமையாக்கல் பணத் தொகை அல்ல — பில்லில் உள்ளபடி, உதாரணமாக −0.40 அல்லது 0.40 எனத் தட்டச்சு செய்யுங்கள், அல்லது காலியாக விடுங்கள்.',
+    rate: 'GST விகிதம் (%)', rateFromItem: 'பொருளிலிருந்து ({rate}%) — பில்லுடன் சரிபார்க்கவும்', rateDiffers: 'பொருளின் {rate}% இலிருந்து வேறுபடுகிறது — இரண்டாவது நபரை மீண்டும் பார்க்கச் சொல்லவும்',
+    rateNoItem: 'இந்தப் பொருளுக்கு GST விகிதம் இல்லை — பில்லில் உள்ள விகிதத்தைத் தட்டச்சு செய்யவும்', rateNotARate: 'இது GST விகிதம் அல்ல — பில்லில் உள்ளபடி, உதாரணமாக 5 அல்லது 18 எனத் தட்டச்சு செய்யவும்',
+    rateLookupFailed: 'பொருட்களின் GST விகிதங்களைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை, எதுவும் நிரப்பப்படவில்லை — ஒவ்வொரு விகிதத்தையும் பில்லிலிருந்து தட்டச்சு செய்யவும்.',
+    rateSecondLook: 'ஒரு வரியின் GST விகிதம் பொருளின் விகிதத்திலிருந்து வேறுபடுகிறது — இந்த பில்லைச் சரிபார்க்க இரண்டாவது நபரைக் கேளுங்கள்.',
     chargesNotMoney: 'சரக்குக் கட்டணம், தீர்வை அல்லது பிற கட்டணம் பணத் தொகை அல்ல — பில்லில் இல்லையென்றால் காலியாக விடுங்கள்.',
     otherCharges: 'பிற கட்டணங்கள்', charges: 'சரக்கு மற்றும் பிற கட்டணங்கள்',
     otherReason: 'ஏன் என்று சொல்லுங்கள் (எ.கா. சப்ளையரின் பில் அவற்றை என்ன என்று அழைக்கிறது)', otherCost: 'அவை சரக்குக் கட்டணம் / பொருட்களின் விலையின் பகுதி', otherTax: 'அவை வரி, பொருட்களின் விலையின் பகுதி அல்ல',
@@ -414,12 +423,66 @@ function renderTyping(d) {
   }
   drawTypeRows();
 }
+// Batch 20b · A2: the mark beside a line's GST rate box — "from the item — check against the bill", or a flag when it differs.
+function rateMarkWords(row) {
+  if (session === null) return { kind: 'not_looked_up', text: '' };
+  const m = session.rateMark(row.rate ?? '', row.itemBps);
+  const text = m.kind === 'from_item' ? fill(t('rateFromItem'), { rate: m.itemPercent }) : m.kind === 'differs' ? fill(t('rateDiffers'), { rate: m.itemPercent })
+    : m.kind === 'no_item_rate' ? t('rateNoItem') : m.kind === 'not_a_rate' ? t('rateNotARate') : '';
+  return { kind: m.kind, text };
+}
+function paintRateMark(span, row) { const m = rateMarkWords(row); span.textContent = m.text; span.dataset.mark = m.kind; span.className = `rate-mark ${m.kind === 'differs' || m.kind === 'not_a_rate' ? 'err' : 'muted'}`; }
+/** Look up the item master's GST rate for lines not looked up yet; an EMPTY rate box takes it as a starting value. A rate
+ *  already typed is never changed — if it differs, the line is flagged. Nothing is sent with the bill. */
+async function fillRatesFromItems() {
+  if (session === null || typeof session.itemGstRates !== 'function') return;
+  const wanted = typeRows.filter((r) => (r.productId ?? '').trim() !== '' && r.itemBpsFor !== (r.productId ?? '').trim()).map((r) => r.productId.trim());
+  if (wanted.length === 0) return;
+  const got = await session.itemGstRates(wanted);
+  if (!got.ok) { sayLocal($('type-status'), t('rateLookupFailed')); return; }
+  typeRows = typeRows.map((r) => {
+    const id = (r.productId ?? '').trim();
+    if (id === '' || !(id in got.value)) return r;
+    const bps = got.value[id];
+    const empty = (r.rate ?? '').trim() === '';
+    return { ...r, itemBps: bps, itemBpsFor: id, ...(empty && bps !== null ? { rate: session.bpsToPercent(bps) } : {}) };
+  });
+  // Only the rate boxes change, in place: redrawing every line would throw away what is being typed in another box right now
+  // (and move the cursor). A line not on the page yet is drawn with its rate when it is next drawn.
+  typeRows.forEach((r, i) => {
+    const box = document.querySelector(`#type-lines tr[data-row="${i + 1}"] .t-rate`);
+    if (box === null) return;
+    if (box.value.trim() === '' && (r.rate ?? '') !== '') box.value = r.rate;
+    if (r.itemBps !== undefined && r.itemBps !== null) box.dataset.itemBps = String(r.itemBps); else delete box.dataset.itemBps;
+    const mark = box.nextElementSibling;
+    if (mark !== null) paintRateMark(mark, r);
+  });
+}
 function drawTypeRows() {
   const box = (r, i, k, field) => { const b = input(`t-${field}`, r[field], `${t('line')} ${i + 1} ${t(k)}`); b.addEventListener('input', () => { typeRows[i] = { ...typeRows[i], [field]: b.value }; }); return b; };
+  const productBox = (r, i) => {
+    const b = box(r, i, 'product', 'productId');
+    // A new item code: its rate is looked up again when the person leaves the box (the typed rate stays; a difference is flagged).
+    b.addEventListener('change', () => { void fillRatesFromItems(); });
+    return b;
+  };
+  const rateBox = (r, i) => {
+    const wrap = document.createElement('span'); wrap.className = 'rate-cell';
+    const b = input('t-rate', r.rate, `${t('line')} ${i + 1} ${t('rate')}`); b.inputMode = 'decimal';
+    if (r.itemBps !== undefined && r.itemBps !== null) b.dataset.itemBps = String(r.itemBps);
+    const mark = document.createElement('span');
+    b.addEventListener('input', () => { typeRows[i] = { ...typeRows[i], rate: b.value }; paintRateMark(mark, typeRows[i]); });
+    paintRateMark(mark, r);
+    wrap.append(b, mark);
+    return wrap;
+  };
   const reg = grid($('type-lines'), {
     id: 'type-lines', label: pair('typeH'), pageSize: 1000, search: false, count: false,
     columns: [
-      ...[['product', 'productId'], ['qty', 'quantity'], ['price', 'unitPrice'], ['amount', 'amount'], ['cgst', 'cgst'], ['sgst', 'sgst']].map(([k, field]) => ({ key: field, label: pair(k), value: (r) => r[field] ?? '', render: (r) => box(r, r.i, k, field) })),
+      { key: 'productId', label: pair('product'), value: (r) => r.productId ?? '', render: (r) => productBox(r, r.i) },
+      ...[['qty', 'quantity'], ['price', 'unitPrice'], ['amount', 'amount']].map(([k, field]) => ({ key: field, label: pair(k), value: (r) => r[field] ?? '', render: (r) => box(r, r.i, k, field) })),
+      { key: 'rate', label: pair('rate'), value: (r) => r.rate ?? '', render: (r) => rateBox(r, r.i) },
+      ...[['cgst', 'cgst'], ['sgst', 'sgst']].map(([k, field]) => ({ key: field, label: pair(k), value: (r) => r[field] ?? '', render: (r) => box(r, r.i, k, field) })),
       { key: 'remove', label: pair('remove'), value: () => t('remove'), render: (r) => { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t('remove'); b.addEventListener('click', () => { typeRows.splice(r.i, 1); if (typeRows.length === 0) typeRows.push({}); drawTypeRows(); }); return b; } },
     ],
     rowKey: (r) => String(r.i + 1), rowData: (r) => ({ row: String(r.i + 1) }),
@@ -431,14 +494,16 @@ $('type-add-line').addEventListener('click', () => { typeRows.push({}); drawType
 $('type-save').addEventListener('click', async () => {
   const d = openDoc;
   if (d === null) return;
-  const lines = typeRows.filter((r) => Object.values(r).some((v) => String(v ?? '').trim() !== '')).map((r) => ({
+  const lines = typeRows.filter((r) => ['productId', 'quantity', 'unitPrice', 'amount', 'cgst', 'sgst'].some((f) => String(r[f] ?? '').trim() !== '')).map((r) => ({
     productId: r.productId ?? '', quantity: r.quantity ?? '', unitPrice: r.unitPrice ?? '', amount: r.amount ?? '', cgst: r.cgst ?? '', sgst: r.sgst ?? '',
   }));
   // The capture names this scan, so head office records it as typed — the list then reads it as captured (no tab memory).
   const charges = { freight: $('type-freight').value, duty: $('type-duty').value, other: $('type-other').value };
   const answer = await session.type({ invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines, documentId: d.documentId, charges, roundOff: $('type-round-off').value });
   if (answer.ok === false && 'problem' in answer) { sayLocal($('type-status'), answer.problem === 'not_money' ? `${t('notMoney')} ${answer.line ?? ''}` : answer.problem === 'charges_not_money' ? t('chargesNotMoney') : answer.problem === 'round_off_not_money' ? t('roundOffNotMoney') : t('needTyped')); return; }
-  say($('type-status'), answer, answer.ok ? `${t('typed')} ${answer.value.invoiceId}.` : '');
+  // Batch 20b · A2: a line whose rate differs from the item's is said again once the bill is saved — a second person should look.
+  const differs = typeRows.some((r) => session.rateMark(r.rate ?? '', r.itemBps).kind === 'differs');
+  say($('type-status'), answer, answer.ok ? `${t('typed')} ${answer.value.invoiceId}.${differs ? ` ${t('rateSecondLook')}` : ''}` : '');
   // D-043: a paper bill typed with no file is on the register now — its drawer offers the check against the order.
   if (answer.ok && d.paper) { openDoc = { ...d, state: 'captured', invoiceId: answer.value.invoiceId }; renderDrawer(); }
   if (answer.ok) await refresh();
@@ -463,6 +528,8 @@ $('type-from-order').addEventListener('click', async () => {
   if (lines.length === 0) { sayLocal($('type-status'), fill(t('nothingFromOrder'), { po: poId })); return; }
   typeRows = lines.map((l) => ({ ...l }));
   drawTypeRows();
+  // Batch 20b · A2: each line's GST rate from the item, as a starting value to check against the bill.
+  void fillRatesFromItems();
   $('type-status').className = 'status good';
   $('type-status').textContent = fill(t('filledFromOrder'), { n: lines.length, po: poId }) + (left.length === 0 ? '' : ` ${fill(t('leftFromOrder'), { ids: left.join(', ') })}`);
 });

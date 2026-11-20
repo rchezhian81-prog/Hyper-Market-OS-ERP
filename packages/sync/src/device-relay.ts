@@ -99,6 +99,11 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // the door — the image and its SHA-256. Head office checks the bytes against the hash and the type from the file itself,
   // keeps it as a document (never deleted, #6) and re-verifies the driver. Nothing in it moves money or stock.
   DeliveryProofCaptured: { surfaces: ['driver'] },
+  // Batch 20e · R6 (M07-FR-04 "evidence attachments" · WF-04): a photo or scan of the delivery note, the supplier's challan or
+  // damage, kept with a goods receipt — from Receive on the store computer (`manager`) or the warehouse handheld. Head office
+  // checks the bytes against their SHA-256 and the type from the file itself, keeps it (never deleted, #6) and re-verifies
+  // the person. Nothing in it moves stock or money; the receipt itself travels on its own.
+  GoodsReceiptAttachmentCaptured: { surfaces: ['manager', 'warehouse'] },
   // U6 · OB-700 (owner, 7 Nov 2026): the driver's REQUEST that the store call a stop's customer — the phone holds no number
   // (§31). Thin: route, driver, stop, order reference, area. Head office re-verifies the driver, keeps it once and tells the store.
   DeliveryCallRequested: { surfaces: ['driver'] },

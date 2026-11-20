@@ -117,6 +117,8 @@ const WORDS = {
     recvFailed: 'Failed quality check / refused at the door', scanFailed: 'Scan an item that failed the check or was refused',
     recvFailedHowMany: 'How many failed the check or were refused?', recvFailedHint: 'Key how many. They are received but held back — not put on sale — for a second person to decide.',
     receivedFailed: 'Received and held back — failed the check', mrp_not_an_amount: 'The MRP on the pack is not an amount',
+    // Batch 20e · R6: a photo of the delivery note, the challan or damage, kept with the delivery.
+    photoKept: 'Photo kept with the delivery', photoNotKept: 'The photo was not kept',
     scanBarcode: 'Scan the delivery barcode', scanBin: 'Scan the bin to put it in',
     pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', units: 'units',
@@ -226,6 +228,7 @@ const WORDS = {
     recvFailed: 'தரச் சோதனையில் தோல்வி / வாசலில் மறுக்கப்பட்டது', scanFailed: 'சோதனையில் தோல்வியடைந்த அல்லது மறுக்கப்பட்ட பொருளை ஸ்கேன் செய்யவும்',
     recvFailedHowMany: 'எத்தனை சோதனையில் தோல்வி அல்லது மறுக்கப்பட்டன?', recvFailedHint: 'எண்ணிக்கையை அழுத்தவும். அவை பெறப்படும் ஆனால் விற்பனைக்கு வைக்கப்படாமல் தடுத்து வைக்கப்படும் — இரண்டாவது நபர் முடிவு செய்வார்.',
     receivedFailed: 'பெறப்பட்டு தடுத்து வைக்கப்பட்டது — சோதனையில் தோல்வி', mrp_not_an_amount: 'பொதியில் உள்ள MRP ஒரு தொகை அல்ல',
+    photoKept: 'புகைப்படம் டெலிவரியுடன் வைக்கப்பட்டது', photoNotKept: 'புகைப்படம் வைக்கப்படவில்லை',
     scanBarcode: 'வரவின் பார்கோடை ஸ்கேன் செய்யவும்', scanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', units: 'அலகுகள்',
@@ -611,6 +614,111 @@ el('adjust-minus').addEventListener('click', () => setAdjustSign(-1));
 el('adjust-plus').addEventListener('click', () => setAdjustSign(1));
 el('adjust-cancel').addEventListener('click', () => settleAdjustment(null));
 
+// ── Batch 20e · R6 (M07-FR-04 · OB-904 – OB-906): a photo of the delivery note, the challan or damage ───────────────────
+// One tap → what is it (three big buttons) → the phone's camera opens (the file input's `capture`). The photo is made smaller
+// on the phone (OB-904) and kept on its OWN queue with the chosen delivery, in the signed-in worker's name; receiving never
+// waits for it. A damage photo goes with the item last received on this phone for this delivery (else the whole delivery).
+// Each photo says where it has got to under "Photos" (P-08); a refusal keeps its reason for a person.
+const photos = window.receiptAttachments;
+const pw = (key, fill) => (photos ? photos.word(lang, key, fill ?? {}) : key);
+let lastReceivedProduct = null; // the item last received here for this delivery (a damage photo is about it)
+let photoKind = null;
+// The phone's camera: a file picker made here, only when a photo is asked for, and taken away again once it has been used
+// (the handheld page itself has nothing to type into). `capture` asks for the back camera; a PDF can still be chosen where
+// the phone offers files.
+function openCamera() {
+  document.getElementById('recv-photo-file')?.remove();
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.id = 'recv-photo-file';
+  input.accept = 'image/*,application/pdf';
+  input.setAttribute('capture', 'environment');
+  input.hidden = true;
+  input.addEventListener('change', () => { void photoChosen(input); });
+  input.addEventListener('cancel', () => { photoKind = null; input.remove(); });
+  document.body.append(input);
+  input.click();
+}
+
+function deliveryNumber() {
+  const list = (data && Array.isArray(data.openDeliveries)) ? data.openDeliveries : [];
+  const d = list.find((x) => x.poId === data?.poId);
+  return d?.number ?? data?.poId ?? grnId;
+}
+
+function renderPhotos() {
+  const ready = !!photos && !!(data && data.grnId);
+  el('recv-photo').hidden = !photos;
+  el('recv-photo').disabled = !ready;
+  el('recv-photo').title = ready ? '' : t('chooseDelivery');
+  say(el('recv-photo'), pw('takePhoto'), 'file-text');
+  if (!photos) return;
+  const list = photos.queue.list().slice(0, 12);
+  say(el('photos-heading'), pw('pendingHeading'), 'file-text');
+  el('photos-heading').hidden = list.length === 0;
+  el('photos-sent').replaceChildren(...list.map((f) => {
+    const row = document.createElement('div');
+    row.className = `sent ${f.state} photo`;
+    row.dataset.state = f.state;
+    row.dataset.grnId = f.grnId;
+    const what = document.createElement('div');
+    what.className = 'what';
+    const item = f.productId ? ` · ${pw('forItem', { item: nameOf(f.productId) })}` : '';
+    what.textContent = `${pw(f.kind)}${item} · ${f.receiptNumber} — ${pw('kb', { n: Math.max(1, Math.round(f.bytes / 1024)) })}`;
+    const state = document.createElement('div');
+    state.className = `pill ${f.state}`;
+    say(state, words(STATE_WORDS, f.state), STATE_ICON[f.state]);
+    row.append(what, state);
+    if (f.reason) { const why = document.createElement('div'); why.className = 'why'; why.textContent = f.reason; row.append(why); }
+    return row;
+  }));
+}
+
+el('recv-photo').addEventListener('click', () => {
+  if (!photos || !(data && data.grnId)) return;
+  say(el('photo-kind-title'), pw('kindLabel'), 'file-text');
+  el('photo-kind-hint').textContent = pw('lead');
+  el('photo-kind-cancel').textContent = t('cancel');
+  el('photo-kinds').replaceChildren(...photos.kinds(lang).map((k) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.kind = k.kind;
+    button.textContent = k.kind === 'damage_photo' && lastReceivedProduct !== null ? `${k.label} — ${nameOf(lastReceivedProduct)}` : k.label;
+    // The camera opens from this tap (a person's own tap is what lets the page open it).
+    button.addEventListener('click', () => { photoKind = k.kind; el('photo-kind').hidden = true; openCamera(); });
+    return button;
+  }));
+  el('photo-kind').hidden = false;
+});
+el('photo-kind-cancel').addEventListener('click', () => { el('photo-kind').hidden = true; photoKind = null; });
+
+async function photoChosen(input) {
+  const file = input.files && input.files[0];
+  const kind = photoKind;
+  photoKind = null;
+  input.remove();
+  if (!photos || !file || kind === null) return;
+  const read = await photos.read(file);
+  if (!read.ok) { feltResult({ feedback: 'reject', code: 'photoNotKept', detail: pw(read.code), sound: 'error', vibrateMs: 300 }); return; }
+  const out = photos.queue.add({
+    attachmentId: photos.newId(), grnId, receiptNumber: deliveryNumber(), warehouseId: data?.storeId ?? '', storeId: data?.storeId ?? null,
+    kind, ...(kind === 'damage_photo' && lastReceivedProduct !== null ? { productId: lastReceivedProduct } : {}),
+    fileName: read.fileName, mediaType: read.mediaType, contentBase64: read.contentBase64, attachedBy: data?.workerId ?? null,
+  });
+  const problem = typeof photos.storageProblem === 'function' ? photos.storageProblem() : undefined;
+  if (!out.added) feltResult({ feedback: 'reject', code: 'photoNotKept', detail: pw(out.code), sound: 'error', vibrateMs: 300 });
+  else feltResult({ feedback: problem ? 'warn' : 'accept', code: 'photoKept', detail: `${pw(kind)} · ${pw('kb', { n: Math.max(1, Math.round(read.bytes / 1024)) })}${problem ? ` — ${problem}` : ''}`, sound: problem ? 'warn' : 'ok', vibrateMs: 60 });
+  render();
+  void syncPhotos();
+}
+
+/** Hand the photos to the store computer (one at a time) and learn where they have got to. Never blocks a scan. */
+async function syncPhotos() {
+  if (!photos || !photos.relay) return;
+  try { await photos.relay.syncNow(); } catch { /* every photo is kept here; the state words say so */ }
+  renderPhotos();
+}
+
 // ── Felt scan feedback: colour + word + sound + buzz (OA-9) ──────────────────
 function feltResult(signal) {
   const banner = el('banner');
@@ -652,6 +760,7 @@ const nextId = (prefix) => `${prefix}-${Date.now()}-${seq++}`;
 // ── Render ────────────────────────────────────────────────────────────────
 function render() {
   paintHeader();
+  renderPhotos(); // batch 20e
   const lines = real && typeof real.pickLines === 'function' ? real.pickLines() : [];
   const items = real && typeof real.goodsIn === 'function' ? real.goodsIn() : [];
   const issues = real && typeof real.indentLines === 'function' ? real.indentLines() : [];
@@ -969,6 +1078,7 @@ async function startCountInReturn(r) {
 }
 
 async function syncToBox() {
+  void syncPhotos(); // batch 20e: the photos go on their own queue, one at a time
   const relay = window.warehouseRelay;
   if (!relay) return;
   try {
@@ -1045,6 +1155,7 @@ el('receive').addEventListener('click', async () => {
   });
   feltResult(out.signal);
   if (out.signal.feedback === 'accept') packMrpMinor = null;
+  if (out.signal.feedback === 'accept' && known !== undefined) lastReceivedProduct = known.productId; // batch 20e
   render();
   if (out.signal.feedback === 'accept') void syncToBox();
 });
@@ -1070,6 +1181,7 @@ el('receive-failed').addEventListener('click', async () => {
   });
   feltResult(out.signal.feedback === 'accept' ? { ...out.signal, detail: `${t('receivedFailed')} — ${out.signal.detail}` } : out.signal);
   if (out.signal.feedback === 'accept') packMrpMinor = null;
+  if (out.signal.feedback === 'accept' && known !== undefined) lastReceivedProduct = known.productId; // batch 20e
   render();
   if (out.signal.feedback === 'accept') void syncToBox();
 });

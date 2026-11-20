@@ -161,7 +161,17 @@ describe.skipIf(!HAVE_BROWSER)('OB-205: the staff phones, polished — at 360 an
     await page.waitForFunction(`globalThis.${shell.ready} !== undefined`, undefined, { timeout: 15_000 });
     return { page, errors };
   }
-  const tamil = async (page: Page): Promise<void> => { await page.click('#lang'); await page.waitForFunction('document.documentElement.lang === "ta"'); };
+  // The language button works once the page's own script has attached to it; a press that lands before that (a slow runner,
+  // just after a navigation) does nothing. So: look, press only while it is not Tamil, and look again — never press twice
+  // over a press that worked (that would turn it back to English).
+  const tamil = async (page: Page): Promise<void> => {
+    for (let i = 0; i < 20; i += 1) {
+      if (await page.evaluate('document.documentElement.lang') === 'ta') return;
+      await page.click('#lang');
+      try { await page.waitForFunction('document.documentElement.lang === "ta"', undefined, { timeout: 1_000 }); return; } catch { /* not attached yet: look again */ }
+    }
+    throw new Error('the page never turned to Tamil');
+  };
   const overflow = (page: Page): Promise<string[]> => page.evaluate(OVERFLOW) as Promise<string[]>;
   /** Icons found apart from their words: every icon must sit in a button, a link, a paragraph or an icon-and-word pair. */
   const loneIcons = (page: Page): Promise<string[]> => page.evaluate(`[...document.querySelectorAll('svg')].filter((s) => !s.parentElement.closest('a, button, p, li, label, .sre-with-icon, .sre-chip, .dot')).map((s) => s.getAttribute('data-icon') + ' in ' + (s.parentElement.id || s.parentElement.className))`) as Promise<string[]>;

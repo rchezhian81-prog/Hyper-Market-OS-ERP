@@ -18,6 +18,10 @@
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
+// Batch 20e · R6: declared before the first render, which draws each delivery's "Photos and scans (N)" button.
+const filesApi = window.receiptAttachmentsReview;
+const aw = (key, fill) => (filesApi ? filesApi.word(lang, key, fill ?? {}) : key);
+const openFiles = new Set();
 
 /** Money in exact minor units → the shop's own display. */
 function money(minor, currency) {
@@ -231,6 +235,11 @@ function receiptNode(r) {
   // Batch 18b · R1 (M31-FR-02): Print the GRN — an A4 page from head office's print view, printed or saved as a PDF.
   const printer = printGrnButton(r);
   if (printer !== null) li.append(printer);
+  // Batch 20e · R6 (M07-FR-04): the delivery's photos and scans — how many, and the files when opened.
+  const filesBtn = filesButton(r);
+  if (filesBtn !== null) li.append(filesBtn);
+  const filesPanel = filesBox(r);
+  if (filesPanel !== null) li.append(filesPanel);
   // R9-A · OB-534: the supplier bill — matched (which bill, what cost, by whom), or the "Match the bill" button.
   if (r.billMatch && (r.billMatch.matched.length > 0 || r.billMatch.canMatch || r.billMatch.receivedByYou)) li.append(billBox(r));
 
@@ -533,6 +542,152 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */
   });
+}
+
+
+// ── Batch 20e · R6 (M07-FR-04 · WF-04 · OB-907): each delivery's photos and scans ─────────────────────────────────────────
+// "Photos and scans (N)" on each delivery opens its files: a small picture of each photo, Open (the full file), who attached
+// it and from where; "Attached by mistake" with a reason (the file stays kept and shown, struck through); and, for a reader
+// who handles this delivery's stock, "Add a photo or scan". Online under the reader's session — with no connection the page
+// says so and nothing changes. The rules are the tested `receipt-attachments-review.ts` (window.receiptAttachmentsReview).
+// (filesApi, aw and openFiles are declared near the top: the first render runs before this point.)
+
+function filesButton(r) {
+  if (!filesApi || r.grnId === 'sample') return null;
+  const n = r.attachmentCount ?? 0;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sre-btn grn-files-btn';
+  b.dataset.grnId = r.grnId;
+  b.setAttribute('aria-expanded', openFiles.has(r.grnId) ? 'true' : 'false');
+  worded(b, 'file-text', n > 0 ? aw('showFiles', { n }) : aw('showFilesNone'));
+  b.addEventListener('click', () => {
+    if (openFiles.has(r.grnId)) openFiles.delete(r.grnId); else openFiles.add(r.grnId);
+    b.setAttribute('aria-expanded', openFiles.has(r.grnId) ? 'true' : 'false');
+    const box = b.parentElement?.querySelector(`.grn-files[data-grn-id="${CSS.escape(r.grnId)}"]`);
+    if (box) { box.hidden = !openFiles.has(r.grnId); if (!box.hidden) void paintFiles(box, r); }
+  });
+  return b;
+}
+
+function filesBox(r) {
+  if (!filesApi || r.grnId === 'sample') return null;
+  const box = document.createElement('div');
+  box.className = 'grn-files';
+  box.dataset.grnId = r.grnId;
+  box.hidden = !openFiles.has(r.grnId);
+  if (!box.hidden) void paintFiles(box, r);
+  return box;
+}
+
+/** A blob address for a file's bytes, so the browser can open it in its own tab (a `data:` address cannot be opened there). */
+function blobUrlOf(dataUrl) {
+  const [head, b64] = dataUrl.split(',');
+  const type = /^data:([^;]+)/.exec(head ?? '')?.[1] ?? 'application/octet-stream';
+  const bin = atob(b64 ?? '');
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type }));
+}
+
+async function paintFiles(box, r) {
+  const review = filesApi.review;
+  const status = document.createElement('p'); status.className = 'grn-files-status'; status.setAttribute('role', 'status');
+  const head = document.createElement('span'); head.className = 'd-word'; worded(head, 'file-text', aw('filesHeading'));
+  box.replaceChildren(head, status);
+  const out = await review.files(r.grnId);
+  if (out.result !== 'ok') { status.textContent = out.result === 'lost_link' ? aw('needLink') : `${aw('refused')} ${out.whatHappened ?? ''}`; return; }
+  const list = document.createElement('ul'); list.className = 'grn-file-list';
+  if (out.value.length === 0) status.textContent = aw('none');
+  for (const a of out.value) list.append(fileRow(box, r, a, status));
+  box.append(list);
+  if (review.mayChange) box.append(addForm(box, r, status));
+  else { const note = document.createElement('p'); note.className = 'grn-files-note'; note.textContent = aw('mayNotChange'); box.append(note); }
+}
+
+function fileRow(box, r, a, status) {
+  const review = filesApi.review;
+  const said = review.describe(lang, a, shopWhen, (id) => id);
+  const li = document.createElement('li');
+  li.className = 'grn-file';
+  li.dataset.attachmentId = a.attachmentId;
+  li.dataset.kind = a.kind;
+  if (a.mistake) li.dataset.mistake = 'true';
+  const picture = document.createElement('div'); picture.className = 'thumb';
+  if (a.mediaType.startsWith('image/')) {
+    void review.open(r.grnId, a.attachmentId).then((o) => {
+      if (o.result !== 'ok') return;
+      const img = document.createElement('img'); img.src = o.value; img.alt = said.title; img.loading = 'lazy'; picture.replaceChildren(img);
+    });
+  } else {
+    const pdf = document.createElement('span'); pdf.className = 'pdf'; pdf.textContent = 'PDF'; picture.append(pdf);
+  }
+  const words = document.createElement('div'); words.className = 'grn-file-words';
+  const title = document.createElement(a.mistake ? 's' : 'span'); title.className = 'grn-file-title'; title.textContent = said.title;
+  const detail = document.createElement('span'); detail.className = 'd-detail'; detail.textContent = said.detail;
+  words.append(title, detail);
+  for (const f of said.flags) { const flag = document.createElement('span'); flag.className = 'grn-file-flag'; worded(flag, 'circle-alert', f); words.append(flag); }
+  if (said.mistake) { const m = document.createElement('span'); m.className = 'grn-file-mistake'; worded(m, 'circle-alert', said.mistake); words.append(m); }
+  const open = document.createElement('button'); open.type = 'button'; open.className = 'sre-btn grn-file-open'; worded(open, 'file-text', aw('open'));
+  open.setAttribute('aria-label', `${aw('open')} ${a.fileName}`);
+  open.addEventListener('click', () => {
+    void (async () => {
+      const o = await review.open(r.grnId, a.attachmentId);
+      if (o.result !== 'ok') { status.textContent = o.result === 'lost_link' ? aw('needLink') : `${aw('refused')} ${o.whatHappened ?? ''}`; return; }
+      window.open(blobUrlOf(o.value), '_blank', 'noopener');
+    })();
+  });
+  li.append(picture, words, open);
+  if (review.mayChange && !a.mistake) {
+    const id = `mistake-${a.attachmentId}`.replace(/[^A-Za-z0-9_-]/g, '_');
+    const label = document.createElement('label'); label.htmlFor = id; label.textContent = aw('mistakeReason');
+    const reason = document.createElement('input'); reason.id = id; reason.type = 'text'; reason.className = 'sre-input grn-file-reason'; reason.autocomplete = 'off';
+    const mark = document.createElement('button'); mark.type = 'button'; mark.className = 'sre-btn grn-file-mistake-btn'; worded(mark, 'circle-alert', aw('mistake'));
+    mark.addEventListener('click', () => {
+      void (async () => {
+        mark.disabled = true;
+        try {
+          const out = await review.markMistake(r.grnId, a.attachmentId, reason.value);
+          if (out.result === 'invalid') { status.textContent = aw(out.why === 'needReason' ? 'mistakeNeedsReason' : 'mayNotChange'); return; }
+          if (out.result !== 'ok') { status.textContent = out.result === 'lost_link' ? aw('needLink') : `${aw('refused')} ${out.whatHappened ?? ''}`; return; }
+          await paintFiles(box, r);
+          box.querySelector('.grn-files-status').textContent = aw('mistakeDone');
+        } finally { mark.disabled = false; }
+      })();
+    });
+    const wrap = document.createElement('div'); wrap.className = 'grn-file-mistake-form';
+    wrap.append(label, reason, mark);
+    li.append(wrap);
+  }
+  return li;
+}
+
+function addForm(box, r, status) {
+  const form = document.createElement('div'); form.className = 'grn-file-add';
+  const kindId = `kind-${r.grnId}`.replace(/[^A-Za-z0-9_-]/g, '_');
+  const fileId = `file-${r.grnId}`.replace(/[^A-Za-z0-9_-]/g, '_');
+  const kindLabel = document.createElement('label'); kindLabel.htmlFor = kindId; kindLabel.textContent = aw('kindLabel');
+  const kind = document.createElement('select'); kind.id = kindId; kind.className = 'grn-file-kind';
+  kind.replaceChildren(...filesApi.kinds(lang).map((k) => { const o = document.createElement('option'); o.value = k.kind; o.textContent = k.label; return o; }));
+  const fileLabel = document.createElement('label'); fileLabel.htmlFor = fileId; fileLabel.textContent = aw('add');
+  const input = document.createElement('input'); input.id = fileId; input.type = 'file'; input.className = 'grn-file-input'; input.accept = 'image/jpeg,image/png,application/pdf,image/*';
+  input.addEventListener('change', () => {
+    void (async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      status.textContent = aw('reading');
+      const read = await filesApi.read(file);
+      input.value = '';
+      if (!read.ok) { status.textContent = aw(read.code); return; }
+      const out = await filesApi.review.add(r.grnId, { fileName: read.fileName, mediaType: read.mediaType, contentBase64: read.contentBase64 }, kind.value);
+      if (out.result === 'invalid') { status.textContent = aw(out.why === 'kind_not_known' ? 'kind_not_known' : 'mayNotChange'); return; }
+      if (out.result !== 'ok') { status.textContent = out.result === 'lost_link' ? aw('needLink') : `${aw('refused')} ${out.whatHappened ?? ''}`; return; }
+      await paintFiles(box, r);
+      box.querySelector('.grn-files-status').textContent = out.value.alreadyRecorded ? aw('alreadyKept') : aw('added');
+    })();
+  });
+  form.append(kindLabel, kind, fileLabel, input);
+  return form;
 }
 
 // ── Batch 18b · R1 (M31-FR-02 · M07-FR-01): Print GRN ───────────────────────────────────────────────────────────────────

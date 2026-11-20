@@ -88,6 +88,33 @@ export const FIGURE_NAMES_TA: Readonly<Record<string, string>> = Object.freeze({
   'Taken net of returns': 'திருப்பங்கள் போக வசூல்',
   'Value on hand': 'கையிருப்பு மதிப்பு',
   'What the points are worth': 'புள்ளிகளின் மதிப்பு',
+  // Batch 20c · O2: the figures the store computer's Reports page now shows from head office.
+  'Taxable sales (GSTR-3B 3.1 a)': 'வரிக்குட்பட்ட விற்பனை (GSTR-3B 3.1 a)',
+  'GST collected — CGST': 'வசூலித்த ஜிஎஸ்டி — CGST',
+  'GST collected — SGST': 'வசூலித்த ஜிஎஸ்டி — SGST',
+  'GST collected — IGST': 'வசூலித்த ஜிஎஸ்டி — IGST',
+  'Nil-rated and exempt sales (3.1 c)': 'பூஜ்ய விகித மற்றும் விலக்கு விற்பனை (3.1 c)',
+  'GST on purchases under reverse charge (3.1 d)': 'தலைகீழ் கட்டணத்தில் கொள்முதல் ஜிஎஸ்டி (3.1 d)',
+  'GST paid on purchases you may claim (4 A 5)': 'கோரக்கூடிய கொள்முதல் ஜிஎஸ்டி (4 A 5)',
+  'Thrown away, at cost': 'வீணானவை, அடக்க விலையில்',
+  'Write-offs': 'தள்ளுபடிகள்',
+  'Counts that changed the books': 'கணக்கை மாற்றிய எண்ணிக்கைகள்',
+  'Lost (counted short)': 'இழந்தது (குறைவாக எண்ணப்பட்டது)',
+  'Found (counted over)': 'கிடைத்தது (அதிகமாக எண்ணப்பட்டது)',
+  'Net shrinkage (lost less found)': 'நிகர சரக்கு இழப்பு (இழந்தது போக கிடைத்தது)',
+  'Counts waiting for a second person': 'இரண்டாம் நபருக்காகக் காத்திருக்கும் எண்ணிக்கைகள்',
+  'Batches past expiry': 'காலாவதியான தொகுதிகள்',
+  'Units past expiry': 'காலாவதியான அலகுகள்',
+  'Batches expiring within 7 days': '7 நாட்களுக்குள் காலாவதியாகும் தொகுதிகள்',
+  'Units expiring within 7 days': '7 நாட்களுக்குள் காலாவதியாகும் அலகுகள்',
+  'Bills captured': 'பதிவான பில்கள்',
+  'Bills not yet matched': 'இன்னும் பொருத்தப்படாத பில்கள்',
+  'Bills where billed and payable differ': 'பில் தொகையும் செலுத்த வேண்டியதும் வேறுபடும் பில்கள்',
+  'Billed': 'பில் போட்டது',
+  'Payable': 'செலுத்த வேண்டியது',
+  'Held back (billed less payable)': 'நிறுத்தி வைத்தது (பில் போக செலுத்த வேண்டியது)',
+  'Customers named on a bill': 'பில்லில் பெயரிடப்பட்ட வாடிக்கையாளர்கள்',
+  'Customers who came back': 'திரும்பி வந்த வாடிக்கையாளர்கள்',
 });
 
 /** A figure's name in the reader's language: the Tamil reading when the screen is Tamil and the table knows it, else the name as the producer gave it. */
@@ -277,6 +304,9 @@ export function dashboard(figures: readonly Figure[], now: string, sources?: rea
   };
 }
 
+/** Batch 20c · O2: the longest period one report covers (a leap year's whole year), as the store computer's own period rule. */
+export const REPORT_PERIOD_MAX_DAYS = 366;
+
 /**
  * What the report catalogue needs to answer "which reports can I run, and what should I start
  * recording to unlock more" — the two facts that are *not* the reporting service's to invent:
@@ -309,7 +339,7 @@ export interface ReportingDeps {
    * are ever asked for; absent, every named report is refused as not produced by this version — never answered with
    * the dashboard's figures.
    */
-  readonly produce?: (tenantId: string, reportId: string, options: { readonly tradingDay?: string; readonly scope: BranchScope }) => Promise<ProducedReportView>;
+  readonly produce?: (tenantId: string, reportId: string, options: { readonly tradingDay?: string; readonly scope: BranchScope; readonly period?: { readonly from: string; readonly to: string } }) => Promise<ProducedReportView>;
   /**
    * The sources behind the figures and how current each is, judged from the newest record that reached here from each
    * (audit EA-01). Optional so a bare wiring still serves; when present the dashboard carries them and is never
@@ -404,10 +434,28 @@ export function reportingRoutes(deps: ReportingDeps): readonly Route[] {
             nextSafeAction: 'Send ?day=YYYY-MM-DD, or leave it off for today.',
           });
         }
+        // Batch 20c · O2 (M29-FR-02): ?from=YYYY-MM-DD&to=YYYY-MM-DD asks for a PERIOD — the store computer's Reports page
+        // asks head office for exactly the days the person chose; each producer says which days its figures cover.
+        const from = ctx.query['from'];
+        const to = ctx.query['to'];
+        let period: { from: string; to: string } | undefined;
+        if (from !== undefined || to !== undefined) {
+          const isDay = (v: string | undefined): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+          const span = isDay(from) && isDay(to) ? Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1 : 0;
+          if (!isDay(from) || !isDay(to) || to < from || span > REPORT_PERIOD_MAX_DAYS || day !== undefined) {
+            throw apiError(400, {
+              code: 'not_readable_as_a_period',
+              whatHappened: day !== undefined ? 'Send either ?day= or ?from=&to=, not both.' : `"${from ?? ''}" to "${to ?? ''}" is not a period: send two days (YYYY-MM-DD), the first on or before the second, at most ${REPORT_PERIOD_MAX_DAYS} days.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Send ?from=YYYY-MM-DD&to=YYYY-MM-DD, or leave both off for today.',
+            });
+          }
+          period = { from, to };
+        }
         const scopeQ = ctx.query['scope'];
         const requested = typeof scopeQ === 'string' && scopeQ.trim() !== '' ? scopeQ.split(',').map((x) => x.trim()).filter((x) => x !== '') : undefined;
         const scope = narrowScope(ctx, requested);
-        const out = await deps.produce!(ctx.tenantId, report.id, { ...(day === undefined ? {} : { tradingDay: day }), scope });
+        const out = await deps.produce!(ctx.tenantId, report.id, { ...(day === undefined ? {} : { tradingDay: day }), ...(period === undefined ? {} : { period }), scope });
         return {
           status: 200,
           body: {

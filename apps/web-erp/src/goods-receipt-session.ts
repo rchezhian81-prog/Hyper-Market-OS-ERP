@@ -104,6 +104,8 @@ export interface GrnRecordView {
   readonly orderNumber?: string;
   readonly supplierId?: string;
   readonly supplierName?: string;
+  /** Batch 20e · R6 (M07-FR-04): the photos and scans kept with it, as head office's list counts them (absent = none said). */
+  readonly attachments?: { readonly kept: number; readonly mistaken: number };
   readonly warehouseId: string;
   readonly receivedBy: string;
   readonly receivedAt: string;
@@ -517,6 +519,8 @@ export interface PresentedReceipt {
   readonly orderNumber?: string;
   readonly supplierId?: string;
   readonly supplierName?: string;
+  /** Batch 20e · R6: the photos and scans kept with it (0 when head office said none). */
+  readonly attachmentCount?: number;
   readonly warehouseId: string;
   readonly receivedBy: string;
   readonly receivedAt: string;
@@ -959,6 +963,7 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           status, grnId: g.grnId, number: g.number, ...(g.reference === undefined ? {} : { reference: g.reference }), poId: g.poId,
           ...(g.orderNumber === undefined ? {} : { orderNumber: g.orderNumber }), ...(g.supplierId === undefined ? {} : { supplierId: g.supplierId }),
           ...(g.supplierName === undefined ? {} : { supplierName: g.supplierName }), warehouseId: g.warehouseId,
+          ...(g.attachments === undefined ? {} : { attachmentCount: g.attachments.kept + g.attachments.mistaken }),
           receivedBy: g.receivedBy, receivedAt: g.receivedAt, needsApproval: g.requiresApproval,
           discrepancyValueMinor: g.discrepancyValueMinor, currency: g.currency,
           sellableMinor: g.sellableMinor, quarantinedMinor: g.quarantinedMinor, rejectedMinor: g.rejectedMinor,

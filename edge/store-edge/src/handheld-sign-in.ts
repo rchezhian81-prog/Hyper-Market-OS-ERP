@@ -64,6 +64,8 @@ export const HANDHELD_PERSON_FIELD: Readonly<Record<string, string>> = Object.fr
   // OB-288 lane 2 · P2 (WF-07 offline): a transfer sent and a transfer counted in on the warehouse handheld.
   TransferDispatchRecorded: 'dispatchedBy',
   TransferReceiptRecorded: 'receivedBy',
+  // Batch 20e · R6 (M07-FR-04): a photo of the delivery note, the challan or damage, taken at the door, names who attached it.
+  GoodsReceiptAttachmentCaptured: 'attachedBy',
 });
 
 /**

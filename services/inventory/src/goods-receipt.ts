@@ -716,6 +716,11 @@ export interface GoodsReceiptDeps {
    * carries no order facts (the screen then finds a receipt by its own number and order id only).
    */
   readonly orderFactsForList?: (tenantId: string) => Promise<ReadonlyMap<string, ReceiptOrderFacts>>;
+  /**
+   * Batch 20e · R6 (M07-FR-04): each receipt's photos and scans — how many are kept and how many were marked attached by
+   * mistake — read ONCE for the list. Absent → the list says nothing about attachments.
+   */
+  readonly attachmentCountsForList?: (tenantId: string) => Promise<ReadonlyMap<string, { readonly kept: number; readonly mistaken: number }>>;
   /** F03 — the product's receiving rules from the PRODUCT MASTER; `undefined` when the product is not on it. */
   readonly productRule: (tenantId: string, productId: string) => Promise<ProductReceiptRules | undefined> | ProductReceiptRules | undefined;
   /** OB-31 · SF-11: the unit the product master counts the product in (its base unit), or undefined when it does not know it. */
@@ -1881,6 +1886,8 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
     const ordered = [...waiting, ...all.filter((g) => !awaitsDecision(g))];
     // Batch 20a · R5: each receipt's order number and supplier, read once for the whole list.
     const orderFacts = deps.orderFactsForList === undefined ? undefined : await deps.orderFactsForList(ctx.tenantId);
+    // Batch 20e · R6: each receipt's photos and scans, counted once for the whole list.
+    const attachmentCounts = deps.attachmentCountsForList === undefined ? undefined : await deps.attachmentCountsForList(ctx.tenantId);
     // OB-204: each supplier return's dispatch state, so the screen can say it before anyone presses Dispatch.
     const receipts = await Promise.all(ordered.map(async (g) => {
       const returnDispatches = await supplierReturnDispatchStatuses(deps, ctx.tenantId, g);
@@ -1888,7 +1895,9 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
       const owned = await withDiscrepancyOwners(deps, ctx.tenantId, g);
       const order = g.poId === null ? undefined : orderFacts?.get(g.poId);
       const withOrder = order === undefined ? owned : { ...owned, order };
-      return returnDispatches === undefined ? withOrder : { ...withOrder, returnDispatches };
+      const files = attachmentCounts?.get(g.grnId);
+      const withFiles = files === undefined ? withOrder : { ...withOrder, attachments: files };
+      return returnDispatches === undefined ? withFiles : { ...withFiles, returnDispatches };
     }));
     return {
       status: 200,

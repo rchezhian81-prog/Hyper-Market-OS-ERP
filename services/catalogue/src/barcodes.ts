@@ -40,6 +40,50 @@ export interface BarcodeRegistryDeps {
    * code's write guard, read first. Absent (a bare fake): the route rebuilds the register from `all`.
    */
   readonly current?: (tenantId: string, code: string) => Promise<{ readonly assignment?: BarcodeAssignment; readonly version: number }>;
+  /**
+   * C-7 (M03-FR-02 · batch 20d): take a code off the item that holds it — and, when `movedTo` is set, give it to that item in
+   * the SAME atomic batch — guarded on the code's write guard at `version`. Appended, never overwritten: the old link stays
+   * in the register's history (`links`).
+   */
+  readonly release?: (tenantId: string, release: BarcodeRelease, key: string, version?: number) => Promise<void>;
+  /** C-7: every link event ever recorded (given, taken off, moved), oldest first — an item's barcode history. */
+  readonly links?: (tenantId: string) => Promise<readonly BarcodeLinkEvent[]>;
+}
+
+/**
+ * C-7 (M03-FR-02 · batch 20d): a barcode taken off the item that held it — removed, or moved to `movedTo` — always as an
+ * approved catalogue change: who proposed it, who approved it, why, and the approval it was made under.
+ */
+export interface BarcodeRelease {
+  readonly code: string;
+  /** The item the code was on. */
+  readonly productId: string;
+  readonly kind: BarcodeKind;
+  readonly level?: string;
+  /** Set when the code was MOVED: its new link (the code, the item it now names, its kind). */
+  readonly movedTo?: BarcodeAssignment;
+  readonly requestId: string;
+  readonly proposedBy: string;
+  readonly approvedBy: string;
+  readonly reason: string;
+}
+
+/** C-7: one event of the barcode register, as it happened. */
+export type BarcodeLinkEvent =
+  | { readonly type: 'assigned'; readonly at: string; readonly assignment: BarcodeAssignment }
+  | { readonly type: 'released'; readonly at: string; readonly release: BarcodeRelease };
+
+/**
+ * C-7: the codes standing now, from the register's events in order — the last link of a code wins, and a code taken off its
+ * item stands nowhere (until it is given again). A move is a release and a new link in one batch.
+ */
+export function standingBarcodes(events: readonly BarcodeLinkEvent[]): readonly BarcodeAssignment[] {
+  const byCode = new Map<string, BarcodeAssignment>();
+  for (const e of events) {
+    if (e.type === 'assigned') byCode.set(e.assignment.code, e.assignment);
+    else if (byCode.get(e.release.code)?.productId === e.release.productId) byCode.delete(e.release.code);
+  }
+  return [...byCode.values()];
 }
 
 const KINDS: readonly BarcodeKind[] = ['gtin', 'ean', 'upc', 'internal', 'case', 'embedded'];

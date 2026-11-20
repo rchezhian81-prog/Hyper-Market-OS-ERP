@@ -6432,6 +6432,9 @@
               }
             },
             "additionalProperties": true
+          },
+          "scannedCode": {
+            "type": "string"
           }
         },
         "additionalProperties": true
