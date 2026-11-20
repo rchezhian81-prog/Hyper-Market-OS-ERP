@@ -34,6 +34,8 @@ export interface PosDeps {
   readonly lotsOnHand?: (tenantId: string, sale: IncomingSale) => Promise<(productId: string) => readonly LotOnHand[]>;
   readonly catalogue: (tenantId: string) => Promise<ReadonlyMap<string, CatalogueProduct>> | ReadonlyMap<string, CatalogueProduct>;
   readonly currentPackVersion: (tenantId: string) => Promise<number> | number;
+  /** C-7 (M03-FR-02): the item each plain barcode names in the current pack. Absent → no barcode finding is raised. */
+  readonly barcodeOwners?: (tenantId: string) => Promise<ReadonlyMap<string, string>>;
   /**
    * Two questions about one sale, rather than the whole history to search.
    *
@@ -234,6 +236,8 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           ...(laneScalesOnRegister === undefined ? {} : { laneScalesOnRegister }),
           ...(huidsSoldElsewhere === undefined ? {} : { huidsSoldElsewhere }),
           currentPackVersion: await deps.currentPackVersion(ctx.tenantId),
+          // C-7: only when a line names the code it scanned (a till that records it).
+          ...(deps.barcodeOwners === undefined || !sale.lines.some((l) => typeof l.scannedCode === 'string') ? {} : { barcodeOwners: await deps.barcodeOwners(ctx.tenantId) }),
           saleHoldingThisReceipt: await deps.saleHoldingReceipt(ctx.tenantId, sale.receiptNumber),
           alreadyBanked,
           now: deps.now(),

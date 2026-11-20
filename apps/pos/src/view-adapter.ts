@@ -364,6 +364,8 @@ export function createPosView(
         ...(hit.batch?.expiry === undefined ? {} : { batchExpiry: hit.batch.expiry }),
         // A7: the compensation cess the product's HSN carries, from the signed pack.
         ...(hit.product.cess === undefined ? {} : { cess: hit.product.cess }),
+        // C-7: the plain code that found the product in this pack — head office raises it if the code moved since.
+        ...(hit.scannedCode === undefined ? {} : { scannedCode: hit.scannedCode }),
       });
       return {
         lineId: entry.lineId,

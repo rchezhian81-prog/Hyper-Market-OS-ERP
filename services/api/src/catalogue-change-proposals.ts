@@ -39,6 +39,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { ApiError, apiError, type Route, type RequestContext, type HandlerResult } from '../../kernel/src/index';
 import { APPROVAL_KINDS, actionDetails, fingerprintOf, openApproval, whileMakingACatalogueChange, type ApprovalState } from '../../identity/src/approval-requests';
 import { STREAM, streamName, approvalRequestsAdapter, productMasterAdapter, barcodeAdapter, taxClassAdapter } from './adapters';
+import { judgeBarcodeChange } from './barcode-link-changes';
 
 export const CATALOGUE_CHANGE_KIND = 'catalogue_change';
 /** The store manager's word: propose an item, barcode or GST change for the owner's approval. Never the publish authority. */
@@ -50,6 +51,10 @@ export const CATALOGUE_CHANGE_ROUTES = Object.freeze({
   product_safety: Object.freeze({ method: 'POST', path: '/v1/catalogue/products/:productId/safety' }),
   barcode: Object.freeze({ method: 'POST', path: '/v1/catalogue/products/:productId/barcodes/:code' }),
   tax_rate: Object.freeze({ method: 'POST', path: '/v1/catalogue/tax-classes/:hsnCode/rates/:effectiveFrom' }),
+  // C-7 (M03-FR-02 · batch 20d): a wrongly keyed barcode taken off an item, or moved to the right one — routes that run ONLY
+  // as an approved change (services/api/src/barcode-link-changes.ts).
+  barcode_remove: Object.freeze({ method: 'POST', path: '/v1/catalogue/products/:productId/barcodes/:code/remove' }),
+  barcode_move: Object.freeze({ method: 'POST', path: '/v1/catalogue/products/:productId/barcodes/:code/move' }),
 } as const);
 export type CatalogueChange = keyof typeof CATALOGUE_CHANGE_ROUTES;
 
@@ -155,6 +160,18 @@ function readProposal(b: Record<string, unknown>): Proposed {
         body: { kind: b['kind'].trim(), ...(isStr(b['level']) ? { level: b['level'].trim() } : {}) },
       };
     }
+    case 'barcode_remove':
+    case 'barcode_move': {
+      const code = isStr(b['code']) ? b['code'].trim() : '';
+      const toProductId = isStr(b['toProductId']) ? b['toProductId'].trim() : '';
+      if (!ID.test(productId) || !/^[A-Za-z0-9_.-]{1,64}$/.test(code) || (change === 'barcode_move' && !ID.test(toProductId))) {
+        throw refuse(400, 'not_readable_as_a_catalogue_change', 'Taking a barcode off an item names the item (productId) and the code (code); moving it also names the item it belongs on (toProductId).');
+      }
+      return {
+        change, subjectRef: `product:${productId}`, params: { productId, code },
+        body: { ...(change === 'barcode_move' ? { toProductId } : {}), ...(b['leaveWithoutBarcode'] === true ? { leaveWithoutBarcode: true } : {}) },
+      };
+    }
     case 'tax_rate': {
       const hsnCode = isStr(b['hsnCode']) ? b['hsnCode'].trim() : '';
       const effectiveFrom = isStr(b['effectiveFrom']) ? b['effectiveFrom'].trim() : '';
@@ -199,7 +216,7 @@ export function catalogueChangeSurface(surface: Route[], input: {
   const engineAsk = surface[askAt]!.handler; // the engine's own route: the maker check, the fingerprint, the record
 
   // ── what the change does to what head office holds now (the before/after the owner reads) ────────────────────────────
-  const changesOf = async (tenantId: string, p: Proposed): Promise<{ readonly changes: readonly FieldChange[]; readonly name: string; readonly heldVersion?: number }> => {
+  const changesOf = async (tenantId: string, p: Proposed): Promise<{ readonly changes: readonly FieldChange[]; readonly name: string; readonly heldVersion?: number; readonly toName?: string }> => {
     switch (p.change) {
       case 'product': {
         const current = await products.product(tenantId, p.params['productId']!);
@@ -219,6 +236,25 @@ export function catalogueChangeSurface(surface: Route[], input: {
         const current = await products.product(tenantId, productId);
         const level = isStr(p.body['level']) ? `, ${p.body['level']}` : '';
         return { changes: [{ field: 'barcodes', before: [...new Set(held)].join(', '), after: [...new Set([...held, p.params['code']!])].join(', ') }, { field: 'newBarcode', before: '', after: `${p.params['code']} (${String(p.body['kind'])}${level})` }], name: current?.name ?? productId };
+      }
+      case 'barcode_remove':
+      case 'barcode_move': {
+        // C-7: judged now against what head office holds (the same rule runs again when it is made); refused in plain words.
+        const j = await judgeBarcodeChange({ store, now }, tenantId, {
+          action: p.change === 'barcode_move' ? 'move' : 'remove', productId: p.params['productId']!, code: p.params['code']!,
+          ...(typeof p.body['toProductId'] === 'string' ? { toProductId: p.body['toProductId'] } : {}), leaveWithoutBarcode: p.body['leaveWithoutBarcode'] === true,
+        });
+        const list = (codes: readonly string[]): string => (codes.length === 0 ? 'none' : codes.join(', '));
+        const warning: FieldChange[] = j.leavesNoBarcode ? [{ field: 'noBarcodeLeft', before: '', after: `${j.productName} will have no barcode: the tills can sell it only by finding it by name` }] : [];
+        const changes: FieldChange[] = j.action === 'remove'
+          ? [{ field: 'removeBarcode', before: j.code, after: '' }, { field: 'barcodes', before: list(j.codesNow), after: list(j.codesAfter) }, ...warning]
+          : [
+            { field: 'moveBarcode', before: `${j.code} on ${j.productName} (${j.productId})`, after: `${j.code} on ${j.toProductName!} (${j.toProductId!})` },
+            { field: 'barcodes', before: list(j.codesNow), after: list(j.codesAfter) },
+            { field: 'barcodesOfTheOtherItem', before: list(j.toCodesNow!), after: list(j.toCodesAfter!) },
+            ...warning,
+          ];
+        return { changes, name: j.productName, ...(j.toProductName === undefined ? {} : { toName: j.toProductName }) };
       }
       case 'tax_rate': {
         const hsnCode = p.params['hsnCode']!;
@@ -240,7 +276,7 @@ export function catalogueChangeSurface(surface: Route[], input: {
       const reason = isStr(b['reason']) ? b['reason'].trim() : '';
       const p = readProposal(b);
       if (reason === '') throw refuse(400, 'not_readable_as_a_catalogue_change', 'A reason is needed — the owner reads why before he approves.');
-      const { changes, name, heldVersion } = await changesOf(ctx.tenantId, p);
+      const { changes, name, heldVersion, toName } = await changesOf(ctx.tenantId, p);
       // Hard rule 10: a change made on an item someone has since saved would overwrite their work — refused now, by name.
       if (p.expectedVersion !== undefined && heldVersion !== undefined && heldVersion !== p.expectedVersion) {
         throw refuse(409, 'product_changed_meanwhile', `Someone saved this item after you opened it (you opened version ${p.expectedVersion}; head office now holds version ${heldVersion}). Nothing was sent.`, 'Reload the item and make your change again.');
@@ -251,7 +287,9 @@ export function catalogueChangeSurface(surface: Route[], input: {
       const summary = p.change === 'product' ? `Item change: ${name} (${p.params['productId']})`
         : p.change === 'product_safety' ? `Label facts change: ${name} (${p.params['productId']})`
           : p.change === 'barcode' ? `New barcode ${p.params['code']} for ${name} (${p.params['productId']})`
-            : `GST rate of ${name}: ${changes[0]!.after}`;
+            : p.change === 'barcode_remove' ? `Remove barcode ${p.params['code']} from ${name} (${p.params['productId']})`
+              : p.change === 'barcode_move' ? `Move barcode ${p.params['code']} from ${name} (${p.params['productId']}) to ${toName ?? ''} (${String(p.body['toProductId'])})`
+                : `GST rate of ${name}: ${changes[0]!.after}`;
       const details = {
         change: p.change, ...p.params, ...p.body,
         ...(p.expectedVersion === undefined ? {} : { expectedVersion: p.expectedVersion }),
@@ -343,13 +381,15 @@ export function catalogueChangeSurface(surface: Route[], input: {
       body = { expectedVersion: d['expectedVersion'], safety: d['safety'], reason: d['reason'] };
     } else if (change === 'barcode') {
       body = { kind: d['kind'], ...(typeof d['level'] === 'string' ? { level: d['level'] } : {}) };
+    } else if (change === 'barcode_remove' || change === 'barcode_move') {
+      body = { ...(typeof d['toProductId'] === 'string' ? { toProductId: d['toProductId'] } : {}), ...(d['leaveWithoutBarcode'] === true ? { leaveWithoutBarcode: true } : {}) };
     } else {
       body = { rateBps: d['rateBps'] };
     }
     // The approval is offered to the route only where the route may need it as the second approval: a GST rate on a class
     // that already has one (the FIRST rate of a class is setting it up, and needs none); an item's own route asks for it
     // only when its HSN changes on sale or it newly becomes age-limited or tobacco. A barcode never needs one.
-    const offer = change === 'barcode' ? false : change === 'tax_rate' ? (await taxes.schedule(ctx.tenantId, params['hsnCode']!)).length > 0 : true;
+    const offer = change === 'barcode' || change === 'barcode_remove' || change === 'barcode_move' ? false : change === 'tax_rate' ? (await taxes.schedule(ctx.tenantId, params['hsnCode']!)).length > 0 : true;
     // The owner's own act, in his own session, through the ordinary route and every check on it. The approval is named, so a
     // route that also needs Finance's approval (or a second person's) may take THIS one as it — only while head office is
     // making this very change (`whileMakingACatalogueChange`), and only on the engine's OB-773 terms (`takeApproval`).

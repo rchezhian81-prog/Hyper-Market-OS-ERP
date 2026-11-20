@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2535,
+  "testFiles": 2538,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -283,10 +283,10 @@
       "id": "M03",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 22,
-        "integration": 24,
-        "realDb": 6,
-        "browser": 9,
+        "unit": 23,
+        "integration": 25,
+        "realDb": 7,
+        "browser": 10,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -294,6 +294,7 @@
       "files": {
         "unit": [
           "tests/unit/a-scale-label-rule-reads-one-way-only.test.ts",
+          "tests/unit/c7-a-moved-barcode-is-history-and-a-visible-exception.test.ts",
           "tests/unit/catalogue-preview.test.ts",
           "tests/unit/catalogue-snapshot-builder.test.ts",
           "tests/unit/catalogue.test.ts",
@@ -322,6 +323,7 @@
           "tests/integration/ai-data-quality-worklist.test.ts",
           "tests/integration/ai-data-quality.test.ts",
           "tests/integration/barcode-register.test.ts",
+          "tests/integration/c7-a-wrongly-keyed-barcode-is-removed-or-moved-with-a-second-person.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
           "tests/integration/catalogue-pack-publish.test.ts",
           "tests/integration/catalogue-product-duplicates.test.ts",
@@ -343,6 +345,7 @@
           "tests/integration/w4-an-incomplete-product-is-kept-as-a-draft-and-never-reaches-a-pack.test.ts"
         ],
         "realDb": [
+          "tests/integration/c7-a-wrongly-keyed-barcode-is-removed-or-moved-with-a-second-person.test.ts",
           "tests/integration/head-office-scale-label-rules-ride-the-signed-pack.test.ts",
           "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
@@ -351,6 +354,7 @@
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts"
         ],
         "browser": [
+          "tests/e2e/c7-a-wrongly-keyed-barcode-is-moved-on-product-details-and-approved.e2e.ts",
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
           "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",

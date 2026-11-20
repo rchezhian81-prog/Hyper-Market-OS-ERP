@@ -253,6 +253,8 @@ export interface ScanInput {
   readonly batchExpiry?: string;
   /** A7: the product's compensation cess from the pack (tobacco / pan-masala). Absent = not cess-liable. */
   readonly cess?: CessRate;
+  /** C-7 (M03-FR-02): the plain barcode that found the product in the lane's pack. A record only. */
+  readonly scannedCode?: string;
 }
 
 /** A basket line as the cashier sees it. */
@@ -281,6 +283,8 @@ export interface BasketEntry {
   readonly packDateCheck?: PackDateCheck;
   /** A7: the compensation cess charged inside the line's price (from the pack). */
   readonly cess?: CessRate;
+  /** C-7: the plain barcode scanned for this line, as the lane's pack mapped it. Kept on the sale line. */
+  readonly scannedCode?: string;
   readonly voided: boolean;
   readonly voidReason?: string;
   /**
@@ -919,6 +923,7 @@ export class PosSession {
       ...(input.batchId === undefined ? {} : { batchId: input.batchId }),
       ...(input.batchExpiry === undefined ? {} : { batchExpiry: input.batchExpiry }),
       ...(packDateCheck === undefined ? {} : { packDateCheck }),
+      ...(typeof input.scannedCode === 'string' && input.scannedCode.trim() !== '' ? { scannedCode: input.scannedCode.trim() } : {}),
       ...((): { cess?: CessRate } => { const c = readCessRate(this.config.cessOf?.(input.productId) ?? input.cess); return c === undefined ? {} : { cess: c }; })(),
       voided: false,
     });
@@ -1647,6 +1652,8 @@ export class PosSession {
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         // B8 (OB-298): who looked at the date printed on a perishable's pack, and when.
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
+        // C-7 (M03-FR-02): the plain barcode scanned, so head office can raise a code removed or moved since this pack.
+        ...(l.scannedCode === undefined ? {} : { scannedCode: l.scannedCode }),
         // The evidence for a restricted line: what age it needed, and who confirmed it when (PF-03) — so head office can
         // see the check was made, and flag any restricted line that arrives without one.
         ...(requiredAge === undefined ? {} : { ageCheck: ageEvidence(requiredAge, this.confirmationFor(requiredAge)) }),

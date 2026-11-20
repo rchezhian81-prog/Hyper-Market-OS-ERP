@@ -181,7 +181,8 @@ export type CopyKey =
   | 'decidedWrittenOff' | 'decidedCorrectedUp' | 'decidedStockNotMade' | 'statusWrittenOff' | 'statusCorrectedUp' | 'statusStockNotMade' | 'stockWhatOff' | 'stockWhatUp'
   | 'kindCatalogueChange' | 'changeItem' | 'changeHsn' | 'changeNothing' | 'statusChangeMade' | 'statusChangeNotMade' | 'decidedChangeMade' | 'decidedChangeNotMade' | 'decidedRoleChangeMade'
   | 'fieldName' | 'fieldSku' | 'fieldBaseUom' | 'fieldCategory' | 'fieldTaxClass' | 'fieldLifecycle' | 'fieldBrand' | 'fieldManufacturer'
-  | 'fieldParent' | 'fieldMrp' | 'fieldAttributes' | 'fieldBarcodes' | 'fieldNewBarcode' | 'fieldGstRate' | 'fieldLabelFact';
+  | 'fieldParent' | 'fieldMrp' | 'fieldAttributes' | 'fieldBarcodes' | 'fieldNewBarcode' | 'fieldGstRate' | 'fieldLabelFact'
+  | 'fieldRemoveBarcode' | 'fieldMoveBarcode' | 'fieldOtherItemBarcodes' | 'fieldNoBarcodeLeft';
 
 export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -296,6 +297,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     fieldName: 'Name', fieldSku: 'SKU', fieldBaseUom: 'Unit it is counted in', fieldCategory: 'Category', fieldTaxClass: 'Tax (HSN) class', fieldLifecycle: 'Lifecycle',
     fieldBrand: 'Brand', fieldManufacturer: 'Manufacturer', fieldParent: 'A variant of', fieldMrp: 'MRP', fieldAttributes: 'Attributes',
     fieldBarcodes: 'Barcodes', fieldNewBarcode: 'New barcode', fieldGstRate: 'GST rate', fieldLabelFact: 'Label',
+    fieldRemoveBarcode: 'Barcode taken off', fieldMoveBarcode: 'Barcode moved', fieldOtherItemBarcodes: 'Barcodes of the other item', fieldNoBarcodeLeft: 'Warning: no barcode left',
   },
   ta: {
     title: 'அனுமதிகள்', langName: 'English',
@@ -407,6 +409,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     fieldName: 'பெயர்', fieldSku: 'SKU', fieldBaseUom: 'எண்ணப்படும் அலகு', fieldCategory: 'வகை', fieldTaxClass: 'வரி (HSN) வகுப்பு', fieldLifecycle: 'வாழ்க்கைச் சுழற்சி',
     fieldBrand: 'பிராண்ட்', fieldManufacturer: 'உற்பத்தியாளர்', fieldParent: 'இதன் வகைமாறு', fieldMrp: 'MRP', fieldAttributes: 'பண்புகள்',
     fieldBarcodes: 'பார்கோடுகள்', fieldNewBarcode: 'புதிய பார்கோடு', fieldGstRate: 'GST விகிதம்', fieldLabelFact: 'லேபிள்',
+    fieldRemoveBarcode: 'நீக்கப்படும் பார்கோடு', fieldMoveBarcode: 'மாற்றப்படும் பார்கோடு', fieldOtherItemBarcodes: 'மற்ற பொருளின் பார்கோடுகள்', fieldNoBarcodeLeft: 'எச்சரிக்கை: பார்கோடு எதுவும் இருக்காது',
   },
 };
 
@@ -481,6 +484,7 @@ const FIELD_COPY: Readonly<Record<string, CopyKey>> = {
   name: 'fieldName', sku: 'fieldSku', baseUom: 'fieldBaseUom', primaryCategoryId: 'fieldCategory', taxClass: 'fieldTaxClass', lifecycle: 'fieldLifecycle',
   brand: 'fieldBrand', manufacturer: 'fieldManufacturer', parentProductId: 'fieldParent', mrpHistory: 'fieldMrp', attributes: 'fieldAttributes',
   barcodes: 'fieldBarcodes', newBarcode: 'fieldNewBarcode', gstRate: 'fieldGstRate',
+  removeBarcode: 'fieldRemoveBarcode', moveBarcode: 'fieldMoveBarcode', barcodesOfTheOtherItem: 'fieldOtherItemBarcodes', noBarcodeLeft: 'fieldNoBarcodeLeft', // C-7
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
