@@ -110,6 +110,9 @@
       /* UI-3: the report's source line and its chart (window.sreCharts, design system §4.3). */
       .report-covers { margin: 0; font-size: 15px; color: var(--muted); }
       .report-chart:empty { display: none; }
+      .report-notes { margin: 0; padding-left: 20px; color: var(--ink); font-size: 15px; }
+      .report-notes[hidden] { display: none; }
+      #print-report[hidden], #export[hidden], #export-note[hidden] { display: none; }
       .report-chart { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
       /* Batch 18b · O1: the period picker under the freshness line. */
       .period-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
@@ -188,7 +191,11 @@
         <!-- UI-3: what this report covers (store, trading day) and when its figures were read; then its chart, if it is one. -->
         <p class="report-covers" id="report-covers"></p>
         <div id="report-figures"></div>
+        <!-- Batch 20c · O2: what to read beside the figures (a GST month still provisional, a difference a person must find). -->
+        <ul class="report-notes" id="report-notes" hidden></ul>
         <div class="report-chart" id="report-chart"></div>
+        <!-- Batch 20c · O2 (M31-FR-02): print exactly what is on the screen — the figures and the rows — on an A4 page. -->
+        <button id="print-report" type="button" class="sre-btn" hidden>Print / Save as PDF</button>
 
         <h3 id="rows-title">The rows behind these figures</h3>
         <div id="report-rows"></div>

@@ -18,7 +18,7 @@
 // the network in a path a person waits on.
 
 import { listFile, listFileName, isPersonalKey, maySeePersonal, recordDownload, flushPending } from './list-download';
-import { openPrint } from './print-documents-browser';
+import { openPrint, openLayoutPrint } from './print-documents-browser';
 import { createReceiptPrefixSession, type ReceiptPrefixSession, type ReceiptPrefixesRead } from './receipt-prefix-session';
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
@@ -307,7 +307,7 @@ import {
 } from './approvals-session';
 import { createCountPlansSession, type CountPlansSession } from './count-plans-session';
 import { createTransfersSession, type TransfersSession } from './transfers-session';
-import { headOfficeHttp } from './head-office-http';
+import { headOfficeHttp, type HeadOfficeHttp } from './head-office-http';
 import {
   createWorkforceInboxSession,
   type WorkforceInboxPorts, type WorkforceInboxSession, type WorkforceWorklistData,
@@ -5512,6 +5512,8 @@ interface ManagerWindow {
   unsellableData?: UnsellableData;
   unsellableSession?: UnsellableSession;
   reportingSession?: ReportingSession;
+  /** Batch 20c · O2: head office, in the signed-in person's session — the Reports page asks it for the reports it works out. */
+  reportingHeadOffice?: HeadOfficeHttp;
   reportingData?: ReportingData;
   /** U3 (OB-699): a figure's name in the reader's language, from the one table head office and the box name their figures from. */
   figureNameIn?: (lang: 'en' | 'ta', name: string) => string;
@@ -7070,7 +7072,7 @@ if (browserWindow !== undefined) {
   const unsellable = bootUnsellable(browserWindow.unsellableData);
   if (unsellable !== null) browserWindow.unsellableSession = unsellable;
   const reporting = bootReporting(browserWindow.reportingData);
-  if (reporting !== null) browserWindow.reportingSession = reporting;
+  if (reporting !== null) { browserWindow.reportingSession = reporting; browserWindow.reportingHeadOffice = headOfficeHttp(); }
   browserWindow.figureNameIn = figureNameIn;
   const service = bootService(browserWindow.serviceData);
   if (service !== null) browserWindow.serviceSession = service;
@@ -7975,4 +7977,4 @@ if (browserWindow !== undefined) {
 (globalThis as { sreListDownload?: unknown }).sreListDownload = Object.freeze({ listFile, listFileName, isPersonalKey, maySeePersonal, recordDownload, flushPending });
 // Batch 18b · R1 / P1 / B2 (M31-FR-02 · WF-03): a document's print layout (A4), from head office's print view, kept on this
 // computer once read so it prints again with the internet off.
-(globalThis as { srePrint?: unknown }).srePrint = Object.freeze({ openPrint });
+(globalThis as { srePrint?: unknown }).srePrint = Object.freeze({ openPrint, openLayoutPrint });

@@ -102,9 +102,11 @@ export function produceMore(kit: ProducerKit) {
     figures: [figure({ name, unit, asAt: null, now: kit.now(), notAvailableBecause: `${what} ${COMPANY_WIDE}` })],
   });
 
-  return async (tenantId: string, reportId: string, options: { readonly scope: BranchScope }, day: string, calendar: TradingCalendar): Promise<MoreProducedReport> => {
+  return async (tenantId: string, reportId: string, options: { readonly scope: BranchScope; readonly period?: { readonly from: string; readonly to: string } }, day: string, calendar: TradingCalendar): Promise<MoreProducedReport> => {
     const scope = options.scope;
-    const period = { from: `${day.slice(0, 8)}01`, to: day };
+    // A month report covers the first of the month to the asked day — or, batch 20c · O2, exactly the period asked for.
+    const period = options.period ?? { from: `${day.slice(0, 8)}01`, to: day };
+    const asked = options.period !== undefined;
     /** Whether an instant falls on a trading day inside this month's period, by the shop's own calendar. */
     const inPeriod = (instant: string): boolean => {
       const d = tradingDayIn(instant, calendar);
@@ -442,7 +444,8 @@ export function produceMore(kit: ProducerKit) {
         // Per supplier, over every ISSUED order on the register: units ordered (less what was cancelled), units the goods
         // receipts posted against them, and the share delivered. A supplier with nothing still owed has no fill share.
         if (scope !== 'all') return companyOnly('Units ordered', 'count', 'purchase orders are company-wide records;');
-        const orders = [...(await foldPurchaseOrders(kit.store, tenantId)).values()].filter((o) => o.status === 'issued');
+        // Batch 20c · O2: for a period, the issued orders RAISED in it; without one, every issued order.
+        const orders = [...(await foldPurchaseOrders(kit.store, tenantId)).values()].filter((o) => o.status === 'issued' && (!asked || inPeriod(o.at)));
         const asAt = newestOf((await kit.store.readStream(tenantId, streamName(STREAM.purchase, 'orders'))).map((e) => e.event.occurredAt));
         const mk = kit.at(asAt, 'no purchase order has ever been raised at head office');
         const by = new Map<string, { ordered: number; received: number; orders: number }>();
@@ -456,6 +459,7 @@ export function produceMore(kit: ProducerKit) {
         }
         const ordered = [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]));
         return {
+          ...(asked ? { period } : {}),
           sources: [fresh('purchase orders and receipts', 'purchasing', asAt)],
           figures: ordered.flatMap(([s, t]) => [
             mk(`${s} — units ordered`, t.ordered, 'count'),
@@ -472,7 +476,8 @@ export function produceMore(kit: ProducerKit) {
         // Every captured supplier bill's LATEST three-way-match verdict: what the supplier billed, what may be paid (the
         // lowest of order, receipt and bill), and the difference held back. A bill never matched is counted, not guessed.
         if (scope !== 'all') return companyOnly('Billed', 'minor_currency', 'supplier bills are company-wide records;');
-        const invoices = await recordsOf<{ invoiceId: string; supplierId: string }>(kit.store, tenantId, streamName(STREAM.purchase, 'invoices'), 'SupplierInvoiceCaptured');
+        // Batch 20c · O2: for a period, the bills CAPTURED in it; without one, every bill.
+        const invoices = (await recordsOf<{ invoiceId: string; supplierId: string }>(kit.store, tenantId, streamName(STREAM.purchase, 'invoices'), 'SupplierInvoiceCaptured')).filter((i) => !asked || inPeriod(i.at));
         const matches = await recordsOf<StoredMatch>(kit.store, tenantId, STREAM.purchase, 'InvoiceMatched');
         const latest = new Map<string, StoredMatch>();
         for (const m of matches) latest.set(m.p.invoiceId, m.p);
@@ -485,6 +490,7 @@ export function produceMore(kit: ProducerKit) {
           transactionId: m.invoiceId, at: m.matchedAt, branchId: 'company', vendorId: supplierOf.get(m.invoiceId) ?? 'unknown', staffId: m.matchedBy, amountMinor, description: `bill ${m.invoiceId}: ${what}`,
         });
         return {
+          ...(asked ? { period } : {}),
           sources: [fresh('supplier bills and match verdicts', 'purchasing', asAt)],
           figures: [
             mk('Bills captured', invoices.length, 'count'),
