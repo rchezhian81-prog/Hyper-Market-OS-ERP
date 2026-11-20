@@ -421,6 +421,12 @@ import {
   createScalesSession, wordsFor as scalesWords, outcomeWords as scalesOutcomeWords, summarise as scalesSummary,
   stampWords as scalesStampWords, requestWords as scalesRequestWords, formOf as scalesFormOf, type ScalesSession,
 } from './scales-session';
+// Batch 20e · R6 (M07-FR-04): photos and scans kept with a goods receipt — Receive's own device queue and Goods receipt review.
+import { ReceiptAttachmentQueue, contentDroppedOnceHanded, MAX_ATTACHMENTS_PER_RECEIPT } from '../../../packages/receiving/src/receipt-attachments';
+import { openAttachmentRelay } from '../../../packages/receiving/src/receipt-attachment-relay';
+import { readPickedFile, newAttachmentId } from '../../../packages/receiving/src/receipt-attachment-browser';
+import { attachmentWord, attachmentKindChoices } from '../../../packages/receiving/src/receipt-attachment-words';
+import { createReceiptAttachmentsReview } from './receipt-attachments-review';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"). `PILOT_DEMO_BANNER` is a build-time constant baked in by
 // esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty in production. `typeof` guards
@@ -3495,6 +3501,15 @@ export function orderFactsOf(raw: unknown): { orderNumber?: string; supplierId?:
   return { ...(orderNumber === undefined ? {} : { orderNumber }), ...(supplierId === undefined ? {} : { supplierId }), ...(supplierName === undefined ? {} : { supplierName }) };
 }
 
+/** Batch 20e · R6: a receipt's photos and scans as head office's list counts them (`attachments`), kept only when they read right. */
+export function attachmentCountsOf(raw: unknown): { attachments?: { kept: number; mistaken: number } } {
+  if (raw === null || typeof raw !== 'object') return {};
+  const o = raw as Record<string, unknown>;
+  const n = (v: unknown): number | undefined => (Number.isSafeInteger(v) && (v as number) >= 0 ? v as number : undefined);
+  const kept = n(o['kept']); const mistaken = n(o['mistaken']);
+  return kept === undefined || mistaken === undefined ? {} : { attachments: { kept, mistaken } };
+}
+
 export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): Promise<GoodsReceiptData | null> {
   const body = await getInventory(path);
   if (body === null || !Array.isArray(body['receipts'])) return null;
@@ -3570,6 +3585,7 @@ export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): P
       poId: typeof g['poId'] === 'string' ? g['poId'] : null,
       // Batch 20a · R5: the order's number and its supplier, for looking a delivery up.
       ...orderFactsOf(g['order']),
+      ...attachmentCountsOf(g['attachments']), // batch 20e · R6
       warehouseId: String(g['warehouseId'] ?? ''), receivedBy: String(g['receivedBy'] ?? ''),
       receivedAt: String(g['receivedAt'] ?? ''),
       requiresApproval: captured['requiresApproval'] === true,
@@ -7031,6 +7047,20 @@ if (browserWindow !== undefined) {
   const managerRelay = openManagerRelay(browserWindow.laneWriteBase, browserWindow.managerSession, managerOutbox);
   if (managerRelay !== undefined) browserWindow.managerRelay = managerRelay;
   if (managerStorageProblem !== undefined) browserWindow.managerStorageProblem = managerStorageProblem;
+  // Batch 20e · R6 (M07-FR-04 · OB-906): the photos and scans Receive keeps with a delivery — on their OWN device queue (a file
+  // that cannot be kept never touches the saved delivery), each file's bytes dropped from this device once the store computer
+  // holds it, handed over one file at a time on the same door as the rest of this screen's work.
+  {
+    const store = (globalThis as { localStorage?: DeviceStorage }).localStorage;
+    let attachmentStorageProblem: string | undefined;
+    const attachmentOutbox = openDeviceOutbox(contentDroppedOnceHanded(guardedStore(`sre.receipt-attachments.outbox.${browserWindow.managerData?.storeId ?? 'store-1'}`, store, (why) => { attachmentStorageProblem = why; })), (why) => { attachmentStorageProblem = why; });
+    const queue = new ReceiptAttachmentQueue(attachmentOutbox, { now: () => new Date().toISOString(), source: 'manager-screen' });
+    const relay = openAttachmentRelay({ boxBase: browserWindow.laneWriteBase, outbox: attachmentOutbox, queue, source: 'manager' });
+    (browserWindow as unknown as { receiptAttachments?: unknown }).receiptAttachments = Object.freeze({
+      queue, relay, read: readPickedFile, newId: newAttachmentId, word: attachmentWord, kinds: attachmentKindChoices, maxPerReceipt: MAX_ATTACHMENTS_PER_RECEIPT,
+      attachedBy: browserWindow.managerData?.userId ?? null, storageProblem: () => attachmentStorageProblem,
+    });
+  }
   // Round A: Today also counts what waits for this person at head office and head office's open orders — in their own
   // session, read only; offline the store computer's figures stay and the tiles say head office was not reached.
   // D-010: who is looking and what they hold (the store computer fills both for the person signed in), so an order waiting
@@ -7577,6 +7607,13 @@ if (browserWindow !== undefined) {
   const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined, grnLineReturnPort, grnLineDispatchPort, grnBillMatchPort);
   // Batch 20a · R5: the tested lookup (GRN number, order number or supplier, and the days received) for the page's form.
   (browserWindow as unknown as { goodsReceiptLookup?: unknown }).goodsReceiptLookup = Object.freeze({ matching: receiptsMatching, problem: receiptLookupProblem });
+  // Batch 20e · R6 (M07-FR-04 · OB-907): each delivery's photos and scans — seen, opened, added at head office, or marked
+  // attached by mistake (kept) — online under the reader's own session.
+  if (goodsReceiptData !== undefined) {
+    (browserWindow as unknown as { receiptAttachmentsReview?: unknown }).receiptAttachmentsReview = Object.freeze({
+      review: createReceiptAttachmentsReview({ viewer: goodsReceiptData }), read: readPickedFile, word: attachmentWord, kinds: attachmentKindChoices,
+    });
+  }
   if (goodsReceipt !== null) {
     browserWindow.goodsReceiptSession = goodsReceipt;
     browserWindow.goodsReceipt = {

@@ -25,6 +25,11 @@ import { DsdDoorSession, type DsdDoorData } from './dsd-door';
 import { openNewWorkGate, bindNewWorkGate, APP_BUILD_VERSION, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A) · OB-537 (R9)
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
+// Batch 20e · R6 (M07-FR-04): a photo of the delivery note, the challan or damage, taken at the door and kept with the delivery.
+import { ReceiptAttachmentQueue, contentDroppedOnceHanded } from '../../../packages/receiving/src/receipt-attachments';
+import { openAttachmentRelay } from '../../../packages/receiving/src/receipt-attachment-relay';
+import { readPickedFile, newAttachmentId } from '../../../packages/receiving/src/receipt-attachment-browser';
+import { attachmentWord, attachmentKindChoices } from '../../../packages/receiving/src/receipt-attachment-words';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
@@ -143,6 +148,20 @@ if (browserWindow !== undefined) {
   browserWindow.warehouseData = withChosenDelivery(browserWindow.warehouseData, new URLSearchParams(search).get('delivery'));
   browserWindow.warehouseOutbox = outbox;
   const session = bootWarehouse(browserWindow.warehouseData, outbox);
+  // Batch 20e · R6 (OB-906): the photos taken here go on their OWN queue on this phone (a photo that cannot be kept never
+  // touches a scan), stamped with the sign-in like every record; each photo's bytes leave the phone's storage once the store
+  // computer holds it, so photos never fill a cheap phone. Handed over one at a time on the same device door.
+  {
+    let photoProblem: string | undefined;
+    const photoStore = contentDroppedOnceHanded(guardedStore(`sre.warehouse.attachments.${assignment}`, storage, (why) => { photoProblem = why; }));
+    const photoOutbox = openDeviceOutbox(photoStore, (why) => { photoProblem = why; }, stamping?.stamp, APP_BUILD_VERSION);
+    const queue = new ReceiptAttachmentQueue(photoOutbox, { now: () => new Date().toISOString(), source: 'warehouse-handheld' });
+    const relay = openAttachmentRelay({ boxBase: browserWindow.laneWriteBase, outbox: photoOutbox, queue, source: 'warehouse' });
+    (browserWindow as unknown as { receiptAttachments?: unknown }).receiptAttachments = Object.freeze({
+      queue, relay, read: readPickedFile, newId: newAttachmentId, word: attachmentWord, kinds: attachmentKindChoices,
+      storageProblem: () => photoProblem,
+    });
+  }
   const assigned = browserWindow.warehouseData;
   if (assigned?.workerId !== undefined && assigned.storeId !== undefined) browserWindow.dsdSession = new DsdDoorSession(assigned as unknown as DsdDoorData, outbox);
   if (session !== null) {

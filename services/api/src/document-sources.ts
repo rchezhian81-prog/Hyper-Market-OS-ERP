@@ -34,6 +34,7 @@ import type { DocumentPrintDeps, PrintViewOutcome } from '../../platform/src/doc
 import type { PrintKind, PrintLineView, PrintParty, PrintView } from '../../../packages/documents/src/print-view';
 import type { SignedPack } from '../../catalogue/src/pack';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { receiptAttachmentCounts } from './b20e-adapters'; // Batch 20e · R6: the printed GRN says how many files are kept with it
 
 /** A stable text for any JSON value (object keys sorted), so the same record always fingerprints the same. */
 function canonical(v: unknown): string {
@@ -302,6 +303,8 @@ export function documentPrintAdapter(input: { readonly store: EventStore; readon
             { key: 'warehouse', value: grn.warehouseId },
           ],
           lines, totalMinor: total, currency: grn.captured.lines[0]?.unitCost.currency ?? 'INR', readAt: now(),
+          // Batch 20e · R6 (M07-FR-04): the photos and scans kept with this receipt, counted (the page says "N attachments").
+          attachments: (await receiptAttachmentCounts(store, tenantId)).get(grn.grnId) ?? { kept: 0, mistaken: 0 },
         };
         return { outcome: 'ready', view, branchId };
       }

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2543,
+  "testFiles": 2549,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -661,10 +661,10 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 20,
-        "integration": 38,
-        "realDb": 15,
-        "browser": 17,
+        "unit": 21,
+        "integration": 40,
+        "realDb": 16,
+        "browser": 20,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -674,6 +674,7 @@
           "tests/unit/b18a-receive-takes-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/unit/b20a-the-handheld-takes-the-pack-mrp-and-a-failed-check-and-the-box-serves-case-sizes.test.ts",
           "tests/unit/b20a-till-loan-drop-price-check-lookup-and-cases.test.ts",
+          "tests/unit/b20e-receipt-attachments.test.ts",
           "tests/unit/d017-a-delivery-is-booked-where-the-order-says.test.ts",
           "tests/unit/d029-receive-against-an-order-with-batch-expiry-and-damaged.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -702,6 +703,8 @@
           "tests/integration/b18a-receive-carries-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/integration/b18c-r2-a-saved-goods-receipt-is-corrected-by-a-compensating-entry.test.ts",
           "tests/integration/b20a-receiving-lookup-case-packs-and-the-handhelds-mrp-and-failed-check.test.ts",
+          "tests/integration/b20e-r6-a-receipt-photo-taken-offline-reaches-head-office-through-the-box.test.ts",
+          "tests/integration/b20e-r6-receipt-photos-and-scans-are-kept-at-head-office.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/d029-a-relayed-receipt-carries-expiry-and-damaged.test.ts",
@@ -739,6 +742,7 @@
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/b18a-receive-carries-the-pack-mrp-and-a-failed-quality-check.test.ts",
           "tests/integration/b20a-receiving-lookup-case-packs-and-the-handhelds-mrp-and-failed-check.test.ts",
+          "tests/integration/b20e-r6-receipt-photos-and-scans-are-kept-at-head-office.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
@@ -756,6 +760,9 @@
           "tests/e2e/b20a-goods-receipt-review-looks-a-delivery-up.e2e.ts",
           "tests/e2e/b20a-receive-takes-cases-times-pack-size.e2e.ts",
           "tests/e2e/b20a-the-handheld-takes-the-pack-mrp-and-a-failed-check.e2e.ts",
+          "tests/e2e/b20e-goods-receipt-review-shows-and-marks-a-receipts-photos.e2e.ts",
+          "tests/e2e/b20e-receive-keeps-a-photo-of-the-delivery-note-offline.e2e.ts",
+          "tests/e2e/b20e-the-handheld-takes-a-photo-of-damage-at-the-door.e2e.ts",
           "tests/e2e/fix-batch5-the-back-store-and-receiving-work-by-name.e2e.ts",
           "tests/e2e/goods-receipt-delivery.e2e.ts",
           "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
@@ -5026,20 +5033,22 @@
       "id": "WF-04",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 1,
-        "integration": 9,
-        "realDb": 3,
-        "browser": 4,
+        "unit": 2,
+        "integration": 10,
+        "realDb": 4,
+        "browser": 7,
         "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/b20e-receipt-attachments.test.ts",
           "tests/unit/w4-m07-a-delivery-s-held-stock-is-decided-by-a-second-person.test.ts"
         ],
         "integration": [
           "tests/integration/a-phone-receipt-is-counted-costed-and-put-away.test.ts",
+          "tests/integration/b20e-r6-receipt-photos-and-scans-are-kept-at-head-office.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/goods-receipt-synced-route.test.ts",
           "tests/integration/goods-receipt.test.ts",
@@ -5050,11 +5059,15 @@
           "tests/integration/the-dock-diary-and-the-asn-are-head-offices-own-record.test.ts"
         ],
         "realDb": [
+          "tests/integration/b20e-r6-receipt-photos-and-scans-are-kept-at-head-office.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-dock-diary-and-the-asn-are-head-offices-own-record.test.ts"
         ],
         "browser": [
+          "tests/e2e/b20e-goods-receipt-review-shows-and-marks-a-receipts-photos.e2e.ts",
+          "tests/e2e/b20e-receive-keeps-a-photo-of-the-delivery-note-offline.e2e.ts",
+          "tests/e2e/b20e-the-handheld-takes-a-photo-of-damage-at-the-door.e2e.ts",
           "tests/e2e/goods-receipt-delivery.e2e.ts",
           "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts",
           "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts",

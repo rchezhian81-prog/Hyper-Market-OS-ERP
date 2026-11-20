@@ -175,6 +175,8 @@ import { writeOffRoutes } from '../../inventory/src/write-off';
 import { shelfReturnRoutes } from '../../inventory/src/shelf-returns'; // S1 (batch 18c)
 import { shelfReturnsAdapter, receiptCorrectionsAdapter } from './b18c-adapters'; // S1, R2 (batch 18c)
 import { goodsReceiptCorrectionRoutes } from '../../inventory/src/goods-receipt-corrections'; // R2 (batch 18c)
+import { goodsReceiptAttachmentRoutes } from '../../inventory/src/goods-receipt-attachments'; // R6 (batch 20e)
+import { receiptAttachmentsAdapter, receiptAttachmentCounts } from './b20e-adapters'; // R6 (batch 20e)
 import { coldChainRoutes } from '../../inventory/src/cold-chain';
 import { expiryRoutes } from '../../inventory/src/expiry';
 import { lotTraceRoutes } from '../../inventory/src/lot-trace';
@@ -724,7 +726,8 @@ export function buildSurface(deps: {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
     purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {}, commitLineReturn: () => {},
-  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...receiptCostHooks({ store }) /* R6 M07-FR-01 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */, ...r8bReceiptHooks({ store }) /* R8 OB-529 */ };
+  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...receiptCostHooks({ store }) /* R6 M07-FR-01 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */, ...r8bReceiptHooks({ store }) /* R8 OB-529 */,
+    attachmentCountsForList: (tenantId: string) => receiptAttachmentCounts(store, tenantId) /* R6 batch 20e */ };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
   } : { ...syncedGoodsReceiptAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
@@ -1309,6 +1312,9 @@ export function buildSurface(deps: {
     } : { ...writeOffAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze }),
     // R2 (batch 18c · OB-873): a saved goods receipt corrected by a compensating entry, a second person approving.
     ...(store === undefined ? [] : goodsReceiptCorrectionRoutes({ ...receiptCorrectionsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) })),
+    // R6 (batch 20e · M07-FR-04 · OB-904 – OB-907): photos and scans kept with a goods receipt — from the store computer and the
+    // handheld (relayed) or added at head office; never deleted, a wrong one marked "attached by mistake" with a reason.
+    ...(store === undefined ? [] : goodsReceiptAttachmentRoutes({ ...receiptAttachmentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) })),
     // S1 (batch 18c · OB-872): expired, near-expiry or damaged shelf stock goes back to the supplier — RTS number, ledger
     // movement, issued SDN debit note, e-way-bill rule, and the same approval as a write-off of that value.
     ...(store === undefined ? [] : shelfReturnRoutes({ ...shelfReturnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze })),

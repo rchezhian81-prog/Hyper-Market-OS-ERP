@@ -61691,6 +61691,432 @@
         }
       }
     },
+    "/v1/inventory/goods-receipt/{grnId}/attachments": {
+      "get": {
+        "operationId": "getInventoryGoodsReceiptByGrnIdAttachments",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.goodsreceipt.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryGoodsReceiptByGrnIdAttachmentsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.goodsreceipt.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/goods-receipt/{grnId}/attachments/{attachmentId}": {
+      "get": {
+        "operationId": "getInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentId",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.goodsreceipt.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.goodsreceipt.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentId",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.movement.append",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.movement.append\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/goods-receipt/{grnId}/attachments/{attachmentId}/mistake": {
+      "post": {
+        "operationId": "postInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdMistake",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.movement.append",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdMistakeRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdMistakeReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdMistakeReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.movement.append\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/inventory/goods-receipt/{grnId}/attachments/{attachmentId}/synced": {
+      "post": {
+        "operationId": "postInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdSynced",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.receipt.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdSyncedRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdSyncedReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdSyncedReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.receipt.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/goods-receipt/{grnId}/bill-match": {
       "post": {
         "operationId": "postInventoryGoodsReceiptByGrnIdBillMatch",
@@ -148710,6 +149136,161 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/free-samples.ts"
       },
+      "GetInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdReply": {
+        "type": "object",
+        "required": [
+          "attachment"
+        ],
+        "properties": {
+          "attachment": {
+            "type": "object",
+            "required": [
+              "attachmentId",
+              "grnId",
+              "receiptNumber",
+              "warehouseId",
+              "storeId",
+              "kind",
+              "fileName",
+              "mediaType",
+              "bytes",
+              "sha256",
+              "attachedBy",
+              "attachedAt",
+              "source",
+              "relayedBy",
+              "receivedAt",
+              "flags",
+              "contentBase64"
+            ],
+            "properties": {
+              "attachmentId": {
+                "type": "string"
+              },
+              "grnId": {
+                "type": "string"
+              },
+              "receiptNumber": {
+                "type": "string"
+              },
+              "warehouseId": {
+                "type": "string"
+              },
+              "storeId": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "damage_photo",
+                  "delivery_note",
+                  "supplier_challan"
+                ]
+              },
+              "productId": {
+                "type": "string"
+              },
+              "fileName": {
+                "type": "string"
+              },
+              "mediaType": {
+                "type": "string",
+                "enum": [
+                  "application/pdf",
+                  "image/jpeg",
+                  "image/png"
+                ]
+              },
+              "bytes": {
+                "type": "number"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "attachedBy": {
+                "type": "string"
+              },
+              "attachedAt": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "head-office",
+                  "manager-screen",
+                  "warehouse-handheld"
+                ]
+              },
+              "relayedBy": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "type": "string"
+              },
+              "flags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "contentBase64": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "GetInventoryGoodsReceiptByGrnIdAttachmentsReply": {
+        "type": "object",
+        "required": [
+          "asAt",
+          "kept",
+          "mistaken",
+          "grnId",
+          "attachments"
+        ],
+        "properties": {
+          "asAt": {
+            "type": "string"
+          },
+          "kept": {
+            "type": "number"
+          },
+          "mistaken": {
+            "type": "number"
+          },
+          "grnId": {
+            "type": "string"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ListedAttachment"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
       "GetInventoryGoodsReceiptByGrnIdCorrectionsReply": {
         "type": "object",
         "required": [
@@ -149218,6 +149799,7 @@
                   "type": "object",
                   "required": [
                     "returnDispatches",
+                    "attachments",
                     "grnId",
                     "number",
                     "poId",
@@ -149234,6 +149816,22 @@
                       "items": {
                         "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
                       }
+                    },
+                    "attachments": {
+                      "type": "object",
+                      "required": [
+                        "kept",
+                        "mistaken"
+                      ],
+                      "properties": {
+                        "kept": {
+                          "type": "number"
+                        },
+                        "mistaken": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
                     },
                     "grnId": {
                       "type": "string"
@@ -149390,6 +149988,7 @@
                   "type": "object",
                   "required": [
                     "returnDispatches",
+                    "attachments",
                     "order",
                     "grnId",
                     "number",
@@ -149408,8 +150007,196 @@
                         "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
                       }
                     },
+                    "attachments": {
+                      "type": "object",
+                      "required": [
+                        "kept",
+                        "mistaken"
+                      ],
+                      "properties": {
+                        "kept": {
+                          "type": "number"
+                        },
+                        "mistaken": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
                     "order": {
                       "$ref": "#/components/schemas/ReceiptOrderFacts"
+                    },
+                    "grnId": {
+                      "type": "string"
+                    },
+                    "documentNumber": {
+                      "type": "string"
+                    },
+                    "receivingChecklist": {
+                      "$ref": "#/components/schemas/ReceivingChecklistOnFile"
+                    },
+                    "receivingChecklistNotAccepted": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "poId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "warehouseId": {
+                      "type": "string"
+                    },
+                    "receivedBy": {
+                      "type": "string"
+                    },
+                    "receivedAt": {
+                      "type": "string"
+                    },
+                    "captured": {
+                      "$ref": "#/components/schemas/CapturedReceipt"
+                    },
+                    "availableMinor": {
+                      "type": "number"
+                    },
+                    "heldMinor": {
+                      "type": "number"
+                    },
+                    "excessDecision": {
+                      "$ref": "#/components/schemas/ExcessDecision"
+                    },
+                    "excessReturn": {
+                      "$ref": "#/components/schemas/ExcessReturn"
+                    },
+                    "lineReturns": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineReturn"
+                      }
+                    },
+                    "poReceipt": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "receiptId",
+                            "receivedByProduct"
+                          ],
+                          "properties": {
+                            "receiptId": {
+                              "type": "string"
+                            },
+                            "receivedByProduct": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "orderPosition": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/OrderPosition"
+                      }
+                    },
+                    "dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineDisposition"
+                      }
+                    },
+                    "assembledFrom": {
+                      "$ref": "#/components/schemas/AssembledFromScans"
+                    },
+                    "governanceFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "segregationConflict": {
+                      "type": "string"
+                    },
+                    "asnCheck": {
+                      "$ref": "#/components/schemas/AsnCheck"
+                    },
+                    "costDiscrepancies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+                      }
+                    },
+                    "costNotKnown": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CostNotKnownLine"
+                      }
+                    },
+                    "billCosts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillCost"
+                      }
+                    },
+                    "relayedBy": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "storeId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "discrepancyOwners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscrepancyOwner"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "returnDispatches",
+                    "grnId",
+                    "number",
+                    "poId",
+                    "warehouseId",
+                    "receivedBy",
+                    "receivedAt",
+                    "captured",
+                    "availableMinor",
+                    "heldMinor"
+                  ],
+                  "properties": {
+                    "returnDispatches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
+                      }
                     },
                     "grnId": {
                       "type": "string"
@@ -149773,6 +150560,7 @@
                   "type": "object",
                   "required": [
                     "returnDispatches",
+                    "attachments",
                     "grnId",
                     "number",
                     "poId",
@@ -149789,6 +150577,22 @@
                       "items": {
                         "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
                       }
+                    },
+                    "attachments": {
+                      "type": "object",
+                      "required": [
+                        "kept",
+                        "mistaken"
+                      ],
+                      "properties": {
+                        "kept": {
+                          "type": "number"
+                        },
+                        "mistaken": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
                     },
                     "grnId": {
                       "type": "string"
@@ -149945,6 +150749,7 @@
                   "type": "object",
                   "required": [
                     "returnDispatches",
+                    "attachments",
                     "order",
                     "grnId",
                     "number",
@@ -149963,8 +150768,196 @@
                         "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
                       }
                     },
+                    "attachments": {
+                      "type": "object",
+                      "required": [
+                        "kept",
+                        "mistaken"
+                      ],
+                      "properties": {
+                        "kept": {
+                          "type": "number"
+                        },
+                        "mistaken": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
                     "order": {
                       "$ref": "#/components/schemas/ReceiptOrderFacts"
+                    },
+                    "grnId": {
+                      "type": "string"
+                    },
+                    "documentNumber": {
+                      "type": "string"
+                    },
+                    "receivingChecklist": {
+                      "$ref": "#/components/schemas/ReceivingChecklistOnFile"
+                    },
+                    "receivingChecklistNotAccepted": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "poId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "warehouseId": {
+                      "type": "string"
+                    },
+                    "receivedBy": {
+                      "type": "string"
+                    },
+                    "receivedAt": {
+                      "type": "string"
+                    },
+                    "captured": {
+                      "$ref": "#/components/schemas/CapturedReceipt"
+                    },
+                    "availableMinor": {
+                      "type": "number"
+                    },
+                    "heldMinor": {
+                      "type": "number"
+                    },
+                    "excessDecision": {
+                      "$ref": "#/components/schemas/ExcessDecision"
+                    },
+                    "excessReturn": {
+                      "$ref": "#/components/schemas/ExcessReturn"
+                    },
+                    "lineReturns": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineReturn"
+                      }
+                    },
+                    "poReceipt": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "receiptId",
+                            "receivedByProduct"
+                          ],
+                          "properties": {
+                            "receiptId": {
+                              "type": "string"
+                            },
+                            "receivedByProduct": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "orderPosition": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/OrderPosition"
+                      }
+                    },
+                    "dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineDisposition"
+                      }
+                    },
+                    "assembledFrom": {
+                      "$ref": "#/components/schemas/AssembledFromScans"
+                    },
+                    "governanceFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "segregationConflict": {
+                      "type": "string"
+                    },
+                    "asnCheck": {
+                      "$ref": "#/components/schemas/AsnCheck"
+                    },
+                    "costDiscrepancies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+                      }
+                    },
+                    "costNotKnown": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CostNotKnownLine"
+                      }
+                    },
+                    "billCosts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillCost"
+                      }
+                    },
+                    "relayedBy": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "storeId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "discrepancyOwners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscrepancyOwner"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "returnDispatches",
+                    "grnId",
+                    "number",
+                    "poId",
+                    "warehouseId",
+                    "receivedBy",
+                    "receivedAt",
+                    "captured",
+                    "availableMinor",
+                    "heldMinor"
+                  ],
+                  "properties": {
+                    "returnDispatches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
+                      }
                     },
                     "grnId": {
                       "type": "string"
@@ -221796,6 +222789,456 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/goods-receipt-assembled.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdMistakeReply200": {
+        "type": "object",
+        "required": [
+          "mistake",
+          "alreadyMarked"
+        ],
+        "properties": {
+          "mistake": {
+            "$ref": "#/components/schemas/ReceiptAttachmentMistake"
+          },
+          "alreadyMarked": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdMistakeReply201": {
+        "type": "object",
+        "required": [
+          "mistake"
+        ],
+        "properties": {
+          "mistake": {
+            "$ref": "#/components/schemas/ReceiptAttachmentMistake"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdMistakeRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdReply200": {
+        "type": "object",
+        "required": [
+          "attachment",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "attachment": {
+            "type": "object",
+            "required": [
+              "attachmentId",
+              "grnId",
+              "receiptNumber",
+              "warehouseId",
+              "storeId",
+              "kind",
+              "fileName",
+              "mediaType",
+              "bytes",
+              "sha256",
+              "attachedBy",
+              "attachedAt",
+              "source",
+              "relayedBy",
+              "receivedAt",
+              "flags"
+            ],
+            "properties": {
+              "attachmentId": {
+                "type": "string"
+              },
+              "grnId": {
+                "type": "string"
+              },
+              "receiptNumber": {
+                "type": "string"
+              },
+              "warehouseId": {
+                "type": "string"
+              },
+              "storeId": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "damage_photo",
+                  "delivery_note",
+                  "supplier_challan"
+                ]
+              },
+              "productId": {
+                "type": "string"
+              },
+              "fileName": {
+                "type": "string"
+              },
+              "mediaType": {
+                "type": "string",
+                "enum": [
+                  "application/pdf",
+                  "image/jpeg",
+                  "image/png"
+                ]
+              },
+              "bytes": {
+                "type": "number"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "attachedBy": {
+                "type": "string"
+              },
+              "attachedAt": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "head-office",
+                  "manager-screen",
+                  "warehouse-handheld"
+                ]
+              },
+              "relayedBy": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "type": "string"
+              },
+              "flags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdReply201": {
+        "type": "object",
+        "required": [
+          "attachment"
+        ],
+        "properties": {
+          "attachment": {
+            "$ref": "#/components/schemas/StoredReceiptAttachment"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdRequest": {
+        "type": "object",
+        "required": [
+          "contentBase64",
+          "kind"
+        ],
+        "properties": {
+          "contentBase64": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "="
+                  ]
+                }
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "damage_photo",
+              "delivery_note",
+              "supplier_challan"
+            ]
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdSyncedReply200": {
+        "type": "object",
+        "required": [
+          "attachment",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "attachment": {
+            "type": "object",
+            "required": [
+              "attachmentId",
+              "grnId",
+              "receiptNumber",
+              "warehouseId",
+              "storeId",
+              "kind",
+              "fileName",
+              "mediaType",
+              "bytes",
+              "sha256",
+              "attachedBy",
+              "attachedAt",
+              "source",
+              "relayedBy",
+              "receivedAt",
+              "flags"
+            ],
+            "properties": {
+              "attachmentId": {
+                "type": "string"
+              },
+              "grnId": {
+                "type": "string"
+              },
+              "receiptNumber": {
+                "type": "string"
+              },
+              "warehouseId": {
+                "type": "string"
+              },
+              "storeId": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "damage_photo",
+                  "delivery_note",
+                  "supplier_challan"
+                ]
+              },
+              "productId": {
+                "type": "string"
+              },
+              "fileName": {
+                "type": "string"
+              },
+              "mediaType": {
+                "type": "string",
+                "enum": [
+                  "application/pdf",
+                  "image/jpeg",
+                  "image/png"
+                ]
+              },
+              "bytes": {
+                "type": "number"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "attachedBy": {
+                "type": "string"
+              },
+              "attachedAt": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "head-office",
+                  "manager-screen",
+                  "warehouse-handheld"
+                ]
+              },
+              "relayedBy": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "type": "string"
+              },
+              "flags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdSyncedReply201": {
+        "type": "object",
+        "required": [
+          "attachment"
+        ],
+        "properties": {
+          "attachment": {
+            "$ref": "#/components/schemas/StoredReceiptAttachment"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdAttachmentsByAttachmentIdSyncedRequest": {
+        "type": "object",
+        "required": [
+          "attachedAt",
+          "attachedBy",
+          "contentBase64",
+          "kind",
+          "mediaType",
+          "sha256",
+          "warehouseId"
+        ],
+        "properties": {
+          "attachedAt": {
+            "type": "string"
+          },
+          "attachedBy": {
+            "type": "string"
+          },
+          "attachmentId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "contentBase64": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "="
+                  ]
+                }
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "grnId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "damage_photo",
+              "delivery_note",
+              "supplier_challan"
+            ]
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "source": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "storeId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "warehouseId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt-attachments.ts"
       },
       "PostInventoryGoodsReceiptByGrnIdBillMatchReply200": {
         "type": "object",
@@ -303769,6 +305212,116 @@
         },
         "additionalProperties": true
       },
+      "ListedAttachment": {
+        "type": "object",
+        "required": [
+          "attachmentId",
+          "grnId",
+          "receiptNumber",
+          "warehouseId",
+          "storeId",
+          "kind",
+          "fileName",
+          "mediaType",
+          "bytes",
+          "sha256",
+          "attachedBy",
+          "attachedAt",
+          "source",
+          "relayedBy",
+          "receivedAt",
+          "flags"
+        ],
+        "properties": {
+          "attachmentId": {
+            "type": "string"
+          },
+          "grnId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "string"
+          },
+          "warehouseId": {
+            "type": "string"
+          },
+          "storeId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "damage_photo",
+              "delivery_note",
+              "supplier_challan"
+            ]
+          },
+          "productId": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "bytes": {
+            "type": "number"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "attachedBy": {
+            "type": "string"
+          },
+          "attachedAt": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "head-office",
+              "manager-screen",
+              "warehouse-handheld"
+            ]
+          },
+          "relayedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mistake": {
+            "$ref": "#/components/schemas/ReceiptAttachmentMistake"
+          }
+        },
+        "additionalProperties": true
+      },
       "ListingLine": {
         "type": "object",
         "required": [
@@ -312872,6 +314425,22 @@
           "statement": {
             "$ref": "#/components/schemas/PrintStatementAmounts"
           },
+          "attachments": {
+            "type": "object",
+            "required": [
+              "kept",
+              "mistaken"
+            ],
+            "properties": {
+              "kept": {
+                "type": "number"
+              },
+              "mistaken": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
           "readAt": {
             "type": "string"
           }
@@ -316460,6 +318029,34 @@
               }
             },
             "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "ReceiptAttachmentMistake": {
+        "type": "object",
+        "required": [
+          "attachmentId",
+          "grnId",
+          "reason",
+          "markedBy",
+          "markedAt"
+        ],
+        "properties": {
+          "attachmentId": {
+            "type": "string"
+          },
+          "grnId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "markedBy": {
+            "type": "string"
+          },
+          "markedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -328251,6 +329848,113 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "StoredReceiptAttachment": {
+        "type": "object",
+        "required": [
+          "attachmentId",
+          "grnId",
+          "receiptNumber",
+          "warehouseId",
+          "storeId",
+          "kind",
+          "fileName",
+          "mediaType",
+          "bytes",
+          "sha256",
+          "attachedBy",
+          "attachedAt",
+          "source",
+          "relayedBy",
+          "receivedAt",
+          "flags"
+        ],
+        "properties": {
+          "attachmentId": {
+            "type": "string"
+          },
+          "grnId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "string"
+          },
+          "warehouseId": {
+            "type": "string"
+          },
+          "storeId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "damage_photo",
+              "delivery_note",
+              "supplier_challan"
+            ]
+          },
+          "productId": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "bytes": {
+            "type": "number"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "attachedBy": {
+            "type": "string"
+          },
+          "attachedAt": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "head-office",
+              "manager-screen",
+              "warehouse-handheld"
+            ]
+          },
+          "relayedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true

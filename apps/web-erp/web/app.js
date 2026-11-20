@@ -1499,6 +1499,7 @@ function detailOf(w) {
  * everything saved here and says so through the state words.
  */
 async function syncToBox() {
+  void syncFiles(); // batch 20e: the photos and scans go on their own queue, one file at a time
   const relay = window.managerRelay;
   if (!relay) return;
   try {
@@ -1601,6 +1602,7 @@ function renderChecklist() {
 const casesOf = new WeakMap();
 function renderLines() {
   renderChecklist();
+  renderFileItems(); // batch 20e: a damage photo names one of the delivery's items
   el('receive-empty').hidden = receiptLines.length > 0;
   const nameOf = (id) => (session && typeof session.productName === 'function' ? session.productName(id) : id);
   const packedIds = session && typeof session.packedAmong === 'function' ? session.packedAmong(receiptLines.map((l) => l.productId)) : [];
@@ -1894,7 +1896,10 @@ el('save-receipt').addEventListener('click', () => {
     // receipt now travels to head office on the same path as a decision, never a bare "saved" (P-08).
     const saved = session.savedWork().find((w) => w.kind === 'receipt' && w.id === received.receipt.id);
     const where = saved === undefined ? '' : ` — ${words(STATE_WORDS, saved.state)}`;
-    tell(t('received'), `${received.unmatched ? t('unmatchedWarning') : t('matchedNote')}${checklist === undefined ? '' : ` ${t('rcSaved')}`}${where}`, !received.unmatched);
+    // Batch 20e · R6: the photos and scans picked for this delivery go on their own queue now — AFTER the delivery is saved,
+    // so a file that cannot be kept never stops the delivery (it is said, by name, in the same message).
+    const filesSaid = keepFilesWith(received.receipt, number);
+    tell(t('received'), `${received.unmatched ? t('unmatchedWarning') : t('matchedNote')}${checklist === undefined ? '' : ` ${t('rcSaved')}`}${where}${filesSaid === '' ? '' : ` ${filesSaid}`}`, !received.unmatched);
     void syncToBox();
     receiptLines = [];
     checklistAnswers = {};
@@ -1916,6 +1921,142 @@ el('save-receipt').addEventListener('click', () => {
     tell(t('read'), e && e.name === 'ManufactureDateRequiredError' ? `${t('mfgRequired')} (${(e.productIds ?? []).join(', ')})` : String(e && e.message ? e.message : e));
   }
 });
+
+// ── Batch 20e · R6 (M07-FR-04 · OB-904 – OB-906): photos and scans kept with the delivery ─────────────────────────────────
+// The bundle's attachment queue, file reader and words (`window.receiptAttachments`). A photo is made smaller on this computer
+// before it is kept; a file that is not a JPEG/PNG photo or a PDF scan, or is too big, is refused in words before anything is
+// kept. The files are kept only when the delivery is saved, on their OWN queue, and each says where it has got to (P-08).
+const files = window.receiptAttachments;
+const fw = (key, fill) => (files ? files.word(lang, key, fill ?? {}) : key);
+let pickedFiles = [];
+
+function paintFileWords() {
+  el('receive-files').hidden = !files;
+  if (!files) return;
+  el('receive-files-title').textContent = fw('heading');
+  el('receive-files-lead').textContent = fw('lead');
+  el('receive-file-kind-label').textContent = fw('kindLabel');
+  el('receive-file-item-label').textContent = fw('itemLabel');
+  el('receive-file-label').textContent = fw('pick');
+  const kind = el('receive-file-kind').value || 'delivery_note';
+  el('receive-file-kind').replaceChildren(...files.kinds(lang).map((k) => { const o = document.createElement('option'); o.value = k.kind; o.textContent = k.label; return o; }));
+  el('receive-file-kind').value = kind;
+  el('receive-files-sent-title').textContent = fw('pendingHeading');
+  el('receive-files-sent-lead').textContent = fw('pendingLead');
+  renderFileItems();
+  renderPickedFiles();
+  renderSentFiles();
+}
+
+/** The items on the delivery, for a damage photo of one of them (the whole delivery by default). */
+function renderFileItems() {
+  if (!files) return;
+  const keep = el('receive-file-item').value;
+  const nameOf = (id) => (typeof session.productName === 'function' ? session.productName(id) : id);
+  const seen = new Set();
+  const options = [{ value: '', label: fw('wholeDelivery') }];
+  for (const l of receiptLines) if (!seen.has(l.productId)) { seen.add(l.productId); options.push({ value: l.productId, label: nameOf(l.productId) }); }
+  el('receive-file-item').replaceChildren(...options.map((x) => { const o = document.createElement('option'); o.value = x.value; o.textContent = x.label; return o; }));
+  if (options.some((x) => x.value === keep)) el('receive-file-item').value = keep;
+  el('receive-file-item-field').hidden = el('receive-file-kind').value !== 'damage_photo';
+}
+
+function fileLine(f) {
+  const nameOf = (id) => (typeof session.productName === 'function' ? session.productName(id) : id);
+  const item = f.productId ? ` · ${fw('forItem', { item: nameOf(f.productId) })}` : '';
+  return `${fw(f.kind)}${item} · ${f.fileName} · ${fw('kb', { n: Math.max(1, Math.round(f.bytes / 1024)) })}`;
+}
+
+function renderPickedFiles() {
+  if (!files) return;
+  el('receive-file-list').replaceChildren(...pickedFiles.map((f) => {
+    const li = document.createElement('li'); li.dataset.kind = f.kind;
+    const what = document.createElement('span'); what.className = 'what'; what.textContent = fileLine(f);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'sre-btn remove-file'; remove.textContent = fw('remove');
+    remove.setAttribute('aria-label', `${fw('remove')} ${f.fileName}`);
+    remove.addEventListener('click', () => { pickedFiles = pickedFiles.filter((x) => x !== f); renderPickedFiles(); });
+    li.append(what, remove);
+    return li;
+  }));
+  if (el('receive-file-status').dataset.reading !== '1' && el('receive-file-status').dataset.problem !== '1') {
+    el('receive-file-status').textContent = pickedFiles.length === 0 ? '' : fw('picked', { n: pickedFiles.length });
+  }
+}
+
+/** Every file this screen kept, newest first, with where it has got to — the five state words, a refusal with its reason. */
+function renderSentFiles() {
+  if (!files) return;
+  const list = files.queue.list();
+  el('receive-files-sent-title').hidden = list.length === 0;
+  el('receive-files-sent-lead').hidden = list.length === 0;
+  el('receive-files-sent').replaceChildren(...list.map((f) => {
+    const li = document.createElement('li'); li.className = 'saved-file'; li.dataset.state = f.state; li.dataset.grnId = f.grnId;
+    const what = document.createElement('span'); what.className = 'what'; what.textContent = `${f.receiptNumber} · ${fileLine(f)}`;
+    const state = document.createElement('span'); state.className = `pill ${f.state} sre-with-icon`;
+    const mark = lineIcon(STATE_SHAPES[f.state] ?? 'clock', 16); if (mark) state.append(mark);
+    state.append(document.createTextNode(words(STATE_WORDS, f.state)));
+    li.append(what, state);
+    if (f.reason) { const why = document.createElement('span'); why.className = 'blocked'; why.textContent = f.reason; li.append(why); }
+    return li;
+  }));
+}
+
+el('receive-file-kind').addEventListener('change', () => { el('receive-file-item-field').hidden = el('receive-file-kind').value !== 'damage_photo'; });
+
+el('receive-file').addEventListener('change', async () => {
+  if (!files) return;
+  const input = el('receive-file');
+  const chosen = [...(input.files ?? [])];
+  if (chosen.length === 0) return;
+  const kind = el('receive-file-kind').value;
+  const productId = kind === 'damage_photo' ? el('receive-file-item').value : '';
+  const status = el('receive-file-status');
+  status.dataset.reading = '1';
+  delete status.dataset.problem;
+  status.textContent = fw('reading');
+  const problems = [];
+  for (const file of chosen) {
+    if (pickedFiles.length >= files.maxPerReceipt) { problems.push(`${file.name}: ${fw('too_many_files')}`); continue; }
+    const read = await files.read(file);
+    if (!read.ok) { problems.push(`${file.name}: ${fw(read.code)}`); continue; }
+    pickedFiles.push({ kind, ...(productId === '' ? {} : { productId }), fileName: read.fileName, mediaType: read.mediaType, contentBase64: read.contentBase64, bytes: read.bytes });
+  }
+  input.value = '';
+  delete status.dataset.reading;
+  if (problems.length > 0) status.dataset.problem = '1';
+  renderPickedFiles();
+  if (problems.length > 0) status.textContent = problems.join(' ');
+});
+
+/** Keep the picked files with the delivery just saved; the words for the message (empty when none were picked). */
+function keepFilesWith(receipt, number) {
+  if (!files || pickedFiles.length === 0) return '';
+  const refused = [];
+  let kept = 0;
+  for (const f of pickedFiles) {
+    const out = files.queue.add({
+      attachmentId: files.newId(), grnId: receipt.id, receiptNumber: number, warehouseId: receipt.warehouseId,
+      storeId: window.managerData?.storeId ?? null, kind: f.kind, ...(f.productId ? { productId: f.productId } : {}),
+      fileName: f.fileName, mediaType: f.mediaType, contentBase64: f.contentBase64, attachedBy: files.attachedBy ?? receipt.receivedBy ?? null,
+    });
+    if (out.added) kept += 1; else refused.push(`${f.fileName}: ${fw(out.code)}`);
+  }
+  const problem = typeof files.storageProblem === 'function' ? files.storageProblem() : undefined;
+  if (problem) refused.push(problem);
+  pickedFiles = [];
+  delete el('receive-file-status').dataset.problem;
+  renderPickedFiles();
+  renderSentFiles();
+  void syncFiles();
+  return [kept > 0 ? fw('savedWith', { n: kept }) : '', refused.length > 0 ? fw('notKept', { why: refused.join('; ') }) : ''].filter((x) => x !== '').join(' ');
+}
+
+/** Hand the files to the store computer (one at a time) and learn where they have got to. Never blocks a tap. */
+async function syncFiles() {
+  if (!files || !files.relay) { renderSentFiles(); return; }
+  try { await files.relay.syncNow(); } catch { /* every file is kept here; the state words say so */ }
+  renderSentFiles();
+}
 
 // ── Counting ────────────────────────────────────────────────────────────────
 
@@ -2282,6 +2423,7 @@ function paintChrome() {
   el('add-line').textContent = t('addItem');
   el('receive-empty').textContent = t('noItemsYet');
   el('save-receipt').textContent = t('saveDelivery');
+  paintFileWords(); // batch 20e
   el('receive-checklist-missing').textContent = t('rcNotTold');
   el('count-title').textContent = t('count');
   el('count-lead').textContent = t('countBlindHint');
