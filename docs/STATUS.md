@@ -146,6 +146,15 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner decision needed (security, batched):** anyone who can open a list may download what they see (personal data still removed unless allowed). Options: **A** (as built); **B** only people with the export permission (owner, accountant, CA) may download.
 - **Not done / blocked:** the supplier-statement button has no browser test of its own (its print view is proven in the integration test and the shared sheet in the PO/GRN browser test); the existing Reports "Write this out to a file" button is unchanged (the list download now does that job); a real .xlsx is not made (OB-867).
 
+## Where things stand — 20 November 2026
+- **Merged today:** batch 20a (#969) — till cash loan, safe drop and price check, delivery lookup, cases × pack size, handheld MRP and failed check; batch 20b–20e together (#973, carrying #968, #970, #971, #972) — every one of the 29 reports runs for a period; earlier write-offs and counts, empty-shelf cost, suggested transfers, document numbers on stock screens, a typed bill line's GST rate from the item; removing or moving a wrongly keyed barcode with a second person; photos and scans kept with a goods receipt.
+- **Fixed on the way (found by CI on the joined branch):** Goods receipt review threw on opening (photos helpers declared after the first render); the handheld had a hidden file input on the page (now made only when a photo is asked for); the GST-rate lookup redrew the typed bill and lost what was being typed (now fills the rate boxes in place); Print GRN under 44 px on a phone; Stock health had two primary buttons; the office door had no rule for a delivery photo (it refused them); an OB-205 test pressed the handheld's language button before the script was attached.
+- **Released:** store PC **1.0.2276** (batch 20a only) and **1.0.2282** (all of batch 20).
+- **Answered today:** OB-882 A, OB-893 A, OB-904 A (all as built).
+- **Owner, in the store:** install 1.0.2282 (or newer) and work through the "Owner, in the store" steps of batches 20a–20e above.
+- **Missing-options list (19 Nov):** every item is now built. Left over, each noted under its batch: the handheld does not take cases × pack size; a parked bill does not carry the scanned barcode; the receipt-correction screen does not show photos; `/v1/reports/gst` (no screen uses it) still reads the day book; Approaching expiry is not worked out offline.
+- **Open, mine:** none started. **Blocked:** nothing. **Owner decision needed:** none.
+
 ## Where things stand — 19 November 2026, evening
 - **Merged today:**
   - batch 17 (#962): one language at a time, the menu stays, form layout, a truthful badge;
