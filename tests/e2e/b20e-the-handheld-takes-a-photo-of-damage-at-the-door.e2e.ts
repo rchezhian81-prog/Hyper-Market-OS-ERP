@@ -91,8 +91,8 @@ describe.skipIf(!HAVE_BROWSER)('batch 20e — the warehouse handheld takes a pho
     await signInOnPhonePage(page, 'warehouse', 'u-worker');
     await page.waitForFunction(() => (globalThis as unknown as Win).warehouseSession !== undefined && (globalThis as unknown as Win).receiptAttachments !== undefined, undefined, { timeout: 15_000 });
     await says(page, '#recv-photo', 'Take a photo of the delivery note, challan or damage');
-    // The camera input asks for the phone's back camera.
-    expect(await page.getAttribute('#recv-photo-file', 'capture')).toBe('environment');
+    // Nothing to type into on the handheld: the camera's file picker is made only when a photo is asked for.
+    expect(await page.locator('input').count()).toBe(0);
 
     // Receive 6 bottles of oil.
     await page.click('#receive');
@@ -113,7 +113,10 @@ describe.skipIf(!HAVE_BROWSER)('batch 20e — the warehouse handheld takes a pho
     if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, 'b20e-handheld-photo-kind-en-360.png') });
     const chooser = page.waitForEvent('filechooser');
     await page.click('#photo-kinds button[data-kind="damage_photo"]');
-    await (await chooser).setFiles({ name: 'IMG_2041.png', mimeType: 'image/png', buffer: tinyPng(2400, 1800) });
+    const picker = await chooser;
+    // The camera input asks for the phone's back camera.
+    expect(await picker.element().getAttribute('capture')).toBe('environment');
+    await picker.setFiles({ name: 'IMG_2041.png', mimeType: 'image/png', buffer: tinyPng(2400, 1800) });
     await page.waitForSelector('#banner:not([hidden])');
     await says(page, '#banner-title', 'Photo kept with the delivery');
     await page.click('#banner-ok');

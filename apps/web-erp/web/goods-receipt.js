@@ -18,6 +18,10 @@
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
+// Batch 20e · R6: declared before the first render, which draws each delivery's "Photos and scans (N)" button.
+const filesApi = window.receiptAttachmentsReview;
+const aw = (key, fill) => (filesApi ? filesApi.word(lang, key, fill ?? {}) : key);
+const openFiles = new Set();
 
 /** Money in exact minor units → the shop's own display. */
 function money(minor, currency) {
@@ -546,9 +550,7 @@ if ('serviceWorker' in navigator) {
 // it and from where; "Attached by mistake" with a reason (the file stays kept and shown, struck through); and, for a reader
 // who handles this delivery's stock, "Add a photo or scan". Online under the reader's session — with no connection the page
 // says so and nothing changes. The rules are the tested `receipt-attachments-review.ts` (window.receiptAttachmentsReview).
-const filesApi = window.receiptAttachmentsReview;
-const aw = (key, fill) => (filesApi ? filesApi.word(lang, key, fill ?? {}) : key);
-const openFiles = new Set();
+// (filesApi, aw and openFiles are declared near the top: the first render runs before this point.)
 
 function filesButton(r) {
   if (!filesApi || r.grnId === 'sample') return null;

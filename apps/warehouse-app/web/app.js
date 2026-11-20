@@ -623,18 +623,22 @@ const photos = window.receiptAttachments;
 const pw = (key, fill) => (photos ? photos.word(lang, key, fill ?? {}) : key);
 let lastReceivedProduct = null; // the item last received here for this delivery (a damage photo is about it)
 let photoKind = null;
-// The phone's camera: a file picker made here, never in the page (the handheld has nothing to type into). `capture` asks for
-// the back camera; a PDF can still be chosen where the phone offers files.
-const photoInput = (() => {
+// The phone's camera: a file picker made here, only when a photo is asked for, and taken away again once it has been used
+// (the handheld page itself has nothing to type into). `capture` asks for the back camera; a PDF can still be chosen where
+// the phone offers files.
+function openCamera() {
+  document.getElementById('recv-photo-file')?.remove();
   const input = document.createElement('input');
   input.type = 'file';
   input.id = 'recv-photo-file';
   input.accept = 'image/*,application/pdf';
   input.setAttribute('capture', 'environment');
   input.hidden = true;
+  input.addEventListener('change', () => { void photoChosen(input); });
+  input.addEventListener('cancel', () => { photoKind = null; input.remove(); });
   document.body.append(input);
-  return input;
-})();
+  input.click();
+}
 
 function deliveryNumber() {
   const list = (data && Array.isArray(data.openDeliveries)) ? data.openDeliveries : [];
@@ -681,21 +685,20 @@ el('recv-photo').addEventListener('click', () => {
     button.dataset.kind = k.kind;
     button.textContent = k.kind === 'damage_photo' && lastReceivedProduct !== null ? `${k.label} — ${nameOf(lastReceivedProduct)}` : k.label;
     // The camera opens from this tap (a person's own tap is what lets the page open it).
-    button.addEventListener('click', () => { photoKind = k.kind; el('photo-kind').hidden = true; photoInput.click(); });
+    button.addEventListener('click', () => { photoKind = k.kind; el('photo-kind').hidden = true; openCamera(); });
     return button;
   }));
   el('photo-kind').hidden = false;
 });
 el('photo-kind-cancel').addEventListener('click', () => { el('photo-kind').hidden = true; photoKind = null; });
 
-photoInput.addEventListener('change', async () => {
-  const input = photoInput;
+async function photoChosen(input) {
   const file = input.files && input.files[0];
   const kind = photoKind;
   photoKind = null;
-  if (!photos || !file || kind === null) { input.value = ''; return; }
+  input.remove();
+  if (!photos || !file || kind === null) return;
   const read = await photos.read(file);
-  input.value = '';
   if (!read.ok) { feltResult({ feedback: 'reject', code: 'photoNotKept', detail: pw(read.code), sound: 'error', vibrateMs: 300 }); return; }
   const out = photos.queue.add({
     attachmentId: photos.newId(), grnId, receiptNumber: deliveryNumber(), warehouseId: data?.storeId ?? '', storeId: data?.storeId ?? null,
@@ -707,7 +710,7 @@ photoInput.addEventListener('change', async () => {
   else feltResult({ feedback: problem ? 'warn' : 'accept', code: 'photoKept', detail: `${pw(kind)} · ${pw('kb', { n: Math.max(1, Math.round(read.bytes / 1024)) })}${problem ? ` — ${problem}` : ''}`, sound: problem ? 'warn' : 'ok', vibrateMs: 60 });
   render();
   void syncPhotos();
-});
+}
 
 /** Hand the photos to the store computer (one at a time) and learn where they have got to. Never blocks a scan. */
 async function syncPhotos() {
