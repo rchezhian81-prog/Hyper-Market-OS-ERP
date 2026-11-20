@@ -120,7 +120,7 @@ describe('a report nothing can produce is listed, and refused', () => {
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.refusal).toBe('no_such_report');
-    expect(RUN_REFUSAL_KINDS).toHaveLength(3);
+    expect(RUN_REFUSAL_KINDS).toHaveLength(4);
   });
 
   it('says what would unlock the most reports, and only counts the LAST thing missing', () => {
@@ -130,9 +130,9 @@ describe('a report nothing can produce is listed, and refused', () => {
     const backlog = session({ records: () => ['sales_rung_at_the_till'] }).backlog();
     expect(backlog.length).toBeGreaterThan(0);
     for (const row of backlog) expect(row.unlocks).toBeGreaterThan(0);
-    // Sorted worst-first.
-    expect(backlog[0]?.producer).toBe('the_boxs_own_outbox');
-    expect([...backlog].sort((a, b) => b.unlocks - a.unlocks)[0]?.producer).toBe(backlog[0]?.producer);
+    // Sorted worst-first (batch 20c: head office's reports count too, so the outbox is one of several).
+    expect(backlog.map((r) => r.producer)).toContain('the_boxs_own_outbox');
+    expect([...backlog].sort((a, b) => b.unlocks - a.unlocks)[0]?.unlocks).toBe(backlog[0]?.unlocks);
 
     // `invoice_differences` needs three things this shop has none of, so building any ONE of them
     // must not appear as unlocking it.
@@ -140,30 +140,29 @@ describe('a report nothing can produce is listed, and refused', () => {
     expect(named).not.toContain('Invoice differences');
   });
 
-  it('has nothing left to ask THIS shop for, without claiming every report works', () => {
-    // A true and easily-missed state: everything the eleven producers need is already recorded, so
-    // there is nothing the owner can do next — and the rest are still unrunnable. The backlog
-    // being empty must never be read as "every report works".
-    expect(session().backlog()).toEqual([]);
-    expect(session().catalogue().some((e) => !e.availability.available)).toBe(true);
+  it('asks THIS shop only for facts it does not record; with every fact recorded, every report runs and nothing is asked', () => {
+    // Batch 20c · O2: the eighteen reports head office works out are runnable too, so the backlog names what would unlock
+    // them; an empty backlog is then true only when every report runs.
+    for (const row of session().backlog()) for (const name of row.reports) expect(session().catalogue().find((e) => e.report.name === name)?.availability.available).toBe(false);
+    const all = [...new Set(REPORTS.flatMap((r) => r.needs))];
+    const everything = session({ records: () => all });
+    expect(everything.backlog()).toEqual([]);
+    expect(everything.catalogue().every((e) => e.availability.available)).toBe(true);
   });
 
-  it('refuses a report this BUILD cannot compute, and does not blame the shop', () => {
-    // The fault this branch closed. `shrinkage` needs stock movements and stock counts; a shop
-    // that records both satisfies every stated need, and there is no code here that computes it.
-    // Judged on records alone it would run, return no figures and no rows, and be read as
-    // "no shrinkage" — under its real name, with a real as-at stamp on nothing.
+  it('does not run a head-office report on this box: it says head office works it out, and blames nobody', () => {
+    // Batch 20c · O2: `shrinkage` rests on the stock ledger and the shelf counts, which head office holds. This box's own
+    // switch never answers it (an empty shrinkage report reads as "no shrinkage") — the page asks head office.
     const withStock = session({
       records: () => [...RECORDS, 'stock_movements_recorded', 'stock_counted_on_the_shelves'],
     });
     const outcome = withStock.run('shrinkage');
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
-    expect(outcome.refusal).toBe('this_version_cannot_produce_that_yet');
-    // Nothing is asked of the shop, because the shop has already done its part.
+    expect(outcome.refusal).toBe('worked_out_at_head_office');
     expect(outcome.missing).toEqual([]);
-    expect(outcome.detail).toContain('this version of the software');
-    expect(RUN_REFUSAL_KINDS).toHaveLength(3);
+    expect(withStock.atHeadOffice('shrinkage')).toBe(true);
+    expect(RUN_REFUSAL_KINDS).toHaveLength(4);
   });
 
   it('will not export a report this build cannot compute either', () => {

@@ -93,7 +93,7 @@ function node(tag: string, cls?: string, text?: string): El {
 }
 
 /** Draw the A4 page from the plan (DOM calls only — every value is text, never markup). */
-export function drawPrintPage(layout: PrintLayout, footer: string): El {
+export function drawPrintPage(layout: Omit<PrintLayout, 'kind'> & { readonly kind: string }, footer: string): El {
   const sheetPage = node('article', 'sre-print-page');
   sheetPage.dataset['kind'] = layout.kind;
   const head = node('header', 'sre-print-header');
@@ -139,6 +139,38 @@ export function drawPrintPage(layout: PrintLayout, footer: string): El {
 }
 
 function closeSheet(): void { document().getElementById(SHEET_ID)?.remove(); document().body.classList.remove('sre-printing'); }
+
+/**
+ * Batch 20c · O2 (M31-FR-02): print a page this screen already holds — a report's figures and rows — on the same A4 sheet
+ * and the browser's own Print / Save as PDF. Nothing is fetched: what prints is exactly what is on the screen, so it works
+ * with the internet off.
+ */
+export function openLayoutPrint(layout: Omit<PrintLayout, 'kind'> & { readonly kind: string }, footer: string): void {
+  const lang: PrintLang = document().documentElement.lang === 'ta' ? 'ta' : 'en';
+  const tw = TOOL_WORDS[lang];
+  closeSheet();
+  ensureStyle();
+  const opener = document().activeElement;
+  const sheet = node('div', 'sre-print-sheet');
+  sheet.id = SHEET_ID;
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-modal', 'true');
+  sheet.setAttribute('aria-labelledby', 'sre-print-title');
+  sheet.dataset['kind'] = layout.kind;
+  sheet.dataset['state'] = 'live';
+  const tools = node('div', 'sre-print-tools');
+  const go = node('button', 'sre-btn sre-btn-primary', tw.print); go.type = 'button'; go.id = 'sre-print-go';
+  const close = node('button', 'sre-btn', tw.close); close.type = 'button'; close.id = 'sre-print-close';
+  tools.append(go, close);
+  sheet.append(tools, drawPrintPage(layout, footer));
+  document().body.append(sheet);
+  document().body.classList.add('sre-printing');
+  const finish = (): void => { closeSheet(); opener?.focus?.(); };
+  close.addEventListener('click', finish);
+  sheet.addEventListener('keydown', (e) => { if (e.key === 'Escape') finish(); });
+  go.addEventListener('click', () => { page().print(); });
+  go.focus();
+}
 
 /** The Print button: open the sheet, read the document, draw the A4 page; its first button prints (or saves a PDF). */
 export async function openPrint(spec: { readonly kind: PrintKind; readonly id: string }): Promise<PrintRead['state']> {

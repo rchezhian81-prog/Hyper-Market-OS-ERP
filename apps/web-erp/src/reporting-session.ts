@@ -46,6 +46,8 @@ import { AccessDeniedError, type AccessControl } from '../../../packages/rbac/sr
 import { figure, dashboard, type Dashboard, type Figure } from '../../../services/reporting/src/index';
 import { shopWallClockOf, shopZoneOr } from '../../../packages/calendar/src/shop-day'; // OB-639: hours at the shop's clock
 import { exportDomain, type ExportContext, type ExportResult, type ExportSpec } from '../../../packages/export/src/index';
+import { AT_HEAD_OFFICE, runAtHeadOffice, reasonIn, type HeadOfficeReport } from './reporting-head-office';
+import type { HeadOfficeHttp } from './head-office-http';
 
 /** One sale as this screen reads it, with the facts a report is built from. */
 export interface ReportableSale {
@@ -227,6 +229,8 @@ export const PRODUCED: readonly string[] = Object.freeze([
 
 export type RunRefusal =
   | 'no_such_report'
+  /** Batch 20c · O2: head office works this one out — the page asks it (`runAtHeadOffice`), never this box's own switch. */
+  | 'worked_out_at_head_office'
   | 'this_shop_does_not_record_that_yet'
   | 'this_version_cannot_produce_that_yet';
 
@@ -248,6 +252,7 @@ export type RunOutcome =
 
 const RUN_REFUSALS: Readonly<Record<RunRefusal, RunRefusal>> = Object.freeze({
   no_such_report: 'no_such_report',
+  worked_out_at_head_office: 'worked_out_at_head_office',
   this_shop_does_not_record_that_yet: 'this_shop_does_not_record_that_yet',
   this_version_cannot_produce_that_yet: 'this_version_cannot_produce_that_yet',
 });
@@ -294,6 +299,18 @@ export interface ReportingSession {
 
   /** Batch 18b · O3: the items inside one department of "What is selling, by department" (by the name the report shows). */
   departmentItems(department: string): readonly ItemSales[] | undefined;
+
+  /** Batch 20c · O2: true when this report is worked out by head office (the page asks it with `runAtHeadOffice`). */
+  atHeadOffice(reportId: string): boolean;
+
+  /**
+   * Batch 20c · O2: ask head office for one of its reports, for the period on this page. With no head office (no internet)
+   * the report says so — never an old copy shown as current (P-08). `undefined` for a report head office does not work out.
+   */
+  runAtHeadOffice(reportId: string, http: HeadOfficeHttp | undefined): Promise<HeadOfficeReport | undefined>;
+
+  /** Batch 20c · O2: a "not known" sentence this page wrote, in the reader's language (head office's findings stay as said). */
+  reasonIn(lang: 'en' | 'ta', text: string): string;
 }
 
 export function createReportingSession(
@@ -630,12 +647,28 @@ export function createReportingSession(
     }
   };
 
-  const entries = (): readonly CatalogueEntry[] => reportCatalogue(ports.records(), PRODUCED);
+  // Batch 20c · O2: a report is runnable when this box works it out (PRODUCED) OR head office does (AT_HEAD_OFFICE).
+  const RUNNABLE: readonly string[] = [...PRODUCED, ...AT_HEAD_OFFICE];
+  const entries = (): readonly CatalogueEntry[] => reportCatalogue(ports.records(), RUNNABLE);
 
   return {
     catalogue: entries,
 
-    backlog: () => whatWouldUnlockMost(ports.records(), PRODUCED),
+    backlog: () => whatWouldUnlockMost(ports.records(), RUNNABLE),
+
+    reasonIn,
+
+    atHeadOffice: (reportId) => AT_HEAD_OFFICE.includes(reportId) && !PRODUCED.includes(reportId),
+
+    runAtHeadOffice: async (reportId, http) => {
+      const entry = entries().find((e) => e.report.id === reportId);
+      if (entry === undefined || !entry.availability.available || !AT_HEAD_OFFICE.includes(reportId)) return undefined;
+      const today = config.tradingDay;
+      return runAtHeadOffice({
+        reportId, http, asked: cover().asked, today, now: config.now,
+        laggingAfterMinutes: config.laggingAfterMinutes, staleAfterMinutes: config.staleAfterMinutes,
+      });
+    },
 
     freshness: () => freshness(ports.lastSyncedAt(), config.now, config.staleAfterMinutes * 60),
 
@@ -673,6 +706,9 @@ export function createReportingSession(
         };
       }
 
+      if (!PRODUCED.includes(reportId)) {
+        return { ok: false, refusal: RUN_REFUSALS.worked_out_at_head_office, missing: [], detail: `${entry.report.name} is worked out by head office.` };
+      }
       const { figures, rows } = produce(reportId);
       return { ok: true, report: entry.report, result: dashboard(figures, config.now), rows };
     },
@@ -696,6 +732,8 @@ export function createReportingSession(
       if (!entry.availability.available) {
         return { ok: false, detail: `${entry.report.name} cannot be produced: ${entry.availability.why}.` };
       }
+      // Batch 20c · O2: a head-office report is downloaded from its list ("Download to Excel"), recorded at head office.
+      if (!PRODUCED.includes(reportId)) return { ok: false, detail: `${entry.report.name} is worked out by head office; use Download to Excel on its list.` };
       const declared = entry.report.columns;
       if (declared === undefined) {
         return { ok: false, detail: `${entry.report.name} has no declared columns, so there is nothing it may write out.` };
