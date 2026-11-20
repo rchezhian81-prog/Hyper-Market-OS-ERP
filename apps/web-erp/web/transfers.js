@@ -98,7 +98,8 @@ async function loadList() {
 function paintDrawer() {
   if (currentId === null) return;
   const row = rows?.find((r) => r.transfer.transferId === currentId);
-  $('d-title').textContent = currentId;
+  // Batch 20b: the transfer is named by its number (TRF1/26-27/00001, OB-850); only one from before numbering shows its id.
+  $('d-title').textContent = row?.transfer?.documentNumber || currentId;
   if (row === undefined) return;
   const v = session.rowView(lang, row);
   // U1 · L: where it stands as a chip from the one icon set — the tone's shape AND the word, never colour alone.

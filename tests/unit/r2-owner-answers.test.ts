@@ -62,12 +62,13 @@ describe('OB-565 — the Waste page carries the last 30 shop days of write-offs'
     expect((sections['wasteWriteOffs'] as { id: string }[]).map((r) => r.id)).toEqual(['W-IN']);
   });
 
-  it('the page says plainly it shows the last 30 days, and that older ones are at head office — English and Tamil', () => {
+  // Batch 20b (S2): earlier write-offs are now on the same page, so it points there instead of to head office's records.
+  it('the page says plainly it shows the last 30 days, and where to find other days (Earlier write-offs) — English and Tamil', () => {
     expect(WASTE_REVIEW_COPY.en.lead).toContain('in the last 30 days');
-    expect(WASTE_REVIEW_COPY.en.lead).toContain('Older write-offs are kept in head office’s records and reports');
+    expect(WASTE_REVIEW_COPY.en.lead).toContain('For any other days, use “Earlier write-offs” below.');
     expect(WASTE_REVIEW_COPY.en.stateEmpty).toMatch(/^Nothing recorded in the last 30 days/);
     expect(WASTE_REVIEW_COPY.ta.lead).toContain('கடந்த 30 நாட்களில்');
-    expect(WASTE_REVIEW_COPY.ta.lead).toContain('தலைமை அலுவலகத்தின்');
+    expect(WASTE_REVIEW_COPY.ta.lead).toContain('முந்தைய தள்ளுபடிகள்');
     expect(WASTE_REVIEW_COPY.ta.stateEmpty).toContain('கடந்த 30 நாட்களில்');
   });
 });

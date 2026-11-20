@@ -54,7 +54,7 @@ export interface PlanLineRecord {
   readonly valueMinor: number;
 }
 export interface FreezeBreachRecord { readonly movementId: string; readonly productId: string; readonly kind: string; readonly effectMinor: number; readonly occurredAt: string }
-export interface HeldWriteOffRecord { readonly heldId: string; readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly valueMinor: number; readonly state: 'awaiting_close' | 'awaiting_application' | 'applied'; readonly applied: { readonly writeOffId: string; readonly outcome: string } | null }
+export interface HeldWriteOffRecord { readonly heldId: string; readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly valueMinor: number; readonly state: 'awaiting_close' | 'awaiting_application' | 'applied'; readonly applied: { readonly writeOffId: string; readonly writeOffDocumentNumber?: string; readonly outcome: string } | null }
 export interface PlanView {
   readonly plan: CountPlanRecord;
   readonly lines: readonly PlanLineRecord[];

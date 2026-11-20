@@ -389,6 +389,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     // Batch 18c: Return to supplier (S1) and Correct a saved receipt (R2) — their words are in their tested session models.
     'shelf-return.js': 'apps/web-erp/src/shelf-return-session.ts',
     'receipt-correction.js': 'apps/web-erp/src/receipt-correction-session.ts',
+    // Batch 20b: earlier write-offs, earlier counts, the empty shelves' cost, suggested transfers — words in their tested session.
+    'stock-history.js': 'apps/web-erp/src/stock-history-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

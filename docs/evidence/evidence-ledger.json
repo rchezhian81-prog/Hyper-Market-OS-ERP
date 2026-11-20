@@ -656,7 +656,7 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
+        "unit": 19,
         "integration": 37,
         "realDb": 14,
         "browser": 14,
@@ -667,6 +667,7 @@
       "files": {
         "unit": [
           "tests/unit/b18a-receive-takes-the-pack-mrp-and-a-failed-quality-check.test.ts",
+          "tests/unit/b20b-a2-gst-rate-from-the-item.test.ts",
           "tests/unit/d017-a-delivery-is-booked-where-the-order-says.test.ts",
           "tests/unit/d029-receive-against-an-order-with-batch-expiry-and-damaged.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -773,9 +774,9 @@
       "id": "M08",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 15,
-        "integration": 41,
-        "realDb": 13,
+        "unit": 16,
+        "integration": 42,
+        "realDb": 14,
         "browser": 6,
         "connected": 3,
         "device": 0,
@@ -783,6 +784,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/b20b-stock-history.test.ts",
           "tests/unit/concession-store-valuation.test.ts",
           "tests/unit/count-plans-session.test.ts",
           "tests/unit/edge-cloud-return.test.ts",
@@ -807,6 +809,7 @@
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/adjustment-requests.test.ts",
           "tests/integration/b18c-r2-a-saved-goods-receipt-is-corrected-by-a-compensating-entry.test.ts",
+          "tests/integration/b20b-stock-history-reads.test.ts",
           "tests/integration/bin-counts-synced-route.test.ts",
           "tests/integration/concession-store-valuation.test.ts",
           "tests/integration/concession-write-off-guard.test.ts",
@@ -846,6 +849,7 @@
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/b20b-stock-history-reads.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/inventory-branch-scope.test.ts",
@@ -880,9 +884,9 @@
       "id": "M09",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 19,
-        "integration": 35,
-        "realDb": 14,
+        "unit": 20,
+        "integration": 36,
+        "realDb": 15,
         "browser": 14,
         "connected": 5,
         "device": 0,
@@ -890,6 +894,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/b20b-stock-history.test.ts",
           "tests/unit/counts.test.ts",
           "tests/unit/d017-a-delivery-is-booked-where-the-order-says.test.ts",
           "tests/unit/demand-sales-history.test.ts",
@@ -918,6 +923,7 @@
           "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
+          "tests/integration/b20b-stock-history-reads.test.ts",
           "tests/integration/bin-counts-synced-route.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/counts-synced-route.test.ts",
@@ -953,6 +959,7 @@
           "tests/integration/a-transfer-is-cancelled-before-it-leaves-and-relayed-offline.test.ts",
           "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
+          "tests/integration/b20b-stock-history-reads.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/cr01-oi12-step6b-a-rules-approval-places-the-act-through-its-ordinary-route.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
@@ -2664,8 +2671,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 10,
-        "integration": 14,
-        "realDb": 8,
+        "integration": 15,
+        "realDb": 9,
         "browser": 9,
         "connected": 3,
         "device": 0,
@@ -2689,6 +2696,7 @@
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
+          "tests/integration/b20b-stock-history-reads.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/ob808-approving-a-write-off-writes-it-off-at-once.test.ts",
           "tests/integration/owner-dashboard-covers-every-domain.test.ts",
@@ -2704,6 +2712,7 @@
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
+          "tests/integration/b20b-stock-history-reads.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/ob808-approving-a-write-off-writes-it-off-at-once.test.ts",
           "tests/integration/owner-dashboard-covers-every-domain.test.ts",

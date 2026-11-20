@@ -22,6 +22,7 @@ import type { ReportProducers } from './report-producers';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { shiftDate } from '../../../packages/calendar/src/trading-day';
 import { likelyCauses } from './ai-owner-causes';
+import type { TransferSuggestionRow as BaseTransferSuggestionRow } from '../../inventory/src/stock-history';
 
 type Draft = Omit<Proposal, 'committed'>;
 const rupees = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -147,6 +148,11 @@ export async function purchaseSuggestions(store: EventStore, tenantId: string, n
   return out;
 }
 
+/** One structured transfer suggestion (batch 20b · S5): the Transfers page words it; A03 drafts it. */
+export interface TransferSuggestionRow extends BaseTransferSuggestionRow {
+  readonly otherSources: readonly { readonly locationId: string; readonly heldMinor: number }[];
+}
+
 /**
  * A03 — the TRANSFER-SUGGESTION leg (round 8 · M09-FR-03 "recommend inter-store transfers" · A03 "transfer suggestion" ·
  * manager approval). A product that is OUT at a selling location (on hand ≤ 0) while it sold there in the last seven days,
@@ -156,7 +162,7 @@ export async function purchaseSuggestions(store: EventStore, tenantId: string, n
  * source holds and what the destination sold, and the manager decides how many and raises the transfer through the
  * ordinary route, where held, recalled or expired stock is refused (M09-FR-03). Read-only: nothing is appended here.
  */
-export async function transferSuggestions(store: EventStore, tenantId: string, now: string, acts?: ExactActs): Promise<Draft[]> {
+export async function transferSuggestionRows(store: EventStore, tenantId: string, now: string): Promise<TransferSuggestionRow[]> {
   const from = new Date(Date.parse(now) - 7 * 86_400_000).toISOString();
   const recent = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to: now });
   const sold = new Map<string, number>();
@@ -178,7 +184,7 @@ export async function transferSuggestions(store: EventStore, tenantId: string, n
     byLoc.set(r.locationId, (byLoc.get(r.locationId) ?? 0) + r.onHandMinor);
     onHand.set(r.productId, byLoc);
   }
-  const out: Draft[] = [];
+  const out: TransferSuggestionRow[] = [];
   for (const [key, units] of [...sold].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     if (units <= 0) continue;
     const [productId, destination] = key.split('@') as [string, string];
@@ -192,13 +198,29 @@ export async function transferSuggestions(store: EventStore, tenantId: string, n
     const best = sources[0];
     if (best === undefined) continue; // nowhere holds it — that is A02's reorder, not a transfer
     const [source, held] = best;
-    const where = rank(source) === 0 ? 'its own back store' : rank(source) === 1 ? 'head office\'s warehouse' : 'another store';
+    out.push({
+      productId, toLocationId: destination, fromLocationId: source,
+      fromKind: rank(source) === 0 ? 'own_back_store' : rank(source) === 1 ? 'head_office_warehouse' : 'another_store',
+      heldAtSourceMinor: held, onHandHereMinor: here, soldHereLast7DaysMinor: units,
+      otherSources: sources.map(([l, q]) => ({ locationId: l, heldMinor: q })),
+    });
+  }
+  return out;
+}
+
+/** A03's transfer leg as drafts for the manager — the same rows the Transfers page shows as suggestions (batch 20b · S5). */
+export async function transferSuggestions(store: EventStore, tenantId: string, now: string, acts?: ExactActs): Promise<Draft[]> {
+  const from = new Date(Date.parse(now) - 7 * 86_400_000).toISOString();
+  const out: Draft[] = [];
+  for (const r of await transferSuggestionRows(store, tenantId, now)) {
+    const { productId, fromLocationId: source, toLocationId: destination, heldAtSourceMinor: held, onHandHereMinor: here, soldHereLast7DaysMinor: units } = r;
+    const where = r.fromKind === 'own_back_store' ? 'its own back store' : r.fromKind === 'head_office_warehouse' ? 'head office\'s warehouse' : 'another store';
     out.push(withAct({
       proposalId: `a03-transfer-${productId}-${source}-${destination}-${shopDateIn(now)}`, agent: 'A03', createdAt: now,
       summary: `${productId} is out at ${destination} (on hand ${here}) and sold ${units} there in the last 7 days; ${source} (${where}) holds ${held}. Consider a transfer — how many is the manager's decision (no transfer level is stored)`,
       wouldRequire: 'POST /v1/warehouse/transfers/:transferId by a person, dispatched and received by others (M09-FR-03 · §28)',
       evidence: [
-        { source: 'inventory availability', reference: `/v1/inventory/availability?productId=${productId}`, summary: sources.map(([l, q]) => `${l}: ${q}`).concat(`${destination}: ${here}`).join('; ') },
+        { source: 'inventory availability', reference: `/v1/inventory/availability?productId=${productId}`, summary: r.otherSources.map((s) => `${s.locationId}: ${s.heldMinor}`).concat(`${destination}: ${here}`).join('; ') },
         { source: 'sales ledger', reference: `SaleCommitted ${from}..${now}`, summary: `${units} sold at ${destination} in the last 7 days` },
       ],
     }, acts === undefined ? { why: 'not asked' } : await acts.transfer(productId, source, destination)));

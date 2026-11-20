@@ -55,6 +55,8 @@
       fieldset.pay-bills { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; margin: 0; min-width: 0; }
       fieldset.pay-bills legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
       [hidden] { display: none !important; }
+      /* Batch 20b · A2: a typed line's GST rate and its mark ("from the item — check against the bill", or the flag) */
+      .rate-cell { display: grid; gap: 2px; } .rate-cell input { max-width: 6em; } .rate-mark { font-size: 14px; } .rate-mark.err { color: var(--danger-text); font-weight: 600; }
     </style>
   </head>
   <body>

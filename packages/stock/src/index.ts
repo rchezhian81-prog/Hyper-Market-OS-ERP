@@ -7,3 +7,4 @@ export * from './metrics';
 export * from './valuation';
 export * from './ageing-source';
 export * from './landed-cost'; // OB-288 P3 (M07-FR-04): freight/duty into stock value
+export * from './stockout-estimate'; // batch 20b · S4 (M08-FR-04): what the empty shelves cost, from head office's own records

@@ -14815,7 +14815,10 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
     },
     heldWriteOffs: async (tenantId, plan) => {
       const { held, applied } = await heldWriteOffsOf(input.store, tenantId);
-      return heldWriteOffViews(plan.state, held.filter((h) => h.planId === plan.planId), applied);
+      // Batch 20b: an applied held write-off says its WOF number (OB-850), so the count's page never shows the internal id.
+      const numbers = new Map((await writeOffAdapter(input).writeOffs(tenantId)).filter((w) => w.documentNumber !== undefined).map((w) => [w.id, w.documentNumber!] as const));
+      const numbered = applied.map((a) => (numbers.has(a.writeOffId) ? { ...a, writeOffDocumentNumber: numbers.get(a.writeOffId)! } : a));
+      return heldWriteOffViews(plan.state, held.filter((h) => h.planId === plan.planId), numbered);
     },
     applyHeldWriteOffs: (tenantId, plan, by, at) => applyHeldWriteOffsFor(input.store, tenantId, plan, by, at),
     movementsAt: async (tenantId, locationId, productIds) => {

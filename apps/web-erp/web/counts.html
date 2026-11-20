@@ -35,6 +35,7 @@
       .filter[aria-pressed='true'] { background: var(--mint); border-color: var(--accent); color: var(--accent); }
       .filter .sre-icon { width:18px; height:18px; }
 
+      .sh-section { display:grid; gap:10px; } .sh-controls { display:flex; flex-wrap:wrap; gap:12px; align-items:end; } .sh-basis { margin:0; padding-left:20px; color:var(--muted); font-size:14px; } .sh-kind { margin:0; }
     </style>
   </head>
   <body>
@@ -60,11 +61,14 @@
       <!-- U5 · G17: the counts on the chrome's register — the state as the one chip, a value the box does not hold said as "Not known" -->
       <div id="register" aria-label="Counts to review"></div>
       <div id="state" hidden></div>
+      <!-- Batch 20b · S3: earlier counts and how accurate they were (M09-FR-04) (stock-history.js) -->
+      <section class="sh-section" id="past-counts-section" hidden></section>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./counts.js" type="module"></script>
+    <script src="./stock-history.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>
