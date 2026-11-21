@@ -41,9 +41,10 @@ describe('the till lane base', () => {
     // Found in Wave 2b-v: the cash ports wrote to `http://127.0.0.1:<port>` directly, so on the hosted copy the float,
     // the pickups and the close went to the tester's own computer and never reached the store box.
     const source = readFileSync('apps/pos/src/browser-entry.ts', 'utf8');
-    const fetches = source.match(/fetch\(`[^`]*`/g) ?? [];
+    // OB-908: most calls now go through `askLane` (the till waits at most 5 s); it takes the same URL, so both are held to the base.
+    const fetches = source.match(/\b(fetch|askLane)\(`[^`]*`/g) ?? [];
     expect(fetches.length).toBeGreaterThan(5);
-    for (const f of fetches) expect(f, f).toMatch(/^fetch\(`\$\{(laneBase\(port\)|base)\}/);
+    for (const f of fetches) expect(f, f).toMatch(/^(fetch|askLane)\(`\$\{(laneBase\(port\)|base)\}/);
   });
 
   it('only the till knows about the demo lane base', () => {

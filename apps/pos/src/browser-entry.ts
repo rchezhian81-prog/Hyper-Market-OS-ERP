@@ -257,13 +257,109 @@ export interface TillOperatorStatus {
 }
 export type TillSignInOutcome =
   | { readonly signedIn: true; readonly token: string; readonly userId: string; readonly displayName: string; readonly expiresAt: string }
-  | { readonly signedIn: false; readonly refusedBecause?: string; readonly laneMessage: string };
+  | { readonly signedIn: false; readonly refusedBecause?: string; readonly laneMessage: string; readonly laneMessageTa?: string };
 
 /** The till's three operator calls to its box (injectable for tests). */
 export interface TillOperatorPort {
   status(token: string | undefined): Promise<TillOperatorStatus | null>;
   signIn(input: { readonly staffId?: string; readonly pin?: string }): Promise<TillSignInOutcome>;
   signOut(token: string | undefined): Promise<void>;
+}
+
+/**
+ * OB-908 · D-127 · P-08: how long the till waits for its OWN store computer to answer one call on the cashier's path before
+ * it says so. The store computer is on the shop's own network and answers in well under a second; a call that was taken
+ * and never answered used to leave the till waiting for ever with nothing on the screen. Never used on the sale commit
+ * path (hard rule #1: a sale is committed locally first and its answer awaited by `laneDurable`, which has its own retry).
+ */
+export const LANE_ANSWER_WAIT_MS = 5_000;
+/** What a call that ran out of wait is called — it MAY have reached the store computer, so it is never read as "not done". */
+export const LANE_NO_ANSWER = 'lane_no_answer';
+/** The store computer took longer than the wait to answer: the till does not know what it did. */
+export class LaneNoAnswerError extends Error {
+  readonly refusedBecause = LANE_NO_ANSWER;
+  constructor(readonly path: string, readonly waitMs: number) {
+    super(`the store computer did not answer ${path} within ${waitMs} ms`);
+    this.name = 'LaneNoAnswerError';
+  }
+}
+/** The store computer's answer, read in full inside the wait. */
+export interface LaneReply {
+  readonly status: number;
+  readonly ok: boolean;
+  json(): Promise<unknown>;
+}
+/**
+ * The ONE way a till asks its store computer something on the cashier's path (OB-908): `fetch`, with the answer — headers
+ * AND body — awaited at most `waitMs`. Past it the call is given up and `LaneNoAnswerError` is thrown; a store computer
+ * that cannot be reached at all throws as `fetch` always did, so each caller keeps its own "cannot reach" words.
+ */
+export async function askLane(url: string, init: RequestInit = {}, waitMs: number = LANE_ANSWER_WAIT_MS): Promise<LaneReply> {
+  const controller = new AbortController();
+  let ranOut = false;
+  const timer = setTimeout(() => { ranOut = true; controller.abort(); }, waitMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const text = await response.text();
+    return { status: response.status, ok: response.ok, json: async () => JSON.parse(text) as unknown };
+  } catch (e) {
+    if (ranOut) throw new LaneNoAnswerError(new URL(url, 'http://lane.invalid').pathname, waitMs);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+const isNoAnswer = (e: unknown): e is LaneNoAnswerError => e instanceof LaneNoAnswerError;
+/** The store computer did not answer in time — the plain words for each call, English and Tamil. Never "done", never "not done". */
+export const NO_ANSWER_WORDS = {
+  hold: {
+    en: 'The store computer did not answer in time, so the till does not know if the basket was held. The basket is still on this till — do not clear it. Press Hold again.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே கூடை நிறுத்தி வைக்கப்பட்டதா என்று டில்லுக்குத் தெரியவில்லை. கூடை இன்னும் இந்த டில்லில் உள்ளது — அழிக்க வேண்டாம். மீண்டும் நிறுத்து அழுத்தவும்.',
+  },
+  recall: {
+    en: 'The store computer did not answer in time, so the basket did not come back to this till. Press Recall again. If the basket is no longer listed, scan the items again.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே கூடை இந்த டில்லுக்குத் திரும்ப வரவில்லை. மீண்டும் திரும்பப் பெறு அழுத்தவும். கூடை பட்டியலில் இல்லையென்றால், பொருட்களை மீண்டும் ஸ்கேன் செய்யவும்.',
+  },
+  abandon: {
+    en: 'The store computer did not answer in time, so the till does not know if the basket was given up. Try again in a moment.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே கூடை கைவிடப்பட்டதா என்று டில்லுக்குத் தெரியவில்லை. சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்.',
+  },
+  list: {
+    en: 'The store computer did not answer in time, so the till cannot list the held baskets now. Try again in a moment.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே நிறுத்திய கூடைகளை இப்போது காட்ட முடியவில்லை. சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்.',
+  },
+  basket: {
+    en: 'The store computer did not answer in time, so the basket was not brought up. Nothing was added to the bill. Try again, or scan the items as usual.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே கூடை கொண்டுவரப்படவில்லை. பில்லில் எதுவும் சேர்க்கப்படவில்லை. மீண்டும் முயற்சிக்கவும், அல்லது வழக்கம்போல் பொருட்களை ஸ்கேன் செய்யவும்.',
+  },
+  check: {
+    en: 'The store computer did not answer in time, so this could not be checked now. Nothing was changed on the bill. Try again, or go on without it.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே இதை இப்போது சரிபார்க்க முடியவில்லை. பில்லில் எதுவும் மாற்றப்படவில்லை. மீண்டும் முயற்சிக்கவும், அல்லது இது இல்லாமல் தொடரவும்.',
+  },
+  signIn: {
+    en: 'The store computer did not answer in time, so nobody was signed in. Try again in a moment; if it keeps happening, tell the manager.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே யாரும் உள்நுழையவில்லை. சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்; தொடர்ந்தால் மேலாளரிடம் சொல்லவும்.',
+  },
+  approval: {
+    en: 'The store computer did not answer in time, so no approval was given at this till. Do not go ahead — ask the manager to try again.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே இந்த டில்லில் அனுமதி கிடைக்கவில்லை. தொடர வேண்டாம் — மேலாளரை மீண்டும் முயற்சிக்கச் சொல்லவும்.',
+  },
+  payment: {
+    en: 'The store computer did not answer in time, so the till does not know what it recorded for this card or UPI payment. Do not ask the card machine again yet — press Card or UPI again and the till will check.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே இந்த கார்டு அல்லது UPI பணத்துக்கு என்ன பதிவானது என்று டில்லுக்குத் தெரியவில்லை. இப்போதே கார்டு இயந்திரத்தை மீண்டும் கேட்க வேண்டாம் — கார்டு அல்லது UPI மீண்டும் அழுத்தவும், டில் சரிபார்க்கும்.',
+  },
+  activity: {
+    en: 'The store computer did not answer in time, so the till does not know if this was recorded. Nothing was changed on the till. Press it again — it will not be recorded twice.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே இது பதிவானதா என்று டில்லுக்குத் தெரியவில்லை. டில்லில் எதுவும் மாற்றப்படவில்லை. மீண்டும் அழுத்தவும் — இது இரண்டு முறை பதிவாகாது.',
+  },
+} as const;
+type NoAnswerCall = keyof typeof NO_ANSWER_WORDS;
+/** The answer a caller hands back when the store computer ran out of wait. */
+const noAnswer = (call: NoAnswerCall): { readonly refusedBecause: typeof LANE_NO_ANSWER; readonly laneMessage: string; readonly laneMessageTa: string } =>
+  ({ refusedBecause: LANE_NO_ANSWER, laneMessage: NO_ANSWER_WORDS[call].en, laneMessageTa: NO_ANSWER_WORDS[call].ta });
+/** Options a lane port takes (tests shorten the wait; the shop runs on `LANE_ANSWER_WAIT_MS`). */
+export interface LaneWait {
+  readonly waitMs?: number;
 }
 
 const UNREACHABLE_SIGN_IN = 'This till cannot reach its store computer, so nobody can sign in. Tell the manager.';
@@ -274,34 +370,36 @@ const FRONT_REFUSED: Readonly<Record<number, { readonly refusedBecause: string; 
 };
 
 /** The operator calls over this till's own lane socket (or the hosted copy's same-origin base). */
-export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort {
+export function laneOperator(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): TillOperatorPort {
   return {
     status: async (token) => {
       try {
-        const response = await fetch(`${laneBase(port)}/lane/operator`, { headers: token === undefined ? {} : { [OPERATOR_HEADER]: token } });
+        const response = await askLane(`${laneBase(port)}/lane/operator`, { headers: token === undefined ? {} : { [OPERATOR_HEADER]: token } }, wait.waitMs);
         if (!response.ok) return null;
         return await response.json() as TillOperatorStatus;
       } catch { return null; }
     },
     signIn: async (input) => {
       try {
-        const response = await fetch(`${laneBase(port)}/lane/operator/sign-in`, {
+        const response = await askLane(`${laneBase(port)}/lane/operator/sign-in`, {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ ...(input.staffId === undefined ? {} : { staffId: input.staffId }), ...(input.pin === undefined ? {} : { pin: input.pin }) }),
-        });
+        }, wait.waitMs);
         const front = FRONT_REFUSED[response.status];
         if (front !== undefined) return { signedIn: false, ...front };
         const body = await response.json() as { signedIn?: boolean; refusedBecause?: string; laneMessage?: string };
         return body.signedIn === true ? body as unknown as TillSignInOutcome : { signedIn: false, ...(typeof body.refusedBecause === 'string' ? { refusedBecause: body.refusedBecause } : {}), laneMessage: body.laneMessage ?? UNREACHABLE_SIGN_IN };
-      } catch {
+      } catch (e) {
+        // OB-908: a sign-in the box took but did not answer in time signs nobody in here; a later sign-in starts afresh.
+        if (isNoAnswer(e)) return { signedIn: false, ...noAnswer('signIn') };
         return { signedIn: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_SIGN_IN };
       }
     },
     signOut: async (token) => {
       try {
-        await fetch(`${laneBase(port)}/lane/operator/sign-out`, {
+        await askLane(`${laneBase(port)}/lane/operator/sign-out`, {
           method: 'POST', headers: { 'content-type': 'application/json', ...(token === undefined ? {} : { [OPERATOR_HEADER]: token }) }, body: '{}',
-        });
+        }, wait.waitMs);
       } catch { /* the box will end the session at its expiry; the till forgets it now */ }
     },
   };
@@ -348,13 +446,13 @@ const UNREACHABLE_APPROVAL = 'This till cannot reach its store computer, so a ma
  * which checks them itself and issues an approval bound to this one refund. The cashier's session goes with it — the
  * box issues approvals only to a till someone is signed in at, and never to that same person.
  */
-export function laneApprovals(port: number = DEFAULT_LANE_PORT): TillApprovalPort {
+export function laneApprovals(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): TillApprovalPort {
   return {
     grant: async (request) => {
       try {
-        const response = await fetch(`${laneBase(port)}/lane/approvals`, {
+        const response = await askLane(`${laneBase(port)}/lane/approvals`, {
           method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(request),
-        });
+        }, wait.waitMs);
         const front = FRONT_REFUSED[response.status];
         if (front !== undefined) return { approved: false, ...front };
         const body = await response.json() as { approved?: boolean; refusedBecause?: string; laneMessage?: string; laneMessageTa?: string };
@@ -364,7 +462,9 @@ export function laneApprovals(port: number = DEFAULT_LANE_PORT): TillApprovalPor
             approved: false, ...(typeof body.refusedBecause === 'string' ? { refusedBecause: body.refusedBecause } : {}), laneMessage: body.laneMessage ?? UNREACHABLE_APPROVAL,
             ...(typeof body.laneMessageTa === 'string' ? { laneMessageTa: body.laneMessageTa } : {}), // OB-500: the box's Tamil words
           };
-      } catch {
+      } catch (e) {
+        // OB-908: an approval the box may have issued but this till never received is never used here (it expires unused).
+        if (isNoAnswer(e)) return { approved: false, ...noAnswer('approval') };
         return { approved: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_APPROVAL };
       }
     },
@@ -410,6 +510,8 @@ export interface PhoneBasketAtTill {
   readonly ok: boolean;
   readonly refusedBecause?: string;
   readonly laneMessage: string;
+  /** OB-908: the same words in Tamil, when the till has them (the store computer did not answer in time). */
+  readonly laneMessageTa?: string;
   readonly code?: string;
   /** Rung through this till's pack — at the till's price, never the phone's. */
   readonly added?: readonly { readonly lineId: string; readonly description: string; readonly qty: number }[];
@@ -421,15 +523,16 @@ export interface PhoneBasketsLanePort {
   recall(code: string): Promise<Record<string, unknown>>;
 }
 /** Phone baskets through this till's own store computer, asked with the cashier's session (OB-350). */
-export function lanePhoneBaskets(port: number = DEFAULT_LANE_PORT): PhoneBasketsLanePort {
+export function lanePhoneBaskets(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): PhoneBasketsLanePort {
   return {
     recall: async (code) => {
       try {
-        const response = await fetch(`${laneBase(port)}/lane/phone-baskets/recall`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ code }) });
+        const response = await askLane(`${laneBase(port)}/lane/phone-baskets/recall`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ code }) }, wait.waitMs);
         const front = FRONT_REFUSED[response.status];
         if (front !== undefined) return { ...front };
         return await response.json() as Record<string, unknown>;
-      } catch {
+      } catch (e) {
+        if (isNoAnswer(e)) return { ...noAnswer('basket') };
         return { refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the phone basket cannot be brought up. Scan the items as usual.' };
       }
     },
@@ -441,15 +544,16 @@ export function lanePhoneBaskets(port: number = DEFAULT_LANE_PORT): PhoneBaskets
 export interface QueueBasketsLanePort {
   recall(code: string): Promise<Record<string, unknown>>;
 }
-export function laneQueueBaskets(port: number = DEFAULT_LANE_PORT): QueueBasketsLanePort {
+export function laneQueueBaskets(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): QueueBasketsLanePort {
   return {
     recall: async (code) => {
       try {
-        const response = await fetch(`${laneBase(port)}/lane/queue-baskets/recall`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ code }) });
+        const response = await askLane(`${laneBase(port)}/lane/queue-baskets/recall`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ code }) }, wait.waitMs);
         const front = FRONT_REFUSED[response.status];
         if (front !== undefined) return { ...front };
         return await response.json() as Record<string, unknown>;
-      } catch {
+      } catch (e) {
+        if (isNoAnswer(e)) return { ...noAnswer('basket') };
         return { refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the handheld basket cannot be brought up. Scan the items as usual.' };
       }
     },
@@ -460,30 +564,47 @@ type SuspendedLineShape = Parameters<PosSession['restoreHeld']>[0][number];
 type SuspendedAgeShape = NonNullable<Parameters<PosSession['restoreHeld']>[1]>[number];
 const UNREACHABLE_HOLD = 'This till cannot reach its store computer, so the basket was not held. It is still on the till — do not clear it.';
 
-/** Held baskets on this till's own store computer (audit PF-05), asked with the cashier's session. */
-export function laneHeldBills(port: number = DEFAULT_LANE_PORT): HeldBillsPort {
-  const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+const UNREACHABLE_RECALL = 'This till cannot reach its store computer, so the basket did not come back. It is still held — try again in a moment.';
+const UNREACHABLE_ABANDON = 'This till cannot reach its store computer, so the basket was not given up. It is still held — try again in a moment.';
+const UNREACHABLE_LIST = 'This till cannot reach its store computer, so it cannot list the held baskets now. Try again in a moment.';
+/** OB-908: the held list could not be read — the till never says "nothing on hold" when the store computer did not say. */
+export class HeldListNotKnownError extends Error {
+  constructor(readonly refusedBecause: string, readonly laneMessage: string, readonly laneMessageTa?: string) {
+    super(laneMessage);
+    this.name = 'HeldListNotKnownError';
+  }
+}
+
+/**
+ * Held baskets on this till's own store computer (audit PF-05), asked with the cashier's session. OB-908: each call waits at
+ * most `LANE_ANSWER_WAIT_MS` and then says plainly that the store computer did not answer — never "held" or "given up".
+ */
+export function laneHeldBills(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): HeldBillsPort {
+  const post = async (path: string, body: unknown, call: 'hold' | 'recall' | 'abandon', unreachable: string): Promise<Record<string, unknown>> => {
     try {
-      const response = await fetch(`${laneBase(port)}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const response = await askLane(`${laneBase(port)}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) }, wait.waitMs);
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { ...front };
       return await response.json() as Record<string, unknown>;
-    } catch {
-      return { refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_HOLD };
+    } catch (e) {
+      if (isNoAnswer(e)) return { ...noAnswer(call) };
+      return { refusedBecause: 'lane_unreachable', laneMessage: unreachable };
     }
   };
   return {
-    hold: (body) => post('/lane/held-bills', body),
-    recall: (billId) => post('/lane/held-bills/recall', { billId }),
-    abandon: (billId, reason) => post('/lane/held-bills/abandon', { billId, reason }),
+    hold: (body) => post('/lane/held-bills', body, 'hold', UNREACHABLE_HOLD),
+    recall: (billId) => post('/lane/held-bills/recall', { billId }, 'recall', UNREACHABLE_RECALL),
+    abandon: (billId, reason) => post('/lane/held-bills/abandon', { billId, reason }, 'abandon', UNREACHABLE_ABANDON),
     list: async () => {
+      let body: { held?: HeldBasket[] };
       try {
-        const response = await fetch(`${laneBase(port)}/lane/held-bills`, { headers: operatorHeaders() });
-        const body = await response.json() as { held?: HeldBasket[] };
-        return Array.isArray(body.held) ? body.held : [];
-      } catch {
-        return [];
+        const response = await askLane(`${laneBase(port)}/lane/held-bills`, { headers: operatorHeaders() }, wait.waitMs);
+        body = await response.json() as { held?: HeldBasket[] };
+      } catch (e) {
+        if (isNoAnswer(e)) throw new HeldListNotKnownError(LANE_NO_ANSWER, NO_ANSWER_WORDS.list.en, NO_ANSWER_WORDS.list.ta);
+        throw new HeldListNotKnownError('lane_unreachable', UNREACHABLE_LIST);
       }
+      return Array.isArray(body.held) ? body.held : [];
     },
   };
 }
@@ -495,6 +616,8 @@ export interface CouponAtTillAnswer {
   readonly ok: boolean;
   readonly refusedBecause?: string;
   readonly laneMessage: string;
+  /** OB-908: the same words in Tamil, when the till has them (the store computer did not answer in time). */
+  readonly laneMessageTa?: string;
   readonly code?: string;
   /** What the coupon takes off this bill now (already spread over the lines). */
   readonly offMinor?: number;
@@ -506,6 +629,8 @@ export interface GiftCardAtTillAnswer {
   readonly ok: boolean;
   readonly refusedBecause?: string;
   readonly laneMessage: string;
+  /** OB-908: the same words in Tamil, when the till has them (the store computer did not answer in time). */
+  readonly laneMessageTa?: string;
   readonly last4?: string;
   readonly balanceMinor?: number;
   readonly mayTakeMinor?: number;
@@ -533,6 +658,8 @@ export interface LoyaltyWalletAnswer {
   readonly ok: boolean;
   readonly refusedBecause?: string;
   readonly laneMessage: string;
+  /** OB-908: the same words in Tamil, when the till has them (the store computer did not answer in time). */
+  readonly laneMessageTa?: string;
   readonly points?: number;
   readonly pointValuePaise?: number;
   readonly pointsValueMinor?: number;
@@ -552,6 +679,8 @@ export interface CardAttemptAnswer {
   readonly ok: boolean;
   readonly refusedBecause?: string;
   readonly laneMessage: string;
+  /** OB-908: the same words in Tamil, when the till has them (the store computer did not answer in time). */
+  readonly laneMessageTa?: string;
   readonly attemptId?: string;
   /** asked · approved · declined · no_answer · recovered_paid · recovered_not_paid */
   readonly state?: string;
@@ -592,17 +721,23 @@ export interface CardRefundRow {
 const UNREACHABLE_PAYMENT = 'This till cannot reach its store computer, so the payment was not recorded. Do not ask the card machine — take cash or use another lane.';
 
 /** Card/UPI attempts on this till's own store computer (audit PF-06), asked with the cashier's session. */
-export function lanePaymentAttempts(port: number = DEFAULT_LANE_PORT): PaymentAttemptsPort {
+export function lanePaymentAttempts(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): PaymentAttemptsPort {
   const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
     const once = async (): Promise<Record<string, unknown>> => {
-      const response = await fetch(`${laneBase(port)}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const response = await askLane(`${laneBase(port)}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) }, wait.waitMs);
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { ok: false, ...front };
       return await response.json() as Record<string, unknown>;
     };
     // Every call is safe to repeat (the attempt id is its identity), so a reply lost on the way back is asked once more.
-    try { return await once(); } catch {
-      try { return await once(); } catch { return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_PAYMENT }; }
+    // OB-908: a store computer that took the call and ran out of wait is not asked again here (the cashier would wait
+    // twice); the till says it does not know, and pressing Card/UPI again finds the attempt on this bill and checks it.
+    try { return await once(); } catch (e) {
+      if (isNoAnswer(e)) return { ok: false, ...noAnswer('payment') };
+      try { return await once(); } catch (e2) {
+        if (isNoAnswer(e2)) return { ok: false, ...noAnswer('payment') };
+        return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_PAYMENT };
+      }
     }
   };
   return {
@@ -610,7 +745,7 @@ export function lanePaymentAttempts(port: number = DEFAULT_LANE_PORT): PaymentAt
     answer: (body) => post('/lane/payment-attempts/answer', body),
     recover: (body) => post('/lane/payment-attempts/recover', body),
     list: async () => {
-      const response = await fetch(`${laneBase(port)}/lane/payment-attempts`, { headers: { ...operatorHeaders() } });
+      const response = await askLane(`${laneBase(port)}/lane/payment-attempts`, { headers: { ...operatorHeaders() } }, wait.waitMs);
       return await response.json() as Record<string, unknown>;
     },
   };
@@ -809,9 +944,9 @@ export const SCAN_TIMES_SEND_EVERY = 25;
  * OB-264: look up the mirror sale that carries this OLD ERP bill number, over the same loopback READ route — the box finds
  * it in its own register (offline on the box). Resolves `null` when no sale carries it.
  */
-export function laneLookupByOldBill(port: number = DEFAULT_LANE_PORT): LaneLookup {
+export function laneLookupByOldBill(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): LaneLookup {
   return async (oldBill) => {
-    const response = await fetch(`${laneBase(port)}/lane/lookup?oldBill=${encodeURIComponent(oldBill)}`);
+    const response = await askLane(`${laneBase(port)}/lane/lookup?oldBill=${encodeURIComponent(oldBill)}`, {}, wait.waitMs);
     const body = await response.json() as { found?: boolean } & Partial<SaleLookupResult>;
     return body.found === true && body.sale !== undefined
       ? { sale: body.sale, returns: body.returns ?? [], refunds: body.refunds ?? [] }
@@ -819,9 +954,9 @@ export function laneLookupByOldBill(port: number = DEFAULT_LANE_PORT): LaneLooku
   };
 }
 
-export function laneLookup(port: number = DEFAULT_LANE_PORT): LaneLookup {
+export function laneLookup(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): LaneLookup {
   return async (receipt) => {
-    const response = await fetch(`${laneBase(port)}/lane/lookup?receipt=${encodeURIComponent(receipt)}`);
+    const response = await askLane(`${laneBase(port)}/lane/lookup?receipt=${encodeURIComponent(receipt)}`, {}, wait.waitMs);
     const body = await response.json() as { found?: boolean } & Partial<SaleLookupResult>;
     return body.found === true && body.sale !== undefined
       ? { sale: body.sale, returns: body.returns ?? [], refunds: body.refunds ?? [] }
@@ -872,10 +1007,10 @@ export function laneShiftClose(port: number = DEFAULT_LANE_PORT): ShiftCloseWrit
 }
 
 /** Where the till's cash stands, read from the box — custody only, never a figure. `null` when the box did not answer. */
-export function laneTillCash(port: number = DEFAULT_LANE_PORT): TillCashRead {
+export function laneTillCash(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): TillCashRead {
   return async () => {
     try {
-      const response = await fetch(`${laneBase(port)}/lane/till-cash`);
+      const response = await askLane(`${laneBase(port)}/lane/till-cash`, {}, wait.waitMs);
       if (!response.ok) return null;
       return await response.json() as TillCashStatus;
     } catch {
@@ -1076,6 +1211,8 @@ export function bootPos(config?: {
   approvalPort?: TillApprovalPort;
   /** The till's held-basket calls to its box (audit PF-05). Overridable for tests; production asks this till's own edge. */
   heldBillsPort?: HeldBillsPort;
+  /** OB-908: how long the till waits for its store computer on a cashier-path call (default `LANE_ANSWER_WAIT_MS`; tests shorten it). */
+  laneAnswerWaitMs?: number;
   /** OB-350: the till's phone-basket call to its box. Overridable for tests; production asks this till's own edge. */
   phoneBasketsPort?: PhoneBasketsLanePort;
   /** D04-FR-05: the till's queue-basket call to its box. Overridable for tests; production asks this till's own edge. */
@@ -1798,8 +1935,22 @@ export function bootPos(config?: {
   const signOut = (): void => { heartbeat.ref?.stop(); session.signOut(); till.signOut(); };
   const operator = (): string | undefined => session.operator();
 
+  // OB-908 · P-08: the wait the till gives its store computer on each cashier-path call (tests shorten it).
+  const laneWait: LaneWait = config?.laneAnswerWaitMs === undefined ? {} : { waitMs: config.laneAnswerWaitMs };
+  /**
+   * OB-908: the id a write went out under while its answer is NOT known (the store computer ran out of wait, or could not be
+   * reached) — kept per action, so pressing again for the SAME thing re-sends the SAME id and the box, which is idempotent on
+   * it, never keeps a second copy. Forgotten as soon as the box gives a definite answer.
+   */
+  const unanswered = new Map<string, string>();
+  const idFor = (action: string, make: () => string): string => unanswered.get(action) ?? make();
+  const settleId = (action: string, id: string, r: Record<string, unknown>): void => {
+    if (r['refusedBecause'] === LANE_NO_ANSWER || r['refusedBecause'] === 'lane_unreachable') unanswered.set(action, id);
+    else unanswered.delete(action);
+  };
+
   // HELD BASKETS (audit PF-05): the basket goes to the store computer's disk; the till clears only once the box has it.
-  const held = config?.heldBillsPort ?? laneHeldBills(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const held = config?.heldBillsPort ?? laneHeldBills(config?.lanePort ?? DEFAULT_LANE_PORT, laneWait);
   const answer = (r: Record<string, unknown>, ok: boolean, fallback: string): HeldAnswer => ({
     ok,
     laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback,
@@ -1816,29 +1967,41 @@ export function bootPos(config?: {
     attach: (quotations: readonly { readonly quotationId: string; readonly saleId: string }[]) => void;
   } = { onBill: () => [], attach: () => {} };
   // ── R9-A · OB-533 — end ──
-  const holdAtTill = async (reason?: string): Promise<HeldAnswer> => {
+  // OB-908: Hold pressed again while the store computer is still being asked is the SAME press — one hold goes, not two.
+  let holding: Promise<HeldAnswer> | null = null;
+  const holdAtTill = (reason?: string): Promise<HeldAnswer> => {
+    if (holding !== null) return holding;
+    holding = holdOnce(reason).finally(() => { holding = null; });
+    return holding;
+  };
+  const holdOnce = async (reason?: string): Promise<HeldAnswer> => {
     if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('hold a basket').laneMessage };
     const basket = session.basketToHold();
     if (basket.lines.length === 0) return { ok: false, refusedBecause: 'empty_basket', laneMessage: 'There is nothing in the basket to hold.' };
-    // The basket's own id: a re-sent hold after a lost reply is the same hold, never a second copy.
-    const billId = `H-${session.laneId() ?? 'lane'}-${newRequestKey().slice(3)}`;
     const now = new Date().toISOString();
     const quotations = heldQuotations.onBill(); // R9-A · OB-533: the basket carries its quotations to the box
+    // The basket's own id: a re-sent hold after a lost reply is the same hold, never a second copy. OB-908: and a Hold pressed
+    // again for the SAME basket after the store computer did not answer goes under the same id — the box may already have it.
+    const action = `hold:${JSON.stringify({ lines: basket.lines, ageAnswers: basket.ageAnswers, reason: reason?.trim() ?? '', quotations })}`;
+    const billId = idFor(action, () => `H-${session.laneId() ?? 'lane'}-${newRequestKey().slice(3)}`);
     const body = { billId, lines: basket.lines, ageAnswers: basket.ageAnswers, tradingDay: session.tradingDayFor(now), ...(reason === undefined || reason.trim() === '' ? {} : { reason }), ...(quotations.length === 0 ? {} : { quotations }) };
     let r = await held.hold(body);
+    // Asked once more only when the box could not be reached at all — never after it ran out of wait (the cashier would wait twice).
     if (r['refusedBecause'] === 'lane_unreachable') r = await held.hold(body);
+    settleId(action, billId, r);
     if (r['held'] !== true) return answer(r, false, UNREACHABLE_HOLD);
     session.newSale();
     heldQuotations.attach([]); // OB-533: the quotations went with the basket; the fresh bill has none
     return answer(r, true, 'Basket held.');
   };
+  /** OB-908: throws `HeldListNotKnownError` (with the words to say) when the store computer did not say — never "none held". */
   const heldAtTill = (): Promise<readonly HeldBasket[]> => held.list();
   const recallAtTill = async (billId: string): Promise<HeldAnswer> => {
     if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('recall a basket').laneMessage };
     if (session.basketToHold().lines.length > 0) return { ok: false, refusedBecause: 'basket_not_empty', laneMessage: 'Finish or hold the basket on the till first — a recalled basket never joins another customer\'s.' };
     const r = await held.recall(billId);
     const bill = r['bill'] as { lines?: SuspendedLineShape[]; ageAnswers?: SuspendedAgeShape[]; quotations?: unknown } | undefined;
-    if (r['recalled'] !== true || bill === undefined || !Array.isArray(bill.lines)) return answer(r, false, 'The store computer did not give the basket back. It is still held.');
+    if (r['recalled'] !== true || bill === undefined || !Array.isArray(bill.lines)) return answer(r, false, UNREACHABLE_RECALL);
     session.restoreHeld(bill.lines, Array.isArray(bill.ageAnswers) ? bill.ageAnswers : []);
     // R9-A · OB-533: recalling keeps the quotation attached — a later cancel or hold of this bill frees or carries it.
     const attached = (Array.isArray(bill.quotations) ? bill.quotations as Record<string, unknown>[] : [])
@@ -1847,31 +2010,48 @@ export function bootPos(config?: {
     heldQuotations.attach(attached);
     return { ...answer(r, true, 'Basket recalled.'), billId, ...(r['repriceRequired'] === true ? { repriceRequired: true } : {}), ...(attached.length === 0 ? {} : { quotationsAttached: attached.map((q) => q.quotationId) }) };
   };
-  // VOIDS AS EVIDENCE (audit PF-07): on the store computer before the line goes.
-  const voidAtTill = async (lineId: string, reason: string): Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string }> => {
-    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('void a line').laneMessage };
-    const line = view.basket().find((l) => l.lineId === lineId);
-    if (line === undefined) return { ok: false, refusedBecause: 'no_such_line', laneMessage: 'That line is not on the bill.' };
-    if (reason.trim() === '') return { ok: false, refusedBecause: 'reason_required', laneMessage: 'A void needs a reason.' };
-    const body = {
-      activityId: `V-${newRequestKey().slice(3)}`, kind: 'void', billRef: session.billRef(), lineId, productId: line.productId,
-      description: line.description, valueMinor: line.unitPriceMinor * line.qty, reason,
-    };
+  // Till actions kept as evidence on the store computer (audit PF-07): voids, no-sales, price changes, card refunds on the machine.
+  type TillActivityAnswer = { readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string; readonly laneMessageTa?: string; readonly activityId?: string };
+  const sendTillActivity = async (body: Record<string, unknown>, unreachable: string): Promise<Record<string, unknown>> => {
     const post = async (): Promise<Record<string, unknown>> => {
       const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-      const response = await fetch(`${base}/lane/till-activity`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const response = await askLane(`${base}/lane/till-activity`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) }, laneWait.waitMs);
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { recorded: false, ...front };
       return await response.json() as Record<string, unknown>;
     };
-    let r: Record<string, unknown>;
-    try { r = await (config?.tillActivityPost ?? post)(body); } catch {
-      try { r = await (config?.tillActivityPost ?? post)(body); } catch {
-        return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the void was not recorded. The line stays on the bill.' };
+    // A lost reply is asked again under the SAME activity id — the box answers "already recorded" for a repeat. OB-908: one
+    // that ran out of wait is not asked again here (the cashier would wait twice); the till says it does not know.
+    try { return await (config?.tillActivityPost ?? post)(body); } catch (e) {
+      if (isNoAnswer(e)) return { recorded: false, ...noAnswer('activity') };
+      try { return await (config?.tillActivityPost ?? post)(body); } catch (e2) {
+        if (isNoAnswer(e2)) return { recorded: false, ...noAnswer('activity') };
+        return { recorded: false, refusedBecause: 'lane_unreachable', laneMessage: unreachable };
       }
     }
+  };
+  const refusedActivity = (r: Record<string, unknown>, fallback: string): TillActivityAnswer => ({
+    ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}),
+    laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback,
+    ...(typeof r['laneMessageTa'] === 'string' ? { laneMessageTa: r['laneMessageTa'] } : {}),
+  });
+  // VOIDS AS EVIDENCE (audit PF-07): on the store computer before the line goes.
+  const voidAtTill = async (lineId: string, reason: string): Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string; readonly laneMessageTa?: string }> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('void a line').laneMessage };
+    const line = view.basket().find((l) => l.lineId === lineId);
+    if (line === undefined) return { ok: false, refusedBecause: 'no_such_line', laneMessage: 'That line is not on the bill.' };
+    if (reason.trim() === '') return { ok: false, refusedBecause: 'reason_required', laneMessage: 'A void needs a reason.' };
+    // OB-908: a void pressed again for the same line after an unanswered one goes under the same id — recorded once.
+    const action = `void:${session.billRef()}:${lineId}`;
+    const activityId = idFor(action, () => `V-${newRequestKey().slice(3)}`);
+    const body = {
+      activityId, kind: 'void', billRef: session.billRef(), lineId, productId: line.productId,
+      description: line.description, valueMinor: line.unitPriceMinor * line.qty, reason,
+    };
+    const r = await sendTillActivity(body, 'This till cannot reach its store computer, so the void was not recorded. The line stays on the bill.');
+    settleId(action, activityId, r);
     if (r['recorded'] !== true) {
-      return { ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}), laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : 'The void was not recorded. The line stays on the bill.' };
+      return refusedActivity(r, 'The void was not recorded. The line stays on the bill.');
     }
     view.voidLine(lineId, reason);
     return { ok: true, laneMessage: 'Line voided.' };
@@ -1880,26 +2060,6 @@ export function bootPos(config?: {
   // SUPERVISOR OVERRIDES AS EVIDENCE (audit PF-07 · M12-FR-04 · M15-FR-01): a no-sale (the drawer opened with no sale)
   // and a price lowered on a line. Each needs a manager's approval issued on the store computer for exactly this, and is
   // on the box's disk — with the cashier and the manager it verified — before the till acts on it. Offline: only the box.
-  type TillActivityAnswer = { readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string; readonly activityId?: string };
-  const sendTillActivity = async (body: Record<string, unknown>, unreachable: string): Promise<Record<string, unknown>> => {
-    const post = async (): Promise<Record<string, unknown>> => {
-      const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-      const response = await fetch(`${base}/lane/till-activity`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
-      const front = FRONT_REFUSED[response.status];
-      if (front !== undefined) return { recorded: false, ...front };
-      return await response.json() as Record<string, unknown>;
-    };
-    // A lost reply is asked again under the SAME activity id — the box answers "already recorded" for a repeat.
-    try { return await (config?.tillActivityPost ?? post)(body); } catch {
-      try { return await (config?.tillActivityPost ?? post)(body); } catch {
-        return { recorded: false, refusedBecause: 'lane_unreachable', laneMessage: unreachable };
-      }
-    }
-  };
-  const refusedActivity = (r: Record<string, unknown>, fallback: string): TillActivityAnswer => ({
-    ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}),
-    laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback,
-  });
   /** What lowering a line to `toUnitMinor` takes off it — the amount the manager approves. */
   const priceChangeValue = (lineId: string, toUnitMinor: number): PriceChangeValue => {
     try {
@@ -1929,12 +2089,14 @@ export function bootPos(config?: {
     if (reason.trim() === '') return { ok: false, refusedBecause: 'reason_required', laneMessage: 'A price change needs a reason.' };
     const value = priceChangeValue(lineId, toUnitMinor);
     if (!value.ok) return { ok: false, refusedBecause: 'not_lower', laneMessage: value.laneMessage };
-    const activityId = `O-${newRequestKey().slice(3)}`;
+    const action = `price:${session.billRef()}:${lineId}:${toUnitMinor}:${approval.approvalId}`;
+    const activityId = idFor(action, () => `O-${newRequestKey().slice(3)}`);
     const body = {
       activityId, kind: 'price_override', billRef: session.billRef(), lineId, productId: line.productId, description: line.description,
       fromUnitMinor: value.fromUnitMinor, toUnitMinor, quantityMinor: line.quantityMinor, uom: line.uom, valueMinor: value.reductionMinor, reason, approvalId: approval.approvalId,
     };
     const r = await sendTillActivity(body, 'This till cannot reach its store computer, so the price change was not recorded. The line keeps its price.');
+    settleId(action, activityId, r);
     if (r['recorded'] !== true) return refusedActivity(r, 'The price change was not recorded. The line keeps its price.');
     session.overridePrice(lineId, toUnitMinor, { approvedBy: typeof r['approvedBy'] === 'string' ? r['approvedBy'] : 'manager', activityId });
     return { ok: true, laneMessage: 'Price changed.', activityId };
@@ -1942,9 +2104,11 @@ export function bootPos(config?: {
   const noSaleAtTill = async (reason: string, approval: { readonly approvalId: string }): Promise<TillActivityAnswer> => {
     if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('open the drawer').laneMessage };
     if (reason.trim() === '') return { ok: false, refusedBecause: 'reason_required', laneMessage: 'Opening the drawer with no sale needs a reason.' };
-    const activityId = `N-${newRequestKey().slice(3)}`;
+    const action = `no_sale:${approval.approvalId}`;
+    const activityId = idFor(action, () => `N-${newRequestKey().slice(3)}`);
     const body = { activityId, kind: 'no_sale', valueMinor: 0, reason, approvalId: approval.approvalId };
     const r = await sendTillActivity(body, 'This till cannot reach its store computer, so the no-sale was not recorded. Do not open the drawer.');
+    settleId(action, activityId, r);
     if (r['recorded'] !== true) return refusedActivity(r, 'The no-sale was not recorded. Do not open the drawer.');
     return { ok: true, laneMessage: 'Recorded — the drawer may be opened.', activityId };
   };
@@ -1955,12 +2119,14 @@ export function bootPos(config?: {
     if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('record a card refund').laneMessage };
     const ref = readMachineReference(input.machineRef);
     if (!ref.ok) return { ok: false, refusedBecause: ref.refusedBecause, laneMessage: ref.laneMessage };
-    const activityId = `R-${newRequestKey().slice(3)}`;
+    const action = `card_refund:${input.returnId}`;
+    const activityId = idFor(action, () => `R-${newRequestKey().slice(3)}`);
     const body = {
       activityId, kind: 'card_refund_on_machine', billRef: input.returnId, valueMinor: input.refundMinor, refundTender: input.refundTender,
       machineRef: ref.value, reason: 'refund done on the shop\'s card machine', approvalId: input.approval.approvalId,
     };
     const r = await sendTillActivity(body, 'This till cannot reach its store computer, so the card refund was not recorded. It stays pending — try again.');
+    settleId(action, activityId, r);
     if (r['recorded'] !== true) return refusedActivity(r, 'The card refund was not recorded. It stays pending.');
     return { ok: true, laneMessage: 'Recorded — the refund was done on the machine.', activityId };
   };
@@ -1973,22 +2139,30 @@ export function bootPos(config?: {
     if (by === undefined) { const m = new NoOperatorError('print a copy of a bill').laneMessage; return { ok: false, why: m, refusedBecause: 'operator_not_signed_in', laneMessage: m }; }
     const billNumber = input.billNumber.trim();
     if (billNumber === '' || input.reason.trim() === '') return { ok: false, why: 'A copy needs the bill number and why.', refusedBecause: 'not_readable', laneMessage: 'Type the bill number and choose why a copy is needed. Nothing was printed.' };
-    const body = { copyId: `C-${newRequestKey().slice(3)}`, billNumber, reason: input.reason.trim() };
+    const action = `copy:${billNumber}:${input.reason.trim()}`;
+    const copyId = idFor(action, () => `C-${newRequestKey().slice(3)}`);
+    const body = { copyId, billNumber, reason: input.reason.trim() };
     const post = async (): Promise<Record<string, unknown>> => {
       const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-      const response = await fetch(`${base}/lane/bill-copies`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const response = await askLane(`${base}/lane/bill-copies`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) }, laneWait.waitMs);
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { printed: false, ...front };
       return await response.json() as Record<string, unknown>;
     };
     let r: Record<string, unknown>;
     // A lost reply is asked again under the SAME copy id — the box answers the same copy, never a second one.
-    try { r = await post(); } catch {
-      try { r = await post(); } catch {
-        const m = 'This till cannot reach its store computer, so no copy was printed. Try again in a moment.';
-        return { ok: false, why: m, refusedBecause: 'lane_unreachable', laneMessage: m };
-      }
+    // OB-908: one that ran out of wait is not asked again here; pressed again, it goes under the same copy id.
+    const unreachableCopy = (e: unknown): BillCopyPrint & { readonly laneMessage: string; readonly laneMessageTa?: string; readonly refusedBecause?: string } => {
+      unanswered.set(action, copyId);
+      if (isNoAnswer(e)) { const w = noAnswer('activity'); return { ok: false, why: w.laneMessage, ...w }; }
+      const m = 'This till cannot reach its store computer, so no copy was printed. Try again in a moment.';
+      return { ok: false, why: m, refusedBecause: 'lane_unreachable', laneMessage: m };
+    };
+    try { r = await post(); } catch (e) {
+      if (isNoAnswer(e)) return unreachableCopy(e);
+      try { r = await post(); } catch (e2) { return unreachableCopy(e2); }
     }
+    unanswered.delete(action);
     const said = typeof r['laneMessage'] === 'string' ? r['laneMessage'] : 'No copy was printed.';
     const saidTa = typeof r['laneMessageTa'] === 'string' ? r['laneMessageTa'] : undefined;
     if (r['printed'] !== true) return { ok: false, why: said, laneMessage: said, ...(saidTa === undefined ? {} : { laneMessageTa: saidTa }), ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}) };
@@ -2002,12 +2176,13 @@ export function bootPos(config?: {
   };
 
   // CARD AND UPI (audit PF-06): the attempt is on the store computer before the machine is asked.
-  const payments = config?.paymentsPort ?? lanePaymentAttempts(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const payments = config?.paymentsPort ?? lanePaymentAttempts(config?.lanePort ?? DEFAULT_LANE_PORT, laneWait);
   const cardAnswer = (r: Record<string, unknown>): CardAttemptAnswer => {
     const a = (r['attempt'] ?? {}) as { attemptId?: unknown; state?: unknown; amountMinor?: unknown; machineRef?: unknown };
     return {
       ok: r['ok'] === true,
       laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : UNREACHABLE_PAYMENT,
+      ...(typeof r['laneMessageTa'] === 'string' ? { laneMessageTa: r['laneMessageTa'] } : {}),
       ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}),
       ...(typeof a.attemptId === 'string' ? { attemptId: a.attemptId } : {}),
       ...(typeof a.state === 'string' ? { state: a.state } : {}),
@@ -2055,7 +2230,7 @@ export function bootPos(config?: {
   };
 
   // ── OB-350 scan-and-go — begin: the phone basket rung through this till's own pack ──
-  const phoneBaskets = config?.phoneBasketsPort ?? lanePhoneBaskets(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const phoneBaskets = config?.phoneBasketsPort ?? lanePhoneBaskets(config?.lanePort ?? DEFAULT_LANE_PORT, laneWait);
   const recallPhoneBasketAtTill = async (code: string): Promise<PhoneBasketAtTill> => {
     if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('bring up a phone basket').laneMessage };
     if (!/^\d{6}$/.test(code.trim())) return { ok: false, refusedBecause: 'not_a_basket_code', laneMessage: 'Key the six digits the customer\'s phone shows.' };
@@ -2068,7 +2243,7 @@ export function bootPos(config?: {
   const ringBroughtUp = (r: Record<string, unknown>, code: string, label: string, notBrought: string): PhoneBasketAtTill => {
     const lines = Array.isArray(r['lines']) ? r['lines'] as { productId?: unknown; name?: unknown; quantityMinor?: unknown; barcode?: unknown }[] : undefined;
     if (r['recalled'] !== true || lines === undefined) {
-      return { ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}), laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : notBrought };
+      return { ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}), laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : notBrought, ...(typeof r['laneMessageTa'] === 'string' ? { laneMessageTa: r['laneMessageTa'] } : {}) };
     }
     if (session.currentState() === 'committed') view.newSale();
     const added: { lineId: string; description: string; qty: number }[] = [];
@@ -2095,7 +2270,7 @@ export function bootPos(config?: {
   };
   // ── OB-350 scan-and-go — end ──
   // ── D04-FR-05 queue-busting — begin: a handheld's basket, from this till's own store computer, rung the same way ──
-  const queueBaskets = config?.queueBasketsPort ?? laneQueueBaskets(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const queueBaskets = config?.queueBasketsPort ?? laneQueueBaskets(config?.lanePort ?? DEFAULT_LANE_PORT, laneWait);
   const recallQueueBasketAtTill = async (code: string): Promise<PhoneBasketAtTill> => {
     if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('bring up a handheld basket').laneMessage };
     if (!/^\d{4}$/.test(code.trim())) return { ok: false, refusedBecause: 'not_a_queue_code', laneMessage: 'Key the four digits the handheld shows.' };
@@ -2111,7 +2286,7 @@ export function bootPos(config?: {
 
   // WHO IS AT THE TILL, verified by the store computer (ADR-0020). The model is told the person only once the box has
   // said who they are; the box then binds every money write to the session.
-  const operators = config?.operatorPort ?? laneOperator(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const operators = config?.operatorPort ?? laneOperator(config?.lanePort ?? DEFAULT_LANE_PORT, laneWait);
   // OB-638: the name the store computer gave with the session, kept beside the code it belongs to — shown only while that
   // same person is the one signed in, so a later sign-in (or a sign-out) can never show the last person's name.
   let signedInName: { readonly userId: string; readonly name: string } | null = null;
@@ -2148,7 +2323,7 @@ export function bootPos(config?: {
   };
   const tillSignInBy = async (): Promise<'pin' | 'verified_sign_in' | null> => (await operators.status(undefined))?.signInBy ?? null;
   const operatorToken = (): string | undefined => tillOperatorSession.token;
-  const approvals = config?.approvalPort ?? laneApprovals(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const approvals = config?.approvalPort ?? laneApprovals(config?.lanePort ?? DEFAULT_LANE_PORT, laneWait);
   const approveAtTill = async (request: TillApprovalRequest): Promise<TillApprovalOutcome> => {
     // Nobody signed in → no cashier to ask for it; the box would refuse too, this says so without a round trip.
     if (session.operator() === undefined) return { approved: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('ask for an approval').laneMessage };
@@ -2163,13 +2338,14 @@ export function bootPos(config?: {
     const body = { mobile, tradingDay: session.tradingDayFor(new Date().toISOString()) };
     const post = async (): Promise<Record<string, unknown>> => {
       const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-      const response = await fetch(`${base}/lane/loyalty/wallet`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const response = await askLane(`${base}/lane/loyalty/wallet`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) }, laneWait.waitMs);
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { known: false, ...front };
       return await response.json() as Record<string, unknown>;
     };
     let r: Record<string, unknown>;
-    try { r = await (config?.loyaltyWalletPost ?? post)(body); } catch {
+    try { r = await (config?.loyaltyWalletPost ?? post)(body); } catch (e) {
+      if (isNoAnswer(e)) return { ok: false, ...noAnswer('check') };
       return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so points and store credit cannot be spent now. Take another payment.' };
     }
     const num = (k: string): number => (typeof r[k] === 'number' ? r[k] as number : 0);
@@ -2190,7 +2366,7 @@ export function bootPos(config?: {
   // COUPONS AND GIFT CARDS (W3 · OB-673 · OB-677): what the store computer's copy says — the till asks its own box only.
   const voucherPost = async (path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+    const response = await askLane(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) }, laneWait.waitMs);
     const front = FRONT_REFUSED[response.status];
     if (front !== undefined) return { known: false, ...front };
     return await response.json() as Record<string, unknown>;
@@ -2201,7 +2377,8 @@ export function bootPos(config?: {
     if (code === '') return { ok: false, refusedBecause: 'no_code', laneMessage: 'Type or scan the coupon code first.' };
     const mobile = session.loyaltyMobileForBox();
     let r: Record<string, unknown>;
-    try { r = await voucherPost('/lane/coupons/check', { code, ...(mobile === undefined ? {} : { mobile }) }); } catch {
+    try { r = await voucherPost('/lane/coupons/check', { code, ...(mobile === undefined ? {} : { mobile }) }); } catch (e) {
+      if (isNoAnswer(e)) return { ok: false, ...noAnswer('check') };
       return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the coupon cannot be checked now. Ring the sale without it.' };
     }
     if (r['known'] !== true) return { ok: false, refusedBecause: typeof r['refusedBecause'] === 'string' ? r['refusedBecause'] : 'coupons_not_known', laneMessage: words(r, 'The store computer could not check this coupon.') };
@@ -2226,7 +2403,8 @@ export function bootPos(config?: {
     const code = typed.replace(/\s+/g, '').toUpperCase();
     if (code === '') return { ok: false, refusedBecause: 'no_code', laneMessage: 'Type or scan the gift card code first.' };
     let r: Record<string, unknown>;
-    try { r = await voucherPost('/lane/gift-cards/balance', { code }); } catch {
+    try { r = await voucherPost('/lane/gift-cards/balance', { code }); } catch (e) {
+      if (isNoAnswer(e)) return { ok: false, ...noAnswer('check') };
       return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the gift card cannot be checked now. Take another payment.' };
     }
     if (r['known'] !== true) return { ok: false, refusedBecause: typeof r['refusedBecause'] === 'string' ? r['refusedBecause'] : 'gift_cards_not_known', laneMessage: words(r, 'The store computer could not check this gift card.') };
@@ -2281,7 +2459,7 @@ export function bootPos(config?: {
     if (session.operator() === undefined) return { recorded: false, refusedBecause: 'operator_not_signed_in', laneMessage: 'Sign in before the till reports its devices.' };
     try {
       const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-      const response = await fetch(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices, ...(adapterObservedAt === undefined ? {} : { adapterObservedAt }) }) });
+      const response = await askLane(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices, ...(adapterObservedAt === undefined ? {} : { adapterObservedAt }) }) }, laneWait.waitMs);
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { recorded: false, ...front };
       const r = await response.json() as Record<string, unknown>;
@@ -2330,7 +2508,7 @@ export function bootPos(config?: {
     };
     try {
       const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-      const response = await fetch(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ scanTimings: batch, ...(dropped > 0 ? { droppedScanTimings: dropped } : {}) }) });
+      const response = await askLane(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ scanTimings: batch, ...(dropped > 0 ? { droppedScanTimings: dropped } : {}) }) }, laneWait.waitMs);
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) { putBack(); return { known: false, why: front.laneMessage, waiting: waiting() }; }
       const r = await response.json() as Record<string, unknown>;
