@@ -155,5 +155,124 @@ describe.skipIf(!HAVE_BROWSER)('the served till keeps a held basket through a re
     expect(JSON.stringify(records[1])).toContain('u-lanecash');
     expect(JSON.stringify(records[1])).toContain('customer_left');
   });
+
+  // ── OB-908 · D-127 · P-08: the store computer is slow to answer ──
+  const servedTill = async (name: string): Promise<{ dir: string; page: Page }> => {
+    const dir = await mkdtemp(join(tmpdir(), `sre-served-till-${name}-`));
+    dirs.push(dir);
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY }),
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+    // The page's own service worker is kept out, so the test can stand between the till and its store computer.
+    const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1 });
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+    await signInOnScreen(page);
+    return { dir, page };
+  };
+  const heldStates = async (dir: string): Promise<string[]> =>
+    (await readLog(join(dir, 'held-bills.log'))).flatMap((r) => (r.ok ? [(JSON.parse(r.record) as { state: string }).state] : []));
+  const heldIds = async (dir: string): Promise<string[]> =>
+    (await readLog(join(dir, 'held-bills.log'))).flatMap((r) => (r.ok ? [(JSON.parse(r.record) as { billId: string }).billId] : []));
+
+  it('the store computer takes a Hold but its answer never comes: within a few seconds the till says it does not know — basket still on the till; Hold again keeps ONE basket (OB-908)', async () => {
+    const { dir, page } = await servedTill('hold-no-answer');
+    await page.evaluate(() => {
+      (globalThis as unknown as PosWindow).posSession!.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 12_000, qty: 2 });
+    });
+    // The store computer WRITES the hold, and its answer is lost on the way back to the till.
+    let forwarded = 0;
+    await page.route('**/lane/held-bills', async (route) => {
+      if (route.request().method() !== 'POST') { await route.continue(); return; }
+      forwarded += 1;
+      await route.fetch().catch(() => undefined);
+      // …and never answer the till.
+    });
+    const started = Date.now();
+    await page.click('#hold');
+    await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+    const waited = Date.now() - started;
+    expect(waited).toBeLessThan(12_000);
+    expect(await page.textContent('#refusal-text')).toContain('did not answer in time');
+    expect(await page.textContent('#refusal-text')).toContain('still on this till');
+    expect(await page.evaluate(() => (globalThis as unknown as PosWindow).posSession!.payableMinor())).toBe(24_000);
+    const shots = process.env['SRE_SCREENSHOT_DIR'];
+    if (shots) await page.screenshot({ path: join(shots, 'ob908-hold-no-answer-1366-en.png') });
+    if (shots) {
+      await page.click('#refusal-ok');
+      await page.click('#lang');
+      await page.click('#hold');
+      await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+      expect(await page.textContent('#refusal-text')).toContain('கடை கணினி');
+      await page.screenshot({ path: join(shots, 'ob908-hold-no-answer-1366-ta.png') });
+      await page.click('#refusal-ok');
+      await page.click('#lang');
+    } else {
+      await page.click('#refusal-ok');
+    }
+    expect(forwarded).toBeGreaterThanOrEqual(1);
+    expect(await heldStates(dir)).toEqual(['suspended']);
+
+    // The store computer answers again. Hold, pressed again for the same basket, goes under the same id: one basket, not two.
+    await page.unroute('**/lane/held-bills');
+    await page.click('#hold');
+    await page.waitForFunction(() => (globalThis as unknown as { document: { getElementById(id: string): { textContent: string } | null } }).document.getElementById('hold')?.textContent === 'Recall', undefined, { timeout: 10_000 });
+    expect(await page.evaluate(() => (globalThis as unknown as PosWindow).posSession!.payableMinor())).toBe(0);
+    expect(await heldStates(dir)).toEqual(['suspended']);
+    expect(new Set(await heldIds(dir)).size).toBe(1);
+  }, 60_000);
+
+  it('the store computer never answers a give-up from More: the till says it does not know (never "given up"); once it answers, the basket is given up once (OB-908)', async () => {
+    const { dir, page } = await servedTill('give-up-no-answer');
+    await page.evaluate(() => {
+      (globalThis as unknown as PosWindow).posSession!.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 12_000, qty: 1 });
+    });
+    await page.click('#hold');
+    await page.waitForFunction(() => (globalThis as unknown as { document: { getElementById(id: string): { textContent: string } | null } }).document.getElementById('hold')?.textContent === 'Recall', undefined, { timeout: 10_000 });
+
+    await page.route('**/lane/held-bills/abandon', () => { /* the store computer takes the call and says nothing */ });
+    const giveUp = async (): Promise<void> => {
+      await page.click('#more');
+      await page.click('#pay-kinds button:has-text("Give up a held basket")');
+      await page.waitForSelector('#pay:not([hidden]) #pay-title:has-text("Which held basket is being given up?")', { timeout: 10_000 });
+      await page.click('#pay-kinds button:has-text("Toor dal 1kg")');
+      await page.waitForSelector('#pay:not([hidden]) #pay-title:has-text("Why is it being given up?")');
+      await page.click('#pay-kinds button:has-text("Customer left without it")');
+      await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+    };
+    await giveUp();
+    expect(await page.textContent('#refusal-text')).toContain('does not know if the basket was given up');
+    const shots = process.env['SRE_SCREENSHOT_DIR'];
+    if (shots) await page.screenshot({ path: join(shots, 'ob908-give-up-no-answer-1366-en.png') });
+    await page.click('#refusal-ok');
+    expect(await heldStates(dir)).toEqual(['suspended']);
+
+    await page.unroute('**/lane/held-bills/abandon');
+    await giveUp();
+    expect(await page.textContent('#refusal-text')).toContain('Basket given up');
+    await page.click('#refusal-ok');
+    expect(await heldStates(dir)).toEqual(['suspended', 'abandoned']);
+  }, 60_000);
+
+  it('the held list the store computer does not answer: Recall says so, never "no basket is on hold" (OB-908)', async () => {
+    const { page } = await servedTill('list-no-answer');
+    await page.route('**/lane/held-bills', async (route) => {
+      if (route.request().method() === 'GET') return; // the store computer takes the call and says nothing
+      await route.continue();
+    });
+    await page.click('#hold'); // empty basket → Recall → asks the list
+    await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+    const said = await page.textContent('#refusal-text');
+    expect(said).toContain('cannot list the held baskets');
+    expect(said).not.toContain('No basket is on hold');
+    const shots = process.env['SRE_SCREENSHOT_DIR'];
+    if (shots) await page.screenshot({ path: join(shots, 'ob908-held-list-no-answer-1366-en.png') });
+    await page.click('#refusal-ok');
+  }, 60_000);
 });
 

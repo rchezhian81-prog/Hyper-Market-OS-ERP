@@ -934,7 +934,7 @@ async function toggleSignIn() {
     if (pin === null || pin === '') return;
     outcome = await session.signInAtTill({ staffId: String(staffId), pin: String(pin) });
   }
-  if (!outcome.signedIn) { tell(t('signInRefused'), outcome.laneMessage, STOP); paintOperator(); return; }
+  if (!outcome.signedIn) { tell(t('signInRefused'), saidInLang(outcome), STOP); paintOperator(); return; }
   rememberOperator(session.operatorToken());
   paintOperator();
   void refreshHeld();
@@ -1791,7 +1791,7 @@ el('void').addEventListener('click', async () => {
   // The void, its value and the reason go to the store computer first (audit PF-07); the line goes only once it has them.
   if (session.voidAtTill) {
     const r = await session.voidAtTill(selectedLineId, reason);
-    if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
+    if (!r.ok) { tell(t('read'), saidInLang(r), STOP); return; }
   } else {
     session.voidLine(selectedLineId, reason);
   }
@@ -1817,7 +1817,8 @@ const heldBasketOption = (b) => ({
  * nothing is deleted (hard rule #6) — and it can no longer be recalled. Under More, so Recall stays one tap.
  */
 async function giveUpHeldBasket() {
-  const baskets = await session.heldAtTill();
+  const baskets = await heldOrSaid();
+  if (baskets === null) return;
   if (baskets.length === 0) { tell(t('read'), t('noneHeld'), STOP); await refreshHeld(); return; }
   const pick = await choose(t('giveUpWhich'), baskets.map(heldBasketOption));
   if (pick === null || pick === undefined) return;
@@ -1842,9 +1843,9 @@ async function recallPhoneBasket() {
   const r = await session.recallPhoneBasketAtTill(String(code));
   selectedLineId = null;
   render();
-  if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
+  if (!r.ok) { tell(t('read'), saidInLang(r), STOP); return; }
   const missing = (r.notAdded ?? []).map((l) => `${l.name} × ${l.qty} — ${l.laneMessage}`).join('\n');
-  tell(t('phoneBasket'), r.laneMessage, missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${t('phoneBasketNotAdded')}\n${missing}`);
+  tell(t('phoneBasket'), saidInLang(r), missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${t('phoneBasketNotAdded')}\n${missing}`);
 }
 
 /**
@@ -1857,9 +1858,9 @@ async function recallQueueBasket() {
   const r = await session.recallQueueBasketAtTill(String(code));
   selectedLineId = null;
   render();
-  if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
+  if (!r.ok) { tell(t('read'), saidInLang(r), STOP); return; }
   const missing = (r.notAdded ?? []).map((l) => `${l.name} × ${l.qty} — ${l.laneMessage}`).join('\n');
-  tell(t('queueBasket'), r.laneMessage, missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${t('phoneBasketNotAdded')}\n${missing}`);
+  tell(t('queueBasket'), saidInLang(r), missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${t('phoneBasketNotAdded')}\n${missing}`);
 }
 
 // ── R7-C · OB-506 — begin: a retail quotation rung up by its number (the step's words and rules are in quotation-at-till.ts)
@@ -1910,8 +1911,16 @@ async function cancelWholeBill() {
 
 async function refreshHeld() {
   if (!session.heldAtTill) return;
-  try { heldCount = (await session.heldAtTill()).length; } catch { heldCount = 0; }
+  // OB-908: a store computer that did not say keeps the last count shown — never a made-up "none on hold".
+  try { heldCount = (await session.heldAtTill()).length; } catch { /* the last count stands */ }
   render();
+}
+/** OB-908: the held baskets, or — when the store computer did not answer in time — its plain words said and `null`. */
+async function heldOrSaid() {
+  try { return await session.heldAtTill(); } catch (e) {
+    tell(t('read'), e && e.laneMessage ? saidInLang(e) : String(e && e.message ? e.message : e), STOP);
+    return null;
+  }
 }
 el('hold').addEventListener('click', async () => {
   if (!session.holdAtTill) {
@@ -1924,14 +1933,15 @@ el('hold').addEventListener('click', async () => {
   if (session.basket().length > 0) {
     // One tap (pos-cashier.md): on success the screen itself says the basket is on hold; only a refusal interrupts.
     const r = await session.holdAtTill();
-    if (!r.ok) tell(t('read'), r.laneMessage, STOP);
+    if (!r.ok) tell(t('read'), saidInLang(r), STOP);
   } else {
-    const baskets = await session.heldAtTill();
+    const baskets = await heldOrSaid();
+    if (baskets === null) return;
     if (baskets.length === 0) { tell(t('read'), t('noneHeld'), STOP); return; }
     const pick = baskets.length === 1 ? baskets[0].billId : await choose(t('recallWhich'), baskets.map(heldBasketOption));
     if (pick === null || pick === undefined) return;
     const r = await session.recallAtTill(pick);
-    if (!r.ok || r.repriceRequired) tell(t('read'), r.laneMessage, STOP);
+    if (!r.ok || r.repriceRequired) tell(t('read'), saidInLang(r), STOP);
   }
   selectedLineId = null;
   await refreshHeld();
@@ -2325,10 +2335,10 @@ async function cardAttempt(kind, amountMinor) {
   }
   let started = await session.startCardPayment(kind, amountMinor);
   if (!started.ok && started.refusedBecause === 'unresolved_payment_on_this_bill' && started.attemptId) {
-    const what = await choose(started.laneMessage, [{ value: 'check', label: t('checkPayment') }, { value: 'cancel', label: t('cancel') }]);
+    const what = await choose(saidInLang(started), [{ value: 'check', label: t('checkPayment') }, { value: 'cancel', label: t('cancel') }]);
     if (what !== 'check') return null;
     const checked = await session.checkCardPayment(started.attemptId);
-    if (!checked.ok) { tell(t('read'), checked.laneMessage, STOP); return null; }
+    if (!checked.ok) { tell(t('read'), saidInLang(checked), STOP); return null; }
     if (checked.state === 'recovered_paid') return checked.attemptId;
     started = await session.startCardPayment(kind, amountMinor);
   }
@@ -2336,7 +2346,7 @@ async function cardAttempt(kind, amountMinor) {
     if (started.machineRef) machineRefs.set(started.attemptId, started.machineRef);
     return started.attemptId;
   }
-  if (!started.ok || !started.attemptId) { tell(t('read'), started.laneMessage, STOP); return null; }
+  if (!started.ok || !started.attemptId) { tell(t('read'), saidInLang(started), STOP); return null; }
   const outcome = await machine();
   if (outcome === null) return null;
   // OB-271: in real trading "approved" carries the machine's own approval number; one that cannot be found is "not known".
@@ -2347,7 +2357,7 @@ async function cardAttempt(kind, amountMinor) {
     if (machineRef === null) said = 'no_answer';
   }
   const answered = said === 'approved' && machineRef ? await session.answerCardPayment(started.attemptId, said, undefined, machineRef) : await session.answerCardPayment(started.attemptId, said);
-  if (!answered.ok) { tell(t('read'), answered.laneMessage, STOP); return null; }
+  if (!answered.ok) { tell(t('read'), saidInLang(answered), STOP); return null; }
   // Said in the cashier's words: an unpaid sale does not commit, and the goods stay on the counter.
   if (said !== 'approved') { tell(t('read'), notPaidMsg(said), STOP); return null; }
   if (machineRef) machineRefs.set(started.attemptId, machineRef);
@@ -2402,7 +2412,7 @@ async function giftCardPart(remaining) {
   const code = await ask({ title: t('giftCardAsk'), mode: 'text', hint: t('giftCardHint'), initial: '' });
   if (code === null || String(code).trim() === '') return null;
   const card = await session.giftCardBalance(String(code));
-  if (!card.ok) { tell(t('giftCard'), card.laneMessage, STOP); return null; }
+  if (!card.ok) { tell(t('giftCard'), saidInLang(card), STOP); return null; }
   if (card.expired) { tell(t('giftCard'), t('giftCardExpired').replace('{last4}', card.last4), STOP); return null; }
   const max = Math.min(remaining, card.mayTakeMinor);
   const said = t('giftCardHolds').replace('{last4}', card.last4).replace('{balance}', inr(card.balanceMinor)).replace('{may}', inr(card.mayTakeMinor))
@@ -2421,7 +2431,7 @@ async function splitPayment(payable, first) {
   let wallet = null;
   if (session.loyaltyWallet && session.loyaltyMemberLast4 && session.loyaltyMemberLast4() !== null) {
     wallet = await session.loyaltyWallet();
-    if (!wallet.ok) { tell(t('read'), wallet.laneMessage, STOP); wallet = null; }
+    if (!wallet.ok) { tell(t('read'), saidInLang(wallet), STOP); wallet = null; }
     else {
       tell(t('member'), t('splitWallet').replace('{last4}', wallet.last4 || session.loyaltyMemberLast4()).replace('{points}', String(wallet.points))
         .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? shopWhen(wallet.asOf) : '—')
@@ -2674,7 +2684,7 @@ async function openDrawerNoSale() {
   const approval = await managerApproves({ kind: 'no_sale', valueMinor: 0, hint: t('noSaleHint'), reasons: NO_SALE_REASONS, reasonTitle: 'overrideReason' });
   if (!approval) return;
   const r = await session.noSaleAtTill(approval.reason, { approvalId: approval.approvalId });
-  tell(r.ok ? t('noSaleDone') : t('read'), r.laneMessage, r.ok ? SUCCESS : STOP);
+  tell(r.ok ? t('noSaleDone') : t('read'), saidInLang(r), r.ok ? SUCCESS : STOP);
 }
 
 /**
@@ -2706,7 +2716,7 @@ async function changeLinePrice() {
   const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t(value.ownerOnly ? 'overrideOwnerOnly' : 'overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason', priceCut: { productId: value.productId, toUnitMinor, lineId: value.lineId, fromUnitMinor: value.fromUnitMinor, quantityMinor: value.quantityMinor, uom: value.uom } });
   if (!approval) return;
   const r = await session.priceChangeAtTill(lineId, toUnitMinor, approval.reason, { approvalId: approval.approvalId });
-  if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
+  if (!r.ok) { tell(t('read'), saidInLang(r), STOP); return; }
   tell(t('priceChanged'), r.laneMessage, SUCCESS);
   render();
 }
@@ -2721,7 +2731,7 @@ async function putCouponOnBill() {
   const code = await ask({ title: t('couponAsk'), mode: 'text', hint: t('couponHint'), initial: '' });
   if (code === null || String(code).trim() === '') return;
   const r = await session.couponAtTill(String(code));
-  if (!r.ok) { tell(t('coupon'), r.laneMessage, STOP); return; }
+  if (!r.ok) { tell(t('coupon'), saidInLang(r), STOP); return; }
   render();
   tell(t('coupon'), `${t('couponOn').replace('{code}', r.code).replace('{off}', inr(r.offMinor))}${r.mayBeStale ? ` ${t('couponStale')}` : ''}`, SUCCESS);
 }
