@@ -53,8 +53,14 @@ describe('audit observations: the served POS configuration and close call', () =
 
   it('F10 FIXED: the Close till button sends shift, moment and count — and that is the WHOLE input; the box works out the rest, decides and records the close', async () => {
     const source = readFileSync('apps/pos/web/app.js', 'utf8');
-    const calls = [...source.matchAll(/session\.till\.close\(\{([\s\S]*?)\}\)/g)].map((m) => m[1] ?? '');
-    expect(calls.length).toBeGreaterThanOrEqual(2); // once with the count, once more with the reason the box asked for
+    // D-129 · OB-912: the close is built ONCE (so pressing Close till again re-sends the SAME close) and sent through
+    // `sendClose` — once with the count, once more with the reason the box asked for. The input is that one object.
+    const built = [...source.matchAll(/const req = waiting \?\? \{([\s\S]*?)\};/g)].map((m) => m[1] ?? '');
+    expect(built.length).toBe(1);
+    expect(source).toMatch(/sendClose\(req\)/);
+    expect(source).toMatch(/sendClose\(\{ \.\.\.req, reasonCode \}\)/);
+    expect(source).toMatch(/session\.till\.close\(r\)/);
+    const calls = built;
     for (const call of calls) {
       expect(call).toContain('shiftId');
       expect(call).toContain('closedAt');
