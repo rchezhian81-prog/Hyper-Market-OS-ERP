@@ -19,8 +19,10 @@ import { readTillCashRecord } from '../../edge/store-edge/src/till-cash';
  *     "did not answer in time — the till does not know if this cash was recorded. Do not move the cash again; press the same
  *     button to check" (English and Tamil); never "recorded", never "NOT recorded". The same button, pressed again, sends the
  *     SAME movement and the store computer's disk holds ONE;
- *   • the store computer cannot be reached at all → "the cash is NOT recorded yet" (true), and the same button sends it again;
- *   • the store computer refuses → its own words, "NOT recorded";
+ *   • the store computer cannot be reached, or the line is cut after it wrote the movement (D-130: the till cannot tell the
+ *     two apart) → "The till cannot reach the store computer — the till does not know…", never "NOT recorded"; the same
+ *     button sends the same movement again and the disk holds ONE;
+ *   • the store computer refuses → its own words, "NOT recorded" — the only time the till says it;
  *   • the close's answer is lost → "does not know if the till was closed"; Close till pressed again sends the SAME close —
  *     no second count — and the disk holds ONE close that counts every movement once.
  * Screenshots (deviceScaleFactor 1) go to SRE_SCREENSHOT_DIR when it is set. Synthetic data only.
@@ -103,7 +105,7 @@ describe.skipIf(!HAVE_BROWSER)('D-129 — the till\'s cash and close wait at mos
     return { carried: () => n };
   };
 
-  it('float, loan, pickup, safe drop: no answer → "not known", never "recorded" or "NOT recorded"; the same button again → recorded ONCE; cannot reach → "NOT recorded yet"; refused → NOT recorded', async () => {
+  it('float, loan, pickup, safe drop: no answer → "not known", never "recorded" or "NOT recorded"; the same button again → recorded ONCE; cannot reach / line cut → also "not known" (D-130); refused → NOT recorded', async () => {
     const { edge, page } = await servedTill();
 
     // ── The float: the store computer writes it, the answer is lost.
@@ -147,27 +149,36 @@ describe.skipIf(!HAVE_BROWSER)('D-129 — the till\'s cash and close wait at mos
     await page.click('#lang');
     expect(await movements(edge)).toEqual([['float_issue', 200_000], ['loan', 50_000]]);
 
-    // ── A pickup the store computer cannot be reached for at all: "NOT recorded yet" is true and said.
+    // ── A pickup the store computer cannot be reached for: NOT KNOWN too (D-130) — the till cannot tell this from a line
+    // cut after the request arrived, so it never says "NOT recorded" on a guess.
     await page.route(CASH_ROUTE, (route) => route.abort('connectionrefused'));
     await more(page);
     await press(page, 'Pickup (manager takes cash to the safe)');
     await keyAmount(page, '300');
     const unreachable = await said(page, 'd129-pickup-cannot-reach-1366-en.png');
-    expect(unreachable.title).toContain('NOT recorded');
-    expect(unreachable.text).toContain('The till cannot reach the store computer. The cash is NOT recorded yet');
+    expect(unreachable.title).toContain('Not known yet — do not move the cash');
+    expect(unreachable.text).toBe('The till cannot reach the store computer — the till does not know if this cash was recorded. Do not move the cash again; press the same button to check.');
+    expect(unreachable.text).not.toContain('NOT recorded');
     expect(await movements(edge)).toHaveLength(2);
     await page.unroute(CASH_ROUTE);
     await more(page);
     await press(page, 'Pickup (manager takes cash to the safe)');
     expect((await said(page)).title).toContain('it has now been recorded');
 
-    // ── A safe drop the store computer takes and never answers, and never writes either: still "not known" — the till
-    // cannot tell the two apart, so it never guesses. Pressed again, it is recorded — once.
-    await page.route(CASH_ROUTE, () => { /* the call is taken and nothing comes back */ });
+    // ── D-130: a safe drop the store computer WRITES, and then the line is cut before the answer (every quick re-try too):
+    // "not known" — and it is on the store computer. Pressed again, the same id: "now recorded", ONE safe drop.
+    await page.route(CASH_ROUTE, async (route) => {
+      await route.fetch().catch(() => undefined);
+      await route.abort('connectionreset');
+    });
     await more(page);
     await press(page, 'Safe drop (cashier puts cash in the safe)');
     await keyAmount(page, '200');
-    expect((await said(page)).text).toContain('does not know if this cash was recorded');
+    const cut = await said(page, 'd130-safe-drop-line-cut-1366-en.png');
+    expect(cut.title).toContain('Not known yet — do not move the cash');
+    expect(cut.text).toContain('does not know if this cash was recorded');
+    expect(cut.text).not.toContain('NOT recorded');
+    expect(await movements(edge)).toEqual([['float_issue', 200_000], ['loan', 50_000], ['pickup', 30_000], ['safe_drop', 20_000]]);
     await page.unroute(CASH_ROUTE);
     await more(page);
     await press(page, 'Safe drop (cashier puts cash in the safe)');

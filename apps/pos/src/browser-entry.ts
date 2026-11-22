@@ -356,6 +356,15 @@ export const NO_ANSWER_WORDS = {
     en: TILL_CASH_WORDS_FOR_THE_LANE.lane_no_answer,
     ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை — இந்தப் பணம் பதிவானதா என்று டில்லுக்குத் தெரியவில்லை. பணத்தை மீண்டும் நகர்த்த வேண்டாம்; சரிபார்க்க அதே பொத்தானை அழுத்தவும்.',
   },
+  /** D-130 · OB-911: the store computer could not be reached — the call may still have got there, so this is not known either. */
+  cashUnreachable: {
+    en: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable,
+    ta: 'டில்லால் கடை கணினியை அணுக முடியவில்லை — இந்தப் பணம் பதிவானதா என்று டில்லுக்குத் தெரியவில்லை. பணத்தை மீண்டும் நகர்த்த வேண்டாம்; சரிபார்க்க அதே பொத்தானை அழுத்தவும்.',
+  },
+  closeUnreachable: {
+    en: 'The till cannot reach the store computer — the till does not know if the till was closed. Do not count the drawer again and do not put the cash away yet; press Close till again to check.',
+    ta: 'டில்லால் கடை கணினியை அணுக முடியவில்லை — டில் மூடப்பட்டதா என்று டில்லுக்குத் தெரியவில்லை. டிராயரை மீண்டும் எண்ண வேண்டாம், பணத்தை இன்னும் எடுத்து வைக்க வேண்டாம்; சரிபார்க்க மீண்டும் டில்லை மூடு அழுத்தவும்.',
+  },
   /** D-129 · OB-911: the shift close. Never "Till closed" on a guess; pressed again, the SAME close (shift id, count) goes. */
   close: {
     en: 'The store computer did not answer in time — the till does not know if the till was closed. Do not count the drawer again and do not put the cash away yet; press Close till again to check.',
@@ -986,9 +995,10 @@ export function laneLookup(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}
  * move the money twice.
  *
  * D-129 · OB-911: each ask waits at most `LANE_ANSWER_WAIT_MS` (`askLane`, OB-908). Three answers, three sentences:
- *   • the store computer answered — its answer (recorded, or refused in its words);
- *   • it cannot be reached at all (the call never got to it) — `lane_unreachable`, "the cash is NOT recorded yet", which
- *     is true; asked a few more times first, quickly, as before;
+ *   • the store computer answered — its answer (recorded, or refused in its words: the ONLY "NOT recorded");
+ *   • the call could not be completed (cannot connect, or the line was cut — after the request went out, perhaps) —
+ *     `lane_unreachable`: asked a few more times first, quickly, under the SAME id; then NOT KNOWN as well (D-130): the
+ *     till cannot tell "never got there" from "got there and the answer was cut off", so it never says "NOT recorded";
  *   • it took the call and did not answer in time — `lane_no_answer`: the till does NOT KNOW (it may be on the store
  *     computer's disk). Not asked again behind the cashier's back (OB-909: one wait, then the words); the screen keeps the
  *     request and sends the SAME id when the cashier presses again.
@@ -1019,14 +1029,14 @@ function laneCashTo<TReq, TOut>(
 
 export function laneCashMovement(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): CashMovementWrite {
   return laneCashTo('/lane/cash-movements', port,
-    (): CashMovementOutcome => ({ committed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable }),
+    (): CashMovementOutcome => ({ committed: false, refusedBecause: 'lane_unreachable', laneMessage: NO_ANSWER_WORDS.cashUnreachable.en, laneMessageTa: NO_ANSWER_WORDS.cashUnreachable.ta }),
     (): CashMovementOutcome => ({ committed: false, refusedBecause: LANE_NO_ANSWER, laneMessage: NO_ANSWER_WORDS.cash.en, laneMessageTa: NO_ANSWER_WORDS.cash.ta }),
     wait);
 }
 
 export function laneShiftClose(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): ShiftCloseWrite {
   return laneCashTo('/lane/shift-close', port,
-    (): ShiftCloseOutcome => ({ closed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable }),
+    (): ShiftCloseOutcome => ({ closed: false, refusedBecause: 'lane_unreachable', laneMessage: NO_ANSWER_WORDS.closeUnreachable.en, laneMessageTa: NO_ANSWER_WORDS.closeUnreachable.ta }),
     (): ShiftCloseOutcome => ({ closed: false, refusedBecause: LANE_NO_ANSWER, laneMessage: NO_ANSWER_WORDS.close.en, laneMessageTa: NO_ANSWER_WORDS.close.ta }),
     wait);
 }

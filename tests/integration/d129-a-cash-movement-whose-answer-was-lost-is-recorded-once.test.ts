@@ -46,10 +46,12 @@ const startBox = async (): Promise<EdgeProcess> => {
 
 /**
  * The wire between the till and its store computer. Every call is carried to the store computer in full; the answer to the
- * next `lose[path]` calls on a path is LOST (the store computer has done the work; the till never hears).
+ * next `lose[path]` calls on a path is LOST (the store computer has done the work; the till never hears); on the next
+ * `cut[path]` calls the line is CUT right after the store computer answered (the till's call fails as if it never connected).
  */
-const lossyWire = async (boxPort: number): Promise<{ port: number; lose: Record<string, number>; carried: string[] }> => {
+const lossyWire = async (boxPort: number): Promise<{ port: number; lose: Record<string, number>; cut: Record<string, number>; carried: string[] }> => {
   const lose: Record<string, number> = {};
+  const cut: Record<string, number> = {};
   const carried: string[] = [];
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -62,6 +64,7 @@ const lossyWire = async (boxPort: number): Promise<{ port: number; lose: Record<
         answer.on('data', (c: Buffer) => back.push(c));
         answer.on('end', () => {
           if ((lose[path] ?? 0) > 0) { lose[path] = lose[path]! - 1; return; } // the store computer answered; the wire lost it
+          if ((cut[path] ?? 0) > 0) { cut[path] = cut[path]! - 1; req.socket.destroy(); return; } // …or the line was cut
           res.writeHead(answer.statusCode ?? 500, answer.headers);
           res.end(Buffer.concat(back));
         });
@@ -71,7 +74,7 @@ const lossyWire = async (boxPort: number): Promise<{ port: number; lose: Record<
   });
   stops.push(() => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  return { port: (server.address() as AddressInfo).port, lose, carried };
+  return { port: (server.address() as AddressInfo).port, lose, cut, carried };
 };
 
 const tillThrough = async (edge: EdgeProcess, wirePort: number) => {
@@ -131,6 +134,33 @@ describe('a cash movement or close whose answer was lost is recorded once when p
     expect(closes).toHaveLength(1);
     // A different shift id would have met a till that is no longer open — the drawer can never be closed (counted) twice.
     expect(await till.till.close({ ...close, shiftId: 'sh-other' })).toMatchObject({ closed: false, refusedBecause: 'no_open_shift' });
+    expect((await cashLog(edge)).filter((r) => r.kind === 'close')).toHaveLength(1);
+  }, 30_000);
+
+  it('D-130: the line is cut AFTER the store computer wrote the float (and on each quick re-try): the till says it does NOT KNOW — never "NOT recorded"; pressed again under the SAME id → one float', async () => {
+    const edge = await startBox();
+    const wire = await lossyWire(edge.lane!.port);
+    const till = await tillThrough(edge, wire.port);
+    const float = { kind: 'float_issue' as const, amountMinor: 200_000, at: '2026-11-22T03:30:00.000Z', movementId: 'cm-float-cut' };
+    wire.cut['/lane/cash-movements'] = 4; // every quick re-try of the first press is cut too
+    const first = await till.till.moveCash(float);
+    expect(first).toMatchObject({ committed: false, refusedBecause: 'lane_unreachable' });
+    const words = (first as { laneMessage: string }).laneMessage;
+    expect(words).toContain('The till cannot reach the store computer');
+    expect(words).toContain('does not know if this cash was recorded');
+    expect(words).not.toContain('NOT recorded');
+    expect(wire.carried.filter((c) => c === 'POST /lane/cash-movements')).toHaveLength(4); // the same id, four times
+    expect((await cashLog(edge)).filter((r) => r.kind === 'movement')).toHaveLength(1); // it IS on the store computer
+    expect(await till.till.moveCash(float)).toMatchObject({ committed: true, alreadyRecorded: true, movementId: 'cm-float-cut' });
+    expect((await cashLog(edge)).filter((r) => r.kind === 'movement')).toHaveLength(1);
+
+    // The close, cut the same way: not known; Close again → the SAME close, one close.
+    const close = { shiftId: 'sh-cut', closedAt: '2026-11-22T15:30:00.000Z', countedMinor: 200_000 };
+    wire.cut['/lane/shift-close'] = 4;
+    const lost = await till.till.close(close);
+    expect(lost).toMatchObject({ closed: false, refusedBecause: 'lane_unreachable' });
+    expect((lost as { laneMessage: string }).laneMessage).toContain('does not know if the till was closed');
+    expect(await till.till.close(close)).toMatchObject({ closed: true, alreadyClosed: true, varianceMinor: 0 });
     expect((await cashLog(edge)).filter((r) => r.kind === 'close')).toHaveLength(1);
   }, 30_000);
 

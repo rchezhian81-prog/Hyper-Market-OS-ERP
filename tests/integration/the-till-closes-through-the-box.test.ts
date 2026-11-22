@@ -224,7 +224,7 @@ describe('a shift on the served till: float → sales → pickup → blind count
     expect((await cashLog(edge)).at(-1)).toMatchObject({ kind: 'close', toleranceMinor: 10_000, toleranceKnown: false });
   });
 
-  it('with the box down the till says the cash is NOT recorded yet — never a silent local record', async () => {
+  it('with the box down the till says it does not know if the cash was recorded (D-130: never "NOT recorded" on a guess) — never a silent local record', async () => {
     const edge = await startBox({ lane: 'lane-1' });
     const port = edge.lane!.port;
     await edge.stop();
@@ -237,7 +237,7 @@ describe('a shift on the served till: float → sales → pickup → blind count
     const view = bootPos({ laneId: 'lane-1', cashierId: 'u-meena', cashMovement: laneCashMovement(port), shiftClose: laneShiftClose(port), tillCash: laneTillCash(port) });
     const outcome = await view.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-09-30T09:00:00.000Z' });
     expect(outcome).toMatchObject({ committed: false, refusedBecause: 'lane_unreachable' });
-    expect((outcome as { laneMessage: string }).laneMessage).toMatch(/NOT recorded yet/);
+    expect((outcome as { laneMessage: string }).laneMessage).toMatch(/cannot reach the store computer — the till does not know if this cash was recorded/);
     expect(await view.till.close({ shiftId: 'sh-x', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 0 })).toMatchObject({ closed: false, refusedBecause: 'lane_unreachable' });
     expect(await view.till.tillCash()).toBeNull();
   }, 20_000);

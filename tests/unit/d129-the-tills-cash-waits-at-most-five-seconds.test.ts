@@ -87,22 +87,28 @@ describe('the till\'s cash calls wait a bounded time for the store computer (D-1
     expect(await laneShiftClose(box2.port)(CLOSE)).toEqual(closed);
   }, 8_000);
 
-  it('a store computer that cannot be reached at all: "the cash is NOT recorded yet" is still true and still said — asked a few times, quickly', async () => {
+  it('a call that cannot be completed (cannot reach, or the line cut): asked a few times quickly under the same id, then NOT KNOWN — never "NOT recorded" (D-130)', async () => {
     const box = await deadBox();
     const started = Date.now();
     const r = await laneCashMovement(box.port, { waitMs: 300 })(FLOAT);
-    expect(r).toMatchObject({ committed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS.lane_unreachable });
-    expect(TILL_CASH_WORDS.lane_unreachable).toContain('NOT recorded yet');
-    expect(TILL_CASH_WORDS.lane_unreachable).toContain('cannot reach');
+    expect(r).toMatchObject({ committed: false, refusedBecause: 'lane_unreachable', laneMessage: NO_ANSWER_WORDS.cashUnreachable.en, laneMessageTa: NO_ANSWER_WORDS.cashUnreachable.ta });
+    expect(NO_ANSWER_WORDS.cashUnreachable.en).toBe(TILL_CASH_WORDS.lane_unreachable);
+    expect(TILL_CASH_WORDS.lane_unreachable).toContain('The till cannot reach the store computer');
+    expect(TILL_CASH_WORDS.lane_unreachable).toContain('does not know if this cash was recorded');
+    expect(TILL_CASH_WORDS.lane_unreachable).not.toContain('NOT recorded');
     expect(box.connections()).toBeGreaterThan(1);
     expect(Date.now() - started).toBeLessThan(3_000);
-    expect(await laneShiftClose(box.port, { waitMs: 300 })(CLOSE)).toMatchObject({ closed: false, refusedBecause: 'lane_unreachable' });
+    const close = await laneShiftClose(box.port, { waitMs: 300 })(CLOSE);
+    expect(close).toMatchObject({ closed: false, refusedBecause: 'lane_unreachable', laneMessage: NO_ANSWER_WORDS.closeUnreachable.en });
+    expect(NO_ANSWER_WORDS.closeUnreachable.en).toContain('does not know if the till was closed');
   }, 8_000);
 
-  it('three different answers, three different sentences: recorded, not recorded, not known', () => {
+  it('"NOT recorded" is never said by the till itself: every till-side sentence for a call without an answer says "does not know"', () => {
     expect(TILL_CASH_WORDS.lane_no_answer).toBe(NO_ANSWER_WORDS.cash.en);
-    expect(new Set([TILL_CASH_WORDS.lane_unreachable, TILL_CASH_WORDS.lane_no_answer, NO_ANSWER_WORDS.close.en]).size).toBe(3);
-    expect(TILL_CASH_WORDS.lane_no_answer).not.toContain('NOT recorded');
-    expect(NO_ANSWER_WORDS.close.en).not.toMatch(/NOT recorded|Till closed/);
+    for (const w of [NO_ANSWER_WORDS.cash, NO_ANSWER_WORDS.cashUnreachable, NO_ANSWER_WORDS.close, NO_ANSWER_WORDS.closeUnreachable]) {
+      expect(w.en).toContain('does not know');
+      expect(w.en).not.toMatch(/NOT recorded|Till closed/);
+      expect(w.ta).toContain('தெரியவில்லை');
+    }
   });
 });

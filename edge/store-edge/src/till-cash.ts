@@ -574,7 +574,10 @@ export const TILL_CASH_WORDS: Readonly<Record<TillCashRefusal, string>> = Object
   could_not_write_durably: 'The store computer could not save this. The cash is NOT recorded — do not move it. Tell the manager.',
   no_room_left: 'The store computer has no room left to record this. The cash is NOT recorded — do not move it. Tell the manager now.',
   no_store_box: 'This till is not connected to its store computer, so cash cannot be recorded. Tell the manager.',
-  lane_unreachable: 'The till cannot reach the store computer. The cash is NOT recorded yet — do not move it. Try again in a moment.',
+  // D-130 · OB-911: a call that could not be completed may still have reached the store computer (a line cut after the
+  // request went out looks the same as one never connected), so it is NOT KNOWN — never "NOT recorded". The till keeps the
+  // request; pressed again, the SAME id goes and the store computer records it once.
+  lane_unreachable: 'The till cannot reach the store computer — the till does not know if this cash was recorded. Do not move the cash again; press the same button to check.',
   // D-129 · OB-911: the store computer took the call but did not answer in time — it may have recorded it, so neither
   // "recorded" nor "NOT recorded" is said. Pressed again, the till sends the SAME id and the store computer records it once.
   lane_no_answer: 'The store computer did not answer in time — the till does not know if this cash was recorded. Do not move the cash again; press the same button to check.',

@@ -100,7 +100,7 @@ describe('money in and out of the drawer — recorded on the store box, never in
     box.unplug();
     const outcome = await till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: AT });
     expect(outcome).toMatchObject({ committed: false, refusedBecause: 'lane_unreachable' });
-    expect((outcome as { laneMessage: string }).laneMessage).toMatch(/NOT recorded yet/);
+    expect((outcome as { laneMessage: string }).laneMessage).toMatch(/does not know if this cash was recorded/);
     expect(box.records).toHaveLength(0);
     expect(await till.tillCash()).toBeNull();
   });

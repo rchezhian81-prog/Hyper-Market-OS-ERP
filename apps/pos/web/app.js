@@ -239,7 +239,8 @@ const WORDS = {
     cash_insufficient_till_cash: 'The drawer does not hold that much. Count what is there and tell the manager before moving any cash.',
     cash_no_open_shift: 'No float has been taken on this till, so there is no shift to close. Take the float first.',
     cash_not_the_custodian: 'This till is held by another cashier. Only the cashier who took the float can close it.',
-    cash_lane_unreachable: 'The till cannot reach the store computer. The cash is NOT recorded yet — do not move it. Try again in a moment.',
+    cash_lane_unreachable: 'The till cannot reach the store computer — the till does not know if this cash was recorded. Do not move the cash again; press the same button to check.',
+    close_lane_unreachable: 'The till cannot reach the store computer — the till does not know if the till was closed. Do not count the drawer again and do not put the cash away yet; press Close till again to check.',
     cash_no_store_box: 'This till is not connected to its store computer, so cash cannot be recorded. Tell the manager.',
     cash_material_variance_needs_a_reason: 'The drawer is out by more than the shop allows. Say why before the till can close.',
     cash_denominations_do_not_add_up: 'The notes and coins you counted do not add up to the total, or include a note that does not exist. Count the drawer again.',
@@ -540,7 +541,8 @@ const WORDS = {
     cash_insufficient_till_cash: 'டிராயரில் அவ்வளவு இல்லை. இருப்பதை எண்ணி, பணத்தை நகர்த்தும் முன் மேலாளரிடம் சொல்லவும்.',
     cash_no_open_shift: 'இந்த டில்லில் ஆரம்பப் பணம் எடுக்கப்படவில்லை; மூடுவதற்கு ஷிப்ட் இல்லை. முதலில் ஆரம்பப் பணம் எடுக்கவும்.',
     cash_not_the_custodian: 'இந்த டில் வேறு கேஷியரிடம் உள்ளது. ஆரம்பப் பணம் எடுத்தவரே மூட வேண்டும்.',
-    cash_lane_unreachable: 'டில்லால் கடை கணினியை அணுக முடியவில்லை. பணம் இன்னும் பதிவாகவில்லை — நகர்த்த வேண்டாம். சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்.',
+    cash_lane_unreachable: 'டில்லால் கடை கணினியை அணுக முடியவில்லை — இந்தப் பணம் பதிவானதா என்று டில்லுக்குத் தெரியவில்லை. பணத்தை மீண்டும் நகர்த்த வேண்டாம்; சரிபார்க்க அதே பொத்தானை அழுத்தவும்.',
+    close_lane_unreachable: 'டில்லால் கடை கணினியை அணுக முடியவில்லை — டில் மூடப்பட்டதா என்று டில்லுக்குத் தெரியவில்லை. டிராயரை மீண்டும் எண்ண வேண்டாம், பணத்தை இன்னும் எடுத்து வைக்க வேண்டாம்; சரிபார்க்க மீண்டும் டில்லை மூடு அழுத்தவும்.',
     cash_no_store_box: 'இந்த டில் கடை கணினியுடன் இணைக்கப்படவில்லை; பணப் பதிவு செய்ய முடியாது. மேலாளரிடம் சொல்லவும்.',
     cash_material_variance_needs_a_reason: 'டிராயர் வித்தியாசம் அனுமதிக்கப்பட்டதை விட அதிகம். டில் மூட முன் காரணம் சொல்லவும்.',
     cash_denominations_do_not_add_up: 'நீங்கள் எண்ணிய நோட்டுகளும் நாணயங்களும் மொத்தத்துடன் பொருந்தவில்லை, அல்லது இல்லாத நோட்டு உள்ளது. டிராயரை மீண்டும் எண்ணவும்.',
@@ -2791,9 +2793,10 @@ async function nameLoyaltyMember() {
 // definite answer: the next cash action sends it again first, and the store computer answers "already recorded" for a
 // repeat — so the money moves once however many times the till has to ask (owner directive §2, §31.1).
 //
-// D-129 · OB-911: two kinds of "no answer", two sentences. The store computer could not be REACHED (the call never got to
-// it): "the cash is NOT recorded yet" — true. It took the call and did not answer IN TIME (5 s, OB-908): the till does NOT
-// KNOW — it may be on the store computer's disk — so it says so, never "recorded" or "NOT recorded", and keeps the request.
+// D-129 · D-130 · OB-911: "NOT recorded" is said ONLY when the store computer answered with a refusal. Every call without
+// an answer — it did not answer IN TIME (5 s, OB-908), or the call could not be completed (cannot reach; a line cut after
+// the request went out looks the same) — is NOT KNOWN: it may be on the store computer's disk, so the till says so, never
+// "recorded" or "NOT recorded", and keeps the request.
 // Pressing the same button again sends the SAME request (same movement id) and shows the store computer's answer; nothing
 // new is asked until that one is known. The close works the same way under its shift id: a close whose answer was not
 // heard is never shown as done, the drawer is never counted a second time, and Close till sends the same close again.
@@ -2821,8 +2824,8 @@ function cashWords(outcome) {
 function closeWords(outcome) {
   return (outcome.refusedBecause && WORDS[lang][`close_${outcome.refusedBecause}`]) || cashWords(outcome);
 }
-/** The panel's title: "not known" when the store computer did not answer in time; "NOT recorded" only when that is true. */
-const cashTitle = (outcome) => (outcome.refusedBecause === 'lane_no_answer' ? t('cashNotKnown') : t('cashNotSaved'));
+/** The panel's title: "not known" with no answer from the store computer; "NOT recorded" only on its refusal (D-130). */
+const cashTitle = (outcome) => (notAnswered(outcome) ? t('cashNotKnown') : t('cashNotSaved'));
 async function sendCash(req) {
   const outcome = await session.till.moveCash(req);
   rememberPendingCash(!outcome.committed && notAnswered(outcome) ? req : null);
@@ -3493,7 +3496,7 @@ async function closeTheTill() {
       result = await sendClose({ ...req, reasonCode });
     }
     // Never "Till closed" on a guess: not known is said as not known, and Close till sends the same close again (D-129).
-    if (!result.closed) { tell(result.refusedBecause === 'lane_no_answer' ? t('closeNotKnown') : t('read'), closeWords(result), STOP); return; }
+    if (!result.closed) { tell(notAnswered(result) ? t('closeNotKnown') : t('read'), closeWords(result), STOP); return; }
     const variance = result.varianceMinor;
     const headline = variance === 0 ? t('balanced')
       : variance > 0 ? `${t('over')} ${inr(variance)}`
