@@ -348,6 +348,19 @@ export const NO_ANSWER_WORDS = {
     en: 'The store computer did not answer in time, so the till does not know what it recorded for this card or UPI payment. Do not ask the card machine again yet — press Card or UPI again and the till will check.',
     ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே இந்த கார்டு அல்லது UPI பணத்துக்கு என்ன பதிவானது என்று டில்லுக்குத் தெரியவில்லை. இப்போதே கார்டு இயந்திரத்தை மீண்டும் கேட்க வேண்டாம் — கார்டு அல்லது UPI மீண்டும் அழுத்தவும், டில் சரிபார்க்கும்.',
   },
+  /**
+   * D-129 · OB-911: a float, cash loan, pickup or safe drop. The store computer MAY have recorded it, so the till says
+   * neither "recorded" nor "NOT recorded"; pressed again, the same movement id goes and it is recorded once.
+   */
+  cash: {
+    en: TILL_CASH_WORDS_FOR_THE_LANE.lane_no_answer,
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை — இந்தப் பணம் பதிவானதா என்று டில்லுக்குத் தெரியவில்லை. பணத்தை மீண்டும் நகர்த்த வேண்டாம்; சரிபார்க்க அதே பொத்தானை அழுத்தவும்.',
+  },
+  /** D-129 · OB-911: the shift close. Never "Till closed" on a guess; pressed again, the SAME close (shift id, count) goes. */
+  close: {
+    en: 'The store computer did not answer in time — the till does not know if the till was closed. Do not count the drawer again and do not put the cash away yet; press Close till again to check.',
+    ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை — டில் மூடப்பட்டதா என்று டில்லுக்குத் தெரியவில்லை. டிராயரை மீண்டும் எண்ண வேண்டாம், பணத்தை இன்னும் எடுத்து வைக்க வேண்டாம்; சரிபார்க்க மீண்டும் டில்லை மூடு அழுத்தவும்.',
+  },
   activity: {
     en: 'The store computer did not answer in time, so the till does not know if this was recorded. Nothing was changed on the till. Press it again — it will not be recorded twice.',
     ta: 'கடை கணினி நேரத்தில் பதில் தரவில்லை, எனவே இது பதிவானதா என்று டில்லுக்குத் தெரியவில்லை. டில்லில் எதுவும் மாற்றப்படவில்லை. மீண்டும் அழுத்தவும் — இது இரண்டு முறை பதிவாகாது.',
@@ -968,14 +981,21 @@ export function laneLookup(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}
  * The till's CASH ports to its own box (SP-4c · F10 · M14-FR-01/02): a float, loan, pickup or safe drop on
  * `/lane/cash-movements`; the shift close on `/lane/shift-close`; where the till's cash stands on `/lane/till-cash`.
  * The box owns the record and the decision; these carry the request over the same loopback socket a sale uses. Both
- * write routes are idempotent on the till's own id, so a lost reply is resolved by re-posting the SAME request: the box
- * answers `alreadyRecorded` / `alreadyClosed` for a repeat, and a retry can never move the money twice. Only when the
- * box cannot be reached at all is the outcome `lane_unreachable` — and it says so in the cashier's words, never as a
- * refusal that invites a fresh id.
+ * write routes are idempotent on the till's own id (the movement id; the shift id), so a lost reply is resolved by
+ * re-posting the SAME request: the box answers `alreadyRecorded` / `alreadyClosed` for a repeat, and a retry can never
+ * move the money twice.
+ *
+ * D-129 · OB-911: each ask waits at most `LANE_ANSWER_WAIT_MS` (`askLane`, OB-908). Three answers, three sentences:
+ *   • the store computer answered — its answer (recorded, or refused in its words);
+ *   • it cannot be reached at all (the call never got to it) — `lane_unreachable`, "the cash is NOT recorded yet", which
+ *     is true; asked a few more times first, quickly, as before;
+ *   • it took the call and did not answer in time — `lane_no_answer`: the till does NOT KNOW (it may be on the store
+ *     computer's disk). Not asked again behind the cashier's back (OB-909: one wait, then the words); the screen keeps the
+ *     request and sends the SAME id when the cashier presses again.
  */
 function laneCashTo<TReq, TOut>(
-  path: '/lane/cash-movements' | '/lane/shift-close', port: number, unreachable: () => TOut,
-  opts: { readonly attempts?: number; readonly retryDelayMs?: number } = {},
+  path: '/lane/cash-movements' | '/lane/shift-close', port: number, unreachable: () => TOut, noAnswerYet: () => TOut,
+  opts: { readonly attempts?: number; readonly retryDelayMs?: number; readonly waitMs?: number } = {},
 ): (req: TReq) => Promise<TOut> {
   const attempts = opts.attempts ?? 4;
   const retryDelayMs = opts.retryDelayMs ?? 100;
@@ -984,11 +1004,12 @@ function laneCashTo<TReq, TOut>(
       try {
         // The same base a sale uses: the store's loopback, or the hosted copy's signed-in `/store-lane` (it was the loopback
         // only, so the hosted till's float and close never reached its box).
-        const response = await fetch(`${laneBase(port)}${path}`, {
+        const response = await askLane(`${laneBase(port)}${path}`, {
           method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(req),
-        });
+        }, opts.waitMs);
         return await response.json() as TOut;
-      } catch {
+      } catch (e) {
+        if (isNoAnswer(e)) return noAnswerYet();
         if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
       }
     }
@@ -996,14 +1017,18 @@ function laneCashTo<TReq, TOut>(
   };
 }
 
-export function laneCashMovement(port: number = DEFAULT_LANE_PORT): CashMovementWrite {
-  return laneCashTo('/lane/cash-movements', port, (): CashMovementOutcome =>
-    ({ committed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable }));
+export function laneCashMovement(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): CashMovementWrite {
+  return laneCashTo('/lane/cash-movements', port,
+    (): CashMovementOutcome => ({ committed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable }),
+    (): CashMovementOutcome => ({ committed: false, refusedBecause: LANE_NO_ANSWER, laneMessage: NO_ANSWER_WORDS.cash.en, laneMessageTa: NO_ANSWER_WORDS.cash.ta }),
+    wait);
 }
 
-export function laneShiftClose(port: number = DEFAULT_LANE_PORT): ShiftCloseWrite {
-  return laneCashTo('/lane/shift-close', port, (): ShiftCloseOutcome =>
-    ({ closed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable }));
+export function laneShiftClose(port: number = DEFAULT_LANE_PORT, wait: LaneWait = {}): ShiftCloseWrite {
+  return laneCashTo('/lane/shift-close', port,
+    (): ShiftCloseOutcome => ({ closed: false, refusedBecause: 'lane_unreachable', laneMessage: TILL_CASH_WORDS_FOR_THE_LANE.lane_unreachable }),
+    (): ShiftCloseOutcome => ({ closed: false, refusedBecause: LANE_NO_ANSWER, laneMessage: NO_ANSWER_WORDS.close.en, laneMessageTa: NO_ANSWER_WORDS.close.ta }),
+    wait);
 }
 
 /** Where the till's cash stands, read from the box — custody only, never a figure. `null` when the box did not answer. */
@@ -1644,9 +1669,10 @@ export function bootPos(config?: {
       // The refund's durable write goes to this till's own edge, exactly as the sale's does.
       durableReturn: whileCommitting(config?.durableReturn ?? laneDurableReturn(lanePort)),
       // And so does every cash movement and the close (SP-4c · F10): the box records, decides and dates them.
-      cashMovement: config?.cashMovement ?? laneCashMovement(lanePort),
-      shiftClose: config?.shiftClose ?? laneShiftClose(lanePort),
-      tillCash: config?.tillCash ?? laneTillCash(lanePort),
+      // D-129 · OB-911: the same bounded wait as every other cashier call (OB-908).
+      cashMovement: config?.cashMovement ?? laneCashMovement(lanePort, config?.laneAnswerWaitMs === undefined ? {} : { waitMs: config.laneAnswerWaitMs }),
+      shiftClose: config?.shiftClose ?? laneShiftClose(lanePort, config?.laneAnswerWaitMs === undefined ? {} : { waitMs: config.laneAnswerWaitMs }),
+      tillCash: config?.tillCash ?? laneTillCash(lanePort, config?.laneAnswerWaitMs === undefined ? {} : { waitMs: config.laneAnswerWaitMs }),
     },
   );
 
