@@ -495,7 +495,10 @@ export type TillCashRefusal =
   | 'no_lane' | 'not_readable' | 'not_a_cash_movement' | 'amount_not_positive' | 'till_already_assigned'
   | 'till_not_held_by_this_custodian' | 'insufficient_till_cash' | 'no_open_shift' | 'not_the_custodian'
   | 'count_not_a_whole_amount' | 'denominations_do_not_add_up' | 'material_variance_needs_a_reason' | 'could_not_write_durably' | 'no_room_left'
-  | 'no_store_box' | 'lane_unreachable';
+  | 'no_store_box' | 'lane_unreachable'
+  // D-129 · OB-911: the till asked, and the store computer did not answer within the till's wait. It MAY have recorded it —
+  // never said as "recorded" or "NOT recorded". Only the till says this; the store computer never answers it.
+  | 'lane_no_answer';
 
 export type CashMovementOutcome =
   | {
@@ -509,7 +512,13 @@ export type CashMovementOutcome =
     readonly alreadyRecorded?: true;
     readonly laneMessage: string;
   }
-  | { readonly committed: false; readonly refusedBecause: TillCashRefusal; readonly laneMessage: string };
+  | {
+    readonly committed: false;
+    readonly refusedBecause: TillCashRefusal;
+    readonly laneMessage: string;
+    /** D-129: the till's own words in Tamil, where the till (not the store computer) gives the answer. */
+    readonly laneMessageTa?: string;
+  };
 
 export type ShiftCloseOutcome =
   | {
@@ -535,6 +544,8 @@ export type ShiftCloseOutcome =
     readonly laneMessage: string;
     /** On `material_variance_needs_a_reason`: how far out the drawer is, so the cashier can say why. */
     readonly varianceMinor?: number;
+    /** D-129: the till's own words in Tamil, where the till (not the store computer) gives the answer. */
+    readonly laneMessageTa?: string;
   };
 
 /** Where the till's cash stands, for the screen after a reload — never a figure. */
@@ -563,5 +574,11 @@ export const TILL_CASH_WORDS: Readonly<Record<TillCashRefusal, string>> = Object
   could_not_write_durably: 'The store computer could not save this. The cash is NOT recorded — do not move it. Tell the manager.',
   no_room_left: 'The store computer has no room left to record this. The cash is NOT recorded — do not move it. Tell the manager now.',
   no_store_box: 'This till is not connected to its store computer, so cash cannot be recorded. Tell the manager.',
-  lane_unreachable: 'The store computer did not answer. The cash is NOT recorded yet — do not move it. Try again in a moment.',
+  // D-130 · OB-911: a call that could not be completed may still have reached the store computer (a line cut after the
+  // request went out looks the same as one never connected), so it is NOT KNOWN — never "NOT recorded". The till keeps the
+  // request; pressed again, the SAME id goes and the store computer records it once.
+  lane_unreachable: 'The till cannot reach the store computer — the till does not know if this cash was recorded. Do not move the cash again; press the same button to check.',
+  // D-129 · OB-911: the store computer took the call but did not answer in time — it may have recorded it, so neither
+  // "recorded" nor "NOT recorded" is said. Pressed again, the till sends the SAME id and the store computer records it once.
+  lane_no_answer: 'The store computer did not answer in time — the till does not know if this cash was recorded. Do not move the cash again; press the same button to check.',
 });

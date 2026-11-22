@@ -230,12 +230,17 @@ const WORDS = {
     confirmCutWho: 'Recorded on this bill in your name and the manager\'s, with the reason the manager gives.', askManager: 'Ask the manager',
     whyOut: 'Why is the drawer out?', tillClosed: 'Till closed',
     pendingCash: 'A cash movement from before was still waiting — it has now been recorded.',
+    pendingCashRefused: 'The cash movement of {amount} from before was NOT recorded by the store computer.',
+    cashNotKnown: 'Not known yet — do not move the cash', closeNotKnown: 'Not known yet if the till closed',
+    cash_lane_no_answer: 'The store computer did not answer in time — the till does not know if this cash was recorded. Do not move the cash again; press the same button to check.',
+    close_lane_no_answer: 'The store computer did not answer in time — the till does not know if the till was closed. Do not count the drawer again and do not put the cash away yet; press Close till again to check.',
     cash_till_already_assigned: 'This till already has a float out. Close the till before another float is taken.',
     cash_till_not_held_by_this_custodian: 'You do not hold this till. Take the float first, or ask the cashier who did.',
     cash_insufficient_till_cash: 'The drawer does not hold that much. Count what is there and tell the manager before moving any cash.',
     cash_no_open_shift: 'No float has been taken on this till, so there is no shift to close. Take the float first.',
     cash_not_the_custodian: 'This till is held by another cashier. Only the cashier who took the float can close it.',
-    cash_lane_unreachable: 'The store computer did not answer. The cash is NOT recorded yet — do not move it. Try again in a moment.',
+    cash_lane_unreachable: 'The till cannot reach the store computer — the till does not know if this cash was recorded. Do not move the cash again; press the same button to check.',
+    close_lane_unreachable: 'The till cannot reach the store computer — the till does not know if the till was closed. Do not count the drawer again and do not put the cash away yet; press Close till again to check.',
     cash_no_store_box: 'This till is not connected to its store computer, so cash cannot be recorded. Tell the manager.',
     cash_material_variance_needs_a_reason: 'The drawer is out by more than the shop allows. Say why before the till can close.',
     cash_denominations_do_not_add_up: 'The notes and coins you counted do not add up to the total, or include a note that does not exist. Count the drawer again.',
@@ -527,12 +532,17 @@ const WORDS = {
     confirmCutWho: 'மேலாளர் தரும் காரணத்துடன், உங்கள் பெயரிலும் மேலாளரின் பெயரிலும் இந்த பில்லில் பதிவு செய்யப்படும்.', askManager: 'மேலாளரிடம் கேள்',
     whyOut: 'டிராயர் ஏன் வித்தியாசமாக உள்ளது?', tillClosed: 'டில் மூடப்பட்டது',
     pendingCash: 'முன்பு காத்திருந்த பணப் பதிவு இப்போது பதிவு செய்யப்பட்டது.',
+    pendingCashRefused: 'முன்பு காத்திருந்த {amount} பணப் பதிவைக் கடை கணினி பதிவு செய்யவில்லை.',
+    cashNotKnown: 'இன்னும் தெரியவில்லை — பணத்தை நகர்த்த வேண்டாம்', closeNotKnown: 'டில் மூடப்பட்டதா என்று இன்னும் தெரியவில்லை',
+    cash_lane_no_answer: 'கடை கணினி நேரத்தில் பதில் தரவில்லை — இந்தப் பணம் பதிவானதா என்று டில்லுக்குத் தெரியவில்லை. பணத்தை மீண்டும் நகர்த்த வேண்டாம்; சரிபார்க்க அதே பொத்தானை அழுத்தவும்.',
+    close_lane_no_answer: 'கடை கணினி நேரத்தில் பதில் தரவில்லை — டில் மூடப்பட்டதா என்று டில்லுக்குத் தெரியவில்லை. டிராயரை மீண்டும் எண்ண வேண்டாம், பணத்தை இன்னும் எடுத்து வைக்க வேண்டாம்; சரிபார்க்க மீண்டும் டில்லை மூடு அழுத்தவும்.',
     cash_till_already_assigned: 'இந்த டில்லில் ஏற்கனவே ஆரம்பப் பணம் உள்ளது. மற்றொன்று எடுப்பதற்கு முன் டில்லை மூடவும்.',
     cash_till_not_held_by_this_custodian: 'இந்த டில் உங்களிடம் இல்லை. முதலில் ஆரம்பப் பணம் எடுக்கவும், அல்லது எடுத்தவரிடம் கேளுங்கள்.',
     cash_insufficient_till_cash: 'டிராயரில் அவ்வளவு இல்லை. இருப்பதை எண்ணி, பணத்தை நகர்த்தும் முன் மேலாளரிடம் சொல்லவும்.',
     cash_no_open_shift: 'இந்த டில்லில் ஆரம்பப் பணம் எடுக்கப்படவில்லை; மூடுவதற்கு ஷிப்ட் இல்லை. முதலில் ஆரம்பப் பணம் எடுக்கவும்.',
     cash_not_the_custodian: 'இந்த டில் வேறு கேஷியரிடம் உள்ளது. ஆரம்பப் பணம் எடுத்தவரே மூட வேண்டும்.',
-    cash_lane_unreachable: 'கடை கணினி பதில் தரவில்லை. பணம் இன்னும் பதிவாகவில்லை — நகர்த்த வேண்டாம். சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்.',
+    cash_lane_unreachable: 'டில்லால் கடை கணினியை அணுக முடியவில்லை — இந்தப் பணம் பதிவானதா என்று டில்லுக்குத் தெரியவில்லை. பணத்தை மீண்டும் நகர்த்த வேண்டாம்; சரிபார்க்க அதே பொத்தானை அழுத்தவும்.',
+    close_lane_unreachable: 'டில்லால் கடை கணினியை அணுக முடியவில்லை — டில் மூடப்பட்டதா என்று டில்லுக்குத் தெரியவில்லை. டிராயரை மீண்டும் எண்ண வேண்டாம், பணத்தை இன்னும் எடுத்து வைக்க வேண்டாம்; சரிபார்க்க மீண்டும் டில்லை மூடு அழுத்தவும்.',
     cash_no_store_box: 'இந்த டில் கடை கணினியுடன் இணைக்கப்படவில்லை; பணப் பதிவு செய்ய முடியாது. மேலாளரிடம் சொல்லவும்.',
     cash_material_variance_needs_a_reason: 'டிராயர் வித்தியாசம் அனுமதிக்கப்பட்டதை விட அதிகம். டில் மூட முன் காரணம் சொல்லவும்.',
     cash_denominations_do_not_add_up: 'நீங்கள் எண்ணிய நோட்டுகளும் நாணயங்களும் மொத்தத்துடன் பொருந்தவில்லை, அல்லது இல்லாத நோட்டு உள்ளது. டிராயரை மீண்டும் எண்ணவும்.',
@@ -2533,14 +2543,19 @@ el('more').addEventListener('click', async () => {
   // What the till can do next depends on whether a float is out — asked of the STORE COMPUTER, which is the only thing
   // that knows after a reload (SP-4c). With no answer, everything is offered and the store computer says no if it must.
   const cash = await session.till.tillCash();
+  // D-129 · OB-911: the button for a movement or close whose answer is still not known is always offered — "press the same
+  // button to check" must be possible even when the store computer now says the float is out (or the till closed).
+  const waitingCash = pendingCash();
+  const waitingButton = pendingClose() ? 'close' : waitingCash ? CASH_BUTTON[waitingCash.kind] : null;
   // U4 (G18): the same choices as before, under seven plain headings, the most-used first in each. The store computer's
   // "what fits now" (a float out or not, the box's own options) is unchanged — only the grouping and the order.
   const options = [
     // ── Cash drawer ──
-    ...(cash === null || !cash.shiftOpen ? [{ value: 'float', label: t('takeFloat'), group: 'groupCash' }] : []),
-    ...(cash === null || cash.shiftOpen ? [{ value: 'pickup', label: t('pickup'), group: 'groupCash' }] : []),
+    ...(cash === null || !cash.shiftOpen || waitingButton === 'float' ? [{ value: 'float', label: t('takeFloat'), group: 'groupCash' }] : []),
+    ...(cash === null || cash.shiftOpen || waitingButton === 'pickup' ? [{ value: 'pickup', label: t('pickup'), group: 'groupCash' }] : []),
     // Batch 20a · T1 (M14-FR-01): a cash loan (change into the drawer) and a safe drop, beside the pickup — while a float is out.
-    ...(cash === null || cash.shiftOpen ? [{ value: 'loan', label: t('loan'), group: 'groupCash' }, { value: 'safe_drop', label: t('safeDrop'), group: 'groupCash' }] : []),
+    ...(cash === null || cash.shiftOpen || waitingButton === 'loan' ? [{ value: 'loan', label: t('loan'), group: 'groupCash' }] : []),
+    ...(cash === null || cash.shiftOpen || waitingButton === 'safe_drop' ? [{ value: 'safe_drop', label: t('safeDrop'), group: 'groupCash' }] : []),
     // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer first.
     ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale'), group: 'groupCash' }] : []),
     // ── Returns & exchanges ──
@@ -2590,7 +2605,7 @@ el('more').addEventListener('click', async () => {
       ? [{ value: 'member', label: t('member'), group: 'groupCustomer' }]
       : [{ value: 'member_remove', label: t('memberRemove').replace('{last4}', session.loyaltyMemberLast4()), group: 'groupCustomer' }]),
     // ── This till ──
-    ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill'), group: 'groupTill' }] : []),
+    ...(cash === null || cash.shiftOpen || waitingButton === 'close' ? [{ value: 'close', label: t('closeTill'), group: 'groupTill' }] : []),
     // M12-FR-01: this till's scan-to-line speed today, as the store computer keeps it.
     ...(typeof session.scanSpeed === 'function' ? [{ value: 'scan_speed', label: t('scanSpeed'), icon: 'activity', group: 'groupTill' }] : []),
   ];
@@ -2774,35 +2789,67 @@ async function nameLoyaltyMember() {
 //
 // The till keeps NO cash figure of its own: every float, pickup and the close is recorded on the store computer, durably,
 // before the cashier is told "recorded" — a browser tab dies with a reload, and that is exactly how a float used to
-// vanish. A movement the store computer could not be asked about (it did not answer) is kept HERE, with its own id, until
-// it is acknowledged: the next cash action sends it again first, and the store computer answers "already recorded" for a
+// vanish. A movement whose answer the till did not get is kept HERE, with its own id, until the store computer gives a
+// definite answer: the next cash action sends it again first, and the store computer answers "already recorded" for a
 // repeat — so the money moves once however many times the till has to ask (owner directive §2, §31.1).
+//
+// D-129 · D-130 · OB-911: "NOT recorded" is said ONLY when the store computer answered with a refusal. Every call without
+// an answer — it did not answer IN TIME (5 s, OB-908), or the call could not be completed (cannot reach; a line cut after
+// the request went out looks the same) — is NOT KNOWN: it may be on the store computer's disk, so the till says so, never
+// "recorded" or "NOT recorded", and keeps the request.
+// Pressing the same button again sends the SAME request (same movement id) and shows the store computer's answer; nothing
+// new is asked until that one is known. The close works the same way under its shift id: a close whose answer was not
+// heard is never shown as done, the drawer is never counted a second time, and Close till sends the same close again.
 const PENDING_CASH_KEY = 'sre-pos-pending-cash';
+const PENDING_CLOSE_KEY = 'sre-pos-pending-close';
 function pendingCash() {
   try { const raw = window.sessionStorage.getItem(PENDING_CASH_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
 function rememberPendingCash(req) {
   try { if (req) window.sessionStorage.setItem(PENDING_CASH_KEY, JSON.stringify(req)); else window.sessionStorage.removeItem(PENDING_CASH_KEY); } catch { /* the store computer still has the record; only the retry memory is lost */ }
 }
+function pendingClose() {
+  try { const raw = window.sessionStorage.getItem(PENDING_CLOSE_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function rememberPendingClose(req) {
+  try { if (req) window.sessionStorage.setItem(PENDING_CLOSE_KEY, JSON.stringify(req)); else window.sessionStorage.removeItem(PENDING_CLOSE_KEY); } catch { /* the store computer still has the record; only the retry memory is lost */ }
+}
+/** No definite answer from the store computer: it could not be reached, or it did not answer in time (D-129). */
+const notAnswered = (outcome) => Boolean(outcome) && (outcome.refusedBecause === 'lane_unreachable' || outcome.refusedBecause === 'lane_no_answer');
 /** The refusal in the cashier's language where the till has words for it; otherwise the store computer's own sentence. */
 function cashWords(outcome) {
   return (outcome.refusedBecause && WORDS[lang][`cash_${outcome.refusedBecause}`]) || outcome.laneMessage;
 }
+/** The close's own words where it has them (D-129: "does not know if the till was closed"), else the cash words. */
+function closeWords(outcome) {
+  return (outcome.refusedBecause && WORDS[lang][`close_${outcome.refusedBecause}`]) || cashWords(outcome);
+}
+/** The panel's title: "not known" with no answer from the store computer; "NOT recorded" only on its refusal (D-130). */
+const cashTitle = (outcome) => (notAnswered(outcome) ? t('cashNotKnown') : t('cashNotSaved'));
 async function sendCash(req) {
   const outcome = await session.till.moveCash(req);
-  rememberPendingCash(!outcome.committed && outcome.refusedBecause === 'lane_unreachable' ? req : null);
+  rememberPendingCash(!outcome.committed && notAnswered(outcome) ? req : null);
   return outcome;
 }
-/** Anything still waiting from before goes first, under its own id. False when the store computer still does not answer. */
+/** The menu button for each kind of movement — so the button pressed for a movement still waiting stays on offer. */
+const CASH_BUTTON = { float_issue: 'float', pickup: 'pickup', loan: 'loan', safe_drop: 'safe_drop' };
+/**
+ * Anything still waiting from before goes first, under its own id, and its answer is SHOWN — then this press stops, so a
+ * cashier who pressed to check is never walked into a second movement (D-129 · OB-911). True only when nothing waited.
+ */
 async function flushPendingCash() {
   const pending = pendingCash();
   if (!pending) return true;
   const outcome = await sendCash(pending);
-  if (!outcome.committed && outcome.refusedBecause === 'lane_unreachable') { tell(t('cashNotSaved'), cashWords(outcome), STOP); return false; }
-  if (outcome.committed) tell(t('pendingCash'), `${inr(pending.amountMinor)} — ${t('cashSaved')}`, SUCCESS);
-  return true;
+  const amount = inr(pending.amountMinor);
+  if (outcome.committed) tell(t('pendingCash'), `${amount} — ${t('cashSaved')}`, SUCCESS);
+  else if (notAnswered(outcome)) tell(cashTitle(outcome), `${amount} — ${cashWords(outcome)}`, STOP);
+  else tell(t('cashNotSaved'), `${t('pendingCashRefused').replace('{amount}', amount)} ${cashWords(outcome)}`, STOP);
+  return false;
 }
 async function moveCashToBox(kind, titleKey, doneKey) {
+  // A close whose answer was not heard is settled first (D-129): no new float on a till that may still be open.
+  if (pendingClose()) { await closeTheTill(); return; }
   if (!(await flushPendingCash())) return;
   const amount = await ask({ title: t(titleKey), mode: 'number' });
   if (amount === null) return;
@@ -2826,9 +2873,11 @@ async function moveCashToBox(kind, titleKey, doneKey) {
   });
   if (!confirmed) return;
   try {
-    const outcome = await sendCash({ kind, amountMinor: minor, at, movementId: `cm-${kind}-${Date.now().toString(36)}` });
+    // The movement's id is made HERE, when the cashier confirms, and kept (with the request) until the store computer gives a
+    // definite answer — so pressing again after "did not answer in time" sends the same id and the cash is recorded once.
+    const outcome = await sendCash({ kind, amountMinor: minor, at, movementId: `cm-${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` });
     if (outcome.committed) tell(t(doneKey), `${inr(minor)} — ${t('cashSaved')}`, SUCCESS);
-    else tell(t('cashNotSaved'), cashWords(outcome), STOP);
+    else tell(cashTitle(outcome), cashWords(outcome), STOP);
   } catch (e) {
     // Nobody signed in, or no lane: the model refuses before the store computer is asked, in its own words (F09).
     tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
@@ -3416,24 +3465,38 @@ function showRefundOutcome(outcome, refundTender) {
  */
 async function closeTheTill() {
   if (!(await flushPendingCash())) return;
-  const count = await countDrawer();
-  if (count === null) return;
-  const counted = count.totalMinor;
-  const shiftId = `sh-${Date.now().toString(36)}`;
-  const closedAt = new Date().toISOString();
+  // D-129 · OB-911: a close whose answer the till did not get goes again as the SAME close — the same shift id, moment and
+  // count (and reason) — so the store computer keeps ONE close and the drawer is never counted a second time.
+  const waiting = pendingClose();
+  const count = waiting ? null : await countDrawer();
+  if (!waiting && count === null) return;
+  const req = waiting ?? {
+    shiftId: `sh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    closedAt: new Date().toISOString(),
+    countedMinor: count.totalMinor,
+    denominations: count.denominations,
+  };
+  const counted = req.countedMinor;
+  // Kept until the store computer gives a definite answer (closed, or refused); cleared the moment it does.
+  const sendClose = async (r) => {
+    const out = await session.till.close(r);
+    rememberPendingClose(!out.closed && notAnswered(out) ? r : null);
+    return out;
+  };
   try {
     // Exactly what a cashier knows — which shift, when, what was counted (and in which notes). The store computer works
     // every other figure out from what it recorded and answers with the difference (SP-4c · F10). The same shift id is
     // sent again with a reason, so the store computer sees ONE close.
-    let result = await session.till.close({ shiftId, closedAt, countedMinor: counted, denominations: count.denominations });
+    let result = await sendClose(req);
     if (!result.closed && result.refusedBecause === 'material_variance_needs_a_reason') {
       // The count is made, so the difference can be shown; a reason is a CODE the cash office can report on, never prose.
       const out = result.varianceMinor ?? 0;
       const reasonCode = await ask({ title: `${out > 0 ? t('over') : t('short')} ${inr(Math.abs(out))} — ${t('whyOut')}`, mode: 'choice', choices: CASH_REASONS });
       if (reasonCode === null) { tell(t('read'), t('needsReason'), STOP); return; }
-      result = await session.till.close({ shiftId, closedAt, countedMinor: counted, denominations: count.denominations, reasonCode });
+      result = await sendClose({ ...req, reasonCode });
     }
-    if (!result.closed) { tell(t('read'), cashWords(result), STOP); return; }
+    // Never "Till closed" on a guess: not known is said as not known, and Close till sends the same close again (D-129).
+    if (!result.closed) { tell(notAnswered(result) ? t('closeNotKnown') : t('read'), closeWords(result), STOP); return; }
     const variance = result.varianceMinor;
     const headline = variance === 0 ? t('balanced')
       : variance > 0 ? `${t('over')} ${inr(variance)}`
