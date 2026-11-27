@@ -31,10 +31,11 @@ import { pgPoolClient, pgDedicatedSession, pgEndBackendVia, listenForEndedConnec
 import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
-  structuredLogger, combineObservers, RequestMetrics, TokenBucketRateLimiter, BackoffAuthThrottle,
+  structuredLogger, combineObservers, RequestMetrics, TokenBucketRateLimiter, BackoffAuthThrottle, AuditedRefusalTally,
   type Route,
 } from '../../kernel/src/index';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
+import { rateLimitSettingsOf, isCustomerCaller } from './rate-limit-settings';
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
 import { shoppingAlternatives } from './ai-shopping';
 import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-insights';
@@ -2598,6 +2599,14 @@ export async function startApi(
     return undefined;
   }
 
+  // Audit 27 Nov 2026 item 3 (OB-916): the three request allowances, each a setting with a default; a shop's allowance
+  // smaller than one address's would let one caller spend the whole shop's, so that is refused at start.
+  const allowances = rateLimitSettingsOf(settings);
+  if (!allowances.ok) {
+    err(`\nthis service will not start: ${allowances.detail}\n\n`);
+    return undefined;
+  }
+
   // The self-hosted identity server's public keys (OB-15 · ADR-0019): both settings or neither — half a configuration is
   // refused rather than half-believed. Fetched once now; a server not yet up leaves its tokens refused until a key is held
   // (the keyring refreshes when a token names a key it has not seen, at most every 30 s). Nothing on a sale path asks.
@@ -2831,6 +2840,13 @@ export async function startApi(
     metrics.record,
   );
 
+  // Audit 27 Nov 2026 item 2 (OB-915): refusals of callers nobody signed in as (no token, a path that does not exist, the
+  // address limit) are COUNTED into the same chained audit_log — the first of each kind per minute at once, the rest as
+  // one row with the count — instead of one database write per junk request. Written every minute and at shutdown.
+  const refusalTally = new AuditedRefusalTally(new SqlAuditSink(pgPoolClient(db), (detail) => { err(`${detail}\n`); }), { windowSeconds: 60, maxKeys: 1000 });
+  const refusalTallyTimer = setInterval(() => { refusalTally.flush().catch((e: unknown) => { err(`refusal tally not written: ${String(e)}\n`); }); }, 60_000);
+  refusalTallyTimer.unref();
+
   const server = startHttpServer({
     router: built.router!,
     observe,
@@ -2915,6 +2931,7 @@ export async function startApi(
     // (`pgPoolClient`, audit FND-01) lets each write seal itself onto the previous one under a
     // per-tenant lock, so the SHA-256 chain (audit FND-02) cannot fork.
     audit: new SqlAuditSink(pgPoolClient(db), (detail) => { err(`${detail}\n`); }),
+    refusalTally,
 
     // Rate limiting and auth-attempt lockout (audit FND-03 / GAP-SEC-04). The API had exactly one
     // 429 in the whole product (the AI budget gate); nothing capped request volume and nothing slowed
@@ -2925,8 +2942,19 @@ export async function startApi(
     // so the limit is global, the same in-memory-reference / deployment-adapter split as idempotency.
     // A busy till bursts, so the capacity is generous and the sustained rate comfortably above normal
     // per-tenant traffic; the auth lockout is deliberately strict.
-    rateLimit: new TokenBucketRateLimiter({ capacity: 240, refillPerSecond: 20 }),
+    // Audit 27 Nov 2026 item 3 (OB-916): the per-address limit, the shop's allowance (staff and store computers) and the
+    // shop's customers' allowance are THREE limiters — one caller spending its address's allowance no longer spends the
+    // shop's, and the customer app never spends the tills'. Defaults 240 + 20/s, 2400 + 200/s, 1200 + 100/s (settings).
+    rateLimit: new TokenBucketRateLimiter(allowances.value.perAddress),
+    tenantRateLimit: new TokenBucketRateLimiter(allowances.value.perShop),
+    customerRateLimit: new TokenBucketRateLimiter(allowances.value.customersPerShop),
+    isCustomer: isCustomerCaller,
     authThrottle: new BackoffAuthThrottle({ threshold: 5, baseCooldownSeconds: 5, maxCooldownSeconds: 900 }),
+    // Audit 27 Nov 2026 item 1 (OB-914): the lockout above counts a forged sign-in against the address AND the person it
+    // claims, so one device in a shop (one address for every device) cannot lock the others out, and an expired but
+    // correctly signed sign-in is not counted at all. This address-wide ceiling still stops a forger who changes the
+    // claimed name on every try: 50 forged tries in a row from one address with no good sign-in between lock the address.
+    sourceAuthThrottle: new BackoffAuthThrottle({ threshold: 50, baseCooldownSeconds: 5, maxCooldownSeconds: 900 }),
     // W3 · D13-FR-06: each failed office sign-in and each lockout it trips is KEPT, append-only on PostgreSQL on the shop's
     // own record (the lockout above stays in memory, for speed) — the security report counts them through a restart.
     signInLog: officeSignInLogAdapter({ store, log: err }),
@@ -3072,6 +3100,8 @@ export async function startApi(
       await opsAlertWorker.stop();
       if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();
+      clearInterval(refusalTallyTimer);
+      await refusalTally.flush(); // audit 27 Nov item 2: the last anonymous-refusal counts are kept before the database closes
       await secretUse.stop(); // W6: the last tally is kept before the database closes
       await db.end();
     },

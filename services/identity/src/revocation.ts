@@ -23,9 +23,10 @@
 // `packages/identity/src/session-revocation.ts` holds the customer-portal (session-id) engine and its reasons;
 // the reasons are shared so an auditor reads one vocabulary.
 
-import type { Principal } from '../../kernel/src/index';
+import type { AuthenticationContext, Principal } from '../../kernel/src/index';
 import type { RevocationReason } from '../../../packages/identity/src/session-revocation';
 import { verifyToken, type TokenPolicy, type TokenRefusal } from './token';
+import { refusedAfterTheSignature } from '../../kernel/src/sign-in-attempts';
 
 export type { RevocationReason } from '../../../packages/identity/src/session-revocation';
 export const REVOCATION_REASONS: readonly RevocationReason[] = ['signed_out', 'admin_revoked', 'security', 'credential_change'];
@@ -164,12 +165,13 @@ export function revocationAwareAuthenticator(
   revocations: TokenRevocationList,
   onRefusal?: (reason: TokenRefusal | 'revoked', detail: string) => void,
   now: () => number = () => Date.now(),
-): (token: string) => Promise<Principal | undefined> {
+): (token: string, request?: AuthenticationContext) => Promise<Principal | undefined> {
   const policies: readonly TokenPolicy[] = Array.isArray(policy) ? policy : [policy as TokenPolicy];
-  return async (token) => {
+  return async (token, request) => {
     const chosen = policyFor(token, policies);
     if (chosen === undefined) {
       onRefusal?.('algorithm_not_ours', 'the token is signed in a way no configured identity server signs');
+      request?.onRefused?.({ signatureVerified: false, reason: 'algorithm_not_ours' });
       return undefined;
     }
     let verdict = verifyToken(token, chosen, now());
@@ -180,6 +182,8 @@ export function revocationAwareAuthenticator(
     }
     if (!verdict.ok) {
       onRefusal?.(verdict.refusedBecause!, verdict.detail);
+      // Audit 27 Nov item 1: an expired (or otherwise refused-after-signature) token is not a guess; say so to the lockout.
+      request?.onRefused?.({ signatureVerified: refusedAfterTheSignature(verdict.refusedBecause!), reason: verdict.refusedBecause! });
       return undefined;
     }
     const principal = verdict.principal!;
@@ -190,6 +194,7 @@ export function revocationAwareAuthenticator(
     });
     if (decision.revoked) {
       onRefusal?.('revoked', decision.because ?? 'the token was revoked');
+      request?.onRefused?.({ signatureVerified: true, reason: 'revoked' });
       return undefined;
     }
     return principal;

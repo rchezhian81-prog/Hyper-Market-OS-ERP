@@ -159,6 +159,16 @@ export function apiHarness(opts: {
   numberSeries?: NumberSeriesStore;
   /** W3 · D13-FR-06: the sign-in lockout (main.ts runs the in-memory backoff) — omitted, nothing is locked here. */
   authThrottle?: AuthThrottle;
+  /** Audit 27 Nov item 1: the address-wide ceiling on forged sign-ins (main.ts runs one) — omitted, none here. */
+  sourceAuthThrottle?: AuthThrottle;
+  /** Audit 27 Nov item 2: the request rate limit, the audit sink and the anonymous-refusal tally (main.ts runs all three). */
+  rateLimit?: Kernel['rateLimit'];
+  audit?: Kernel['audit'];
+  refusalTally?: Kernel['refusalTally'];
+  /** Audit 27 Nov item 3: the shop's own allowance, the customers' allowance and who counts as a customer (main.ts runs all three). */
+  tenantRateLimit?: Kernel['tenantRateLimit'];
+  customerRateLimit?: Kernel['customerRateLimit'];
+  isCustomer?: Kernel['isCustomer'];
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -207,6 +217,13 @@ export function apiHarness(opts: {
     ...(opts.observe === undefined ? {} : { observe: opts.observe }),
     // W3 · D13-FR-06: failed office sign-ins and lockouts kept on the shop's record, composed exactly as main.ts does it.
     ...(opts.authThrottle === undefined ? {} : { authThrottle: opts.authThrottle }),
+    ...(opts.sourceAuthThrottle === undefined ? {} : { sourceAuthThrottle: opts.sourceAuthThrottle }),
+    ...(opts.rateLimit === undefined ? {} : { rateLimit: opts.rateLimit }),
+    ...(opts.audit === undefined ? {} : { audit: opts.audit }),
+    ...(opts.refusalTally === undefined ? {} : { refusalTally: opts.refusalTally }),
+    ...(opts.tenantRateLimit === undefined ? {} : { tenantRateLimit: opts.tenantRateLimit }),
+    ...(opts.customerRateLimit === undefined ? {} : { customerRateLimit: opts.customerRateLimit }),
+    ...(opts.isCustomer === undefined ? {} : { isCustomer: opts.isCustomer }),
     signInLog: officeSignInLogAdapter({ store }),
     // W6 · M32-FR-03 · OB-688: each machine credential's use counted, as main.ts composes it.
     credentialUse: secretUse.record,
