@@ -12,7 +12,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
-import { STREAM } from '../../services/api/src/adapters';
+import { STREAM, streamName } from '../../services/api/src/adapters';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
@@ -205,6 +205,17 @@ describe.each(backings)('D-031 — held scans reach head office only when the re
       poReceipt: { receivedByProduct: { 'p-rice': 7 } },
       assembledFrom: { scanCount: 2, commandIds: ['recv-1', 'recv-2'], removedOnPhone: [expect.objectContaining({ commandId: 'recv-wrong', quantityMinor: 2, removedBy: 'u-worker', removedAt: AT })] },
     });
+    // Pending list 27 Nov item 2: the audit record of a scan removed on the phone names the SIGNED-IN identity of the request
+    // (the store computer that relayed it) as the actor — never a name the phone merely wrote; the phone's name is a detail.
+    const relayedBy = (grn.grn['assembledFrom'] as { relayedBy?: string } | undefined)?.relayedBy ?? (grn.grn['relayedBy'] as string | undefined);
+    const removedAudit = (await c.h.store.readStream(c.A, streamName(STREAM.audit, 'domain-trail'), { type: 'AuditRecordSealed' }))
+      .map((e) => e.event.payload as { action: string; actorId: string; before: Record<string, unknown> | null })
+      .filter((r) => r.action === 'receipt.scan.removed_on_phone');
+    expect(removedAudit).toHaveLength(1);
+    expect(typeof relayedBy === 'string' && relayedBy !== '').toBe(true);
+    expect(removedAudit[0]!.actorId).toBe(relayedBy);
+    expect(removedAudit[0]!.actorId).not.toBe('u-worker');
+    expect(removedAudit[0]!.before).toMatchObject({ commandId: 'recv-wrong', removedBy: 'u-worker' });
     // The phone sending it again (a lost reply on the phone's side) is a duplicate at the store computer; nothing new.
     await c.handOver(page.outbox);
     await c.edge.syncOnce!();

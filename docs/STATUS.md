@@ -72,6 +72,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, in the store (after the next store-PC update):** Supplier bills → Type a paper bill → type the order number → "Fill the lines from the order": each line shows its GST rate, marked "check against the bill". Type CGST and SGST from the paper (OB-893 A).
 - **Blocked:** nothing.
 
+## Owner's list 27 Nov (second) — item 2: a scan removed on the handheld is audited under the signed-in identity (D-151, 27 Nov 2026)
+- **The problem (proved first):** the audit record of a scan removed on the handheld named `u-worker` — the name the phone wrote — as the actor; the request was signed in as the store computer (`u-box`). Test: `tests/integration/d031-held-scans-reach-head-office-only-when-sent.test.ts` failed with "expected 'u-worker' to be 'u-box'" (in memory and PostgreSQL).
+- **Fix:** `services/inventory/src/goods-receipt-assembled.ts` records the signed-in identity of the request as the actor and keeps the phone's name as a detail (`removedBy` in the record's "before"). All 14 D-031 tests pass.
+- **Owner, in the store:** nothing to do; an auditor reading the trail of a delivery sees "store computer" as who sent it and the person named on the phone as a detail.
+- **Blocked:** nothing.
+
 ## Pending list 27 Nov — item 1: D-078 and D-110 answered, the register says so (27 Nov 2026)
 - **Owner (27 Nov 2026, in writing): "Q1 B, Q2 A"** — both earlier answers re-confirmed, no change: OB-866 B (a supplier bill's round off posts to the accountant's own "Purchase round off" account) and OB-893 A (CGST and SGST stay typed from the paper bill; the item's GST rate only checks them).
 - **Done:** D-078 and D-110 no longer say they wait on an owner question; each names its fix, the merged pull request and the tests that prove it. A guardrail now fails whenever a defect still says it waits on a question the owner has answered (`tests/guardrails/a-defect-waiting-on-the-owner-names-a-question-still-open.test.ts`; it failed on exactly these two before the change).

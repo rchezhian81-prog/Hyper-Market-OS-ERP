@@ -403,11 +403,13 @@ export function assembledGoodsReceiptRoutes(deps: AssembledGoodsReceiptDeps): re
           ...(lines.removed.length === 0 ? {} : { removedOnPhone: lines.removed }),
         });
         // D-031: each scan taken off the receipt on the phone is kept on head office's audit trail too — who, when, what.
+        // The ACTOR is the signed-in identity of this request (the store computer that relayed it, verified by head office);
+        // the name the phone wrote (`removedBy`) is the phone's own claim, so it is kept as a detail, never as the actor.
         for (const r of lines.removed) {
           await deps.recordAudit?.(ctx.tenantId, {
-            actorId: r.removedBy, action: 'receipt.scan.removed_on_phone', objectType: 'goods_receipt', objectId: grnId,
+            actorId: ctx.userId, action: 'receipt.scan.removed_on_phone', objectType: 'goods_receipt', objectId: grnId,
             at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-            before: { commandId: r.commandId, productId: r.productId, quantityMinor: String(r.quantityMinor), state: r.state, scannedBy: r.receivedBy, scannedAt: r.at, removedAt: r.removedAt },
+            before: { commandId: r.commandId, productId: r.productId, quantityMinor: String(r.quantityMinor), state: r.state, scannedBy: r.receivedBy, scannedAt: r.at, removedBy: r.removedBy, removedAt: r.removedAt },
             after: null,
             correlationId: grnId,
           });
