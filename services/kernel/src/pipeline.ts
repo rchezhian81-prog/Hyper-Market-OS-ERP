@@ -26,7 +26,7 @@ import {
 import { isWrite, type Method, type Router } from './router';
 import { evaluateStepUp } from './step-up';
 import type { RateLimiter, AuthThrottle } from './rate-limit';
-import { officeSignInAttempt, type SignInAttemptLog } from './sign-in-attempts';
+import { officeSignInAttempt, signInCallerKey, type SignInAttemptLog } from './sign-in-attempts';
 import { newWriteWitness, witnessing } from '../../../packages/persistence/src/write-witness';
 
 export interface Principal {
@@ -133,6 +133,21 @@ export interface AuthenticationContext {
   readonly query: Readonly<Record<string, string>>;
   readonly body: unknown;
   readonly idempotencyKey: string | undefined;
+  /**
+   * Audit 27 Nov 2026 item 1: an authenticator that refuses a credential says here WHY — above all whether the credential's
+   * signature checked (a token head office's own key signed, refused later because it expired, was revoked, names the wrong
+   * shop …). Such a credential cannot be a guess, so it never counts towards a sign-in lockout. An authenticator that says
+   * nothing is treated as reporting a forgery (fail-safe: the try counts).
+   */
+  readonly onRefused?: (refusal: AuthRefusal) => void;
+}
+
+/** Why an authenticator refused a credential — see `AuthenticationContext.onRefused`. Never sent to the caller. */
+export interface AuthRefusal {
+  /** True only when the credential's signature (or seal) verified with a key this service trusts. */
+  readonly signatureVerified: boolean;
+  /** The machine reason (`expired`, `signature_does_not_verify`, `stale`, `revoked` …), for the operator only. */
+  readonly reason: string;
 }
 
 export interface StoredResult {
@@ -360,6 +375,13 @@ export interface KernelOptions {
    */
   readonly authThrottle?: AuthThrottle;
   /**
+   * Audit 27 Nov 2026 item 1: the ADDRESS-WIDE ceiling on forged sign-ins. `authThrottle` is keyed on the source address
+   * AND the person a refused token claims, so one device at a shop (which shares one address) cannot lock the others out.
+   * A forger who changes the claimed name on every try would escape that, so every counted failure from an address also
+   * counts here, against a higher threshold. Optional in the type; supplied in a deployment (main.ts).
+   */
+  readonly sourceAuthThrottle?: AuthThrottle;
+  /**
    * D13-FR-06 (W3): where each failed office sign-in, and each lockout it trips, is KEPT (head office writes it
    * append-only on PostgreSQL). The lockout itself stays the in-memory `authThrottle`; this is only the record. Never
    * the token or any secret. A failure to keep it never changes the reply.
@@ -538,22 +560,39 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
     if (token === '') throw unauthenticated();
 
-    // A source that has failed sign-in too many times is refused WITHOUT the token being examined,
+    // A caller that has failed sign-in too many times is refused WITHOUT the token being examined,
     // so a brute-force run slows to the backoff's pace instead of the network's (audit FND-03).
+    // Audit 27 Nov item 1: the lockout is keyed on the address AND the person the token claims (read without believing it),
+    // so one device in a shop — which leaves from one address — cannot lock every other device out. The address-wide
+    // ceiling (`sourceAuthThrottle`, a higher threshold) stops a forger who changes the claimed name on every try.
+    const callerKey = signInCallerKey(clientIp, token);
+    const sourceKey = `ip:${clientIp}`;
     if (opts.authThrottle !== undefined) {
-      const lock = opts.authThrottle.status(`ip:${clientIp}`);
+      const lock = opts.authThrottle.status(callerKey);
+      if (lock.locked) throw tooManySignInAttempts(lock.retryAfterSeconds);
+    }
+    if (opts.sourceAuthThrottle !== undefined) {
+      const lock = opts.sourceAuthThrottle.status(sourceKey);
       if (lock.locked) throw tooManySignInAttempts(lock.retryAfterSeconds);
     }
 
+    const told: { refusal?: AuthRefusal } = {};
     const principal = await opts.authenticate(token, {
       method: request.method, path: request.path, query: request.query ?? {}, body: request.body,
       idempotencyKey: request.headers['idempotency-key'] ?? request.headers['Idempotency-Key'],
+      onRefused: (refusal) => { told.refusal = refusal; },
     });
     if (principal === undefined) {
-      // Record the failure so repeated guessing from this source backs off. Reported after the
-      // audit is written on the way out; the caller still gets a plain 401, not a hint of the lock.
-      opts.authThrottle?.fail(`ip:${clientIp}`);
-      // D13-FR-06: keep the failed try, and the lockout if this one tripped it (the source was not locked a moment ago).
+      // A credential whose signature verified (an EXPIRED sign-in, a revoked one, a stale store-PC seal) is not a guess:
+      // nobody guesses a correctly signed token. It is refused and kept, but never counted towards a lockout. Anything
+      // else — forged, badly signed, unreadable, or an authenticator that did not say — counts. The caller still gets a
+      // plain 401, not a hint of the lock.
+      const aGuess = told.refusal?.signatureVerified !== true;
+      if (aGuess) {
+        opts.authThrottle?.fail(callerKey);
+        opts.sourceAuthThrottle?.fail(sourceKey);
+      }
+      // D13-FR-06: keep the failed try, and the lockout if this one tripped it (the caller was not locked a moment ago).
       if (opts.signInLog !== undefined) {
         const at = new Date(opts.now?.() ?? Date.now()).toISOString();
         const keep = async (outcome: 'failed' | 'locked_out', lockedForSeconds?: number): Promise<void> => {
@@ -562,13 +601,16 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
           } catch { /* the record is the adapter's to report; the caller is told "unauthenticated" and no more */ }
         };
         await keep('failed');
-        const lock = opts.authThrottle?.status(`ip:${clientIp}`);
-        if (lock?.locked === true) await keep('locked_out', lock.retryAfterSeconds);
+        if (aGuess) {
+          const locks = [opts.authThrottle?.status(callerKey), opts.sourceAuthThrottle?.status(sourceKey)].filter((l) => l?.locked === true);
+          if (locks.length > 0) await keep('locked_out', Math.max(...locks.map((l) => l!.retryAfterSeconds)));
+        }
       }
       throw unauthenticated();
     }
-    // A genuine sign-in clears the source's failure count — one good login is not held against it.
-    opts.authThrottle?.succeed(`ip:${clientIp}`);
+    // A genuine sign-in clears the caller's failure count — one good login is not held against it — and the address's.
+    opts.authThrottle?.succeed(callerKey);
+    opts.sourceAuthThrottle?.succeed(sourceKey);
     auditPrincipal = principal;
 
     // Per-tenant fair share, after authentication: one tenant's burst cannot starve another's lane

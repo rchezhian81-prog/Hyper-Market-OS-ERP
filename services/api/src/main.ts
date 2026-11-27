@@ -2927,6 +2927,11 @@ export async function startApi(
     // per-tenant traffic; the auth lockout is deliberately strict.
     rateLimit: new TokenBucketRateLimiter({ capacity: 240, refillPerSecond: 20 }),
     authThrottle: new BackoffAuthThrottle({ threshold: 5, baseCooldownSeconds: 5, maxCooldownSeconds: 900 }),
+    // Audit 27 Nov 2026 item 1 (OB-914): the lockout above counts a forged sign-in against the address AND the person it
+    // claims, so one device in a shop (one address for every device) cannot lock the others out, and an expired but
+    // correctly signed sign-in is not counted at all. This address-wide ceiling still stops a forger who changes the
+    // claimed name on every try: 50 forged tries in a row from one address with no good sign-in between lock the address.
+    sourceAuthThrottle: new BackoffAuthThrottle({ threshold: 50, baseCooldownSeconds: 5, maxCooldownSeconds: 900 }),
     // W3 · D13-FR-06: each failed office sign-in and each lockout it trips is KEPT, append-only on PostgreSQL on the shop's
     // own record (the lockout above stays in memory, for speed) — the security report counts them through a restart.
     signInLog: officeSignInLogAdapter({ store, log: err }),
