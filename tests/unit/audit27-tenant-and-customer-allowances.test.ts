@@ -4,6 +4,8 @@ import {
   type Route, type HttpRequest, type Principal,
 } from '../../services/kernel/src/index';
 import { AccessControl } from '../../packages/rbac/src/rbac';
+import { loadConfig, CLOUD_API_CONFIG } from '../../services/kernel/src/config';
+import { rateLimitSettingsOf, isCustomerCaller } from '../../services/api/src/rate-limit-settings';
 
 /**
  * **Audit 27 Nov 2026, item 3 — the shop's allowance is its own, larger than one caller's; customers have their own.**
@@ -64,5 +66,41 @@ describe('audit 27 Nov item 3 — customers have their own allowance, apart from
     for (let i = 0; i < 4; i += 1) expect((await handle(k, call('staff:u-devi', `203.0.113.${i + 1}`))).status).toBe(200);
     expect((await handle(k, call('staff:u-devi', '203.0.113.50'))).status).toBe(429);
     expect((await handle(k, call('customer:c1', '198.51.100.1'))).status).toBe(200);
+  });
+});
+
+describe('audit 27 Nov item 3 — the allowances are settings, with defaults, and a shop\'s can never be smaller than one address\'s', () => {
+  const only = (env: Record<string, string>) => {
+    const keys = CLOUD_API_CONFIG.filter((c) => c.key.startsWith('RATE_LIMIT_'));
+    const loaded = loadConfig(keys, env);
+    if (!loaded.ok) return { loaded, settings: undefined };
+    return { loaded, settings: rateLimitSettingsOf(loaded.value!) };
+  };
+
+  it('defaults: 240 + 20/s per address, 2400 + 200/s per shop, 1200 + 100/s for the shop\'s customers', () => {
+    const { settings } = only({});
+    expect(settings).toEqual({ ok: true, value: {
+      perAddress: { capacity: 240, refillPerSecond: 20 },
+      perShop: { capacity: 2400, refillPerSecond: 200 },
+      customersPerShop: { capacity: 1200, refillPerSecond: 100 },
+    } });
+  });
+
+  it('a setting can change them', () => {
+    const { settings } = only({ RATE_LIMIT_PER_SHOP_BURST: '5000', RATE_LIMIT_CUSTOMERS_PER_SHOP_PER_SECOND: '40' });
+    expect(settings?.ok && settings.value.perShop.capacity).toBe(5000);
+    expect(settings?.ok && settings.value.customersPerShop.refillPerSecond).toBe(40);
+  });
+
+  it('a shop allowance smaller than one address\'s is refused (it would bring the fault back); zero or less is refused', () => {
+    const { settings } = only({ RATE_LIMIT_PER_SHOP_BURST: '100' });
+    expect(settings?.ok).toBe(false);
+    expect(settings !== undefined && !settings.ok && settings.detail).toContain('RATE_LIMIT_PER_SHOP must be at least RATE_LIMIT_PER_ADDRESS');
+    expect(only({ RATE_LIMIT_PER_ADDRESS_PER_SECOND: '0' }).loaded.ok).toBe(false);
+  });
+
+  it('a customer is read from the signed caller id (the customer realm\'s `customer-…`), nobody else', () => {
+    expect(isCustomerCaller({ tenantId: 't', userId: 'customer-ab12', branchId: null })).toBe(true);
+    expect(isCustomerCaller({ tenantId: 't', userId: 'u-owner', branchId: null })).toBe(false);
   });
 });

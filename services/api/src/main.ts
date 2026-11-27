@@ -35,6 +35,7 @@ import {
   type Route,
 } from '../../kernel/src/index';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
+import { rateLimitSettingsOf, isCustomerCaller } from './rate-limit-settings';
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
 import { shoppingAlternatives } from './ai-shopping';
 import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-insights';
@@ -2598,6 +2599,14 @@ export async function startApi(
     return undefined;
   }
 
+  // Audit 27 Nov 2026 item 3 (OB-916): the three request allowances, each a setting with a default; a shop's allowance
+  // smaller than one address's would let one caller spend the whole shop's, so that is refused at start.
+  const allowances = rateLimitSettingsOf(settings);
+  if (!allowances.ok) {
+    err(`\nthis service will not start: ${allowances.detail}\n\n`);
+    return undefined;
+  }
+
   // The self-hosted identity server's public keys (OB-15 · ADR-0019): both settings or neither — half a configuration is
   // refused rather than half-believed. Fetched once now; a server not yet up leaves its tokens refused until a key is held
   // (the keyring refreshes when a token names a key it has not seen, at most every 30 s). Nothing on a sale path asks.
@@ -2933,7 +2942,13 @@ export async function startApi(
     // so the limit is global, the same in-memory-reference / deployment-adapter split as idempotency.
     // A busy till bursts, so the capacity is generous and the sustained rate comfortably above normal
     // per-tenant traffic; the auth lockout is deliberately strict.
-    rateLimit: new TokenBucketRateLimiter({ capacity: 240, refillPerSecond: 20 }),
+    // Audit 27 Nov 2026 item 3 (OB-916): the per-address limit, the shop's allowance (staff and store computers) and the
+    // shop's customers' allowance are THREE limiters — one caller spending its address's allowance no longer spends the
+    // shop's, and the customer app never spends the tills'. Defaults 240 + 20/s, 2400 + 200/s, 1200 + 100/s (settings).
+    rateLimit: new TokenBucketRateLimiter(allowances.value.perAddress),
+    tenantRateLimit: new TokenBucketRateLimiter(allowances.value.perShop),
+    customerRateLimit: new TokenBucketRateLimiter(allowances.value.customersPerShop),
+    isCustomer: isCustomerCaller,
     authThrottle: new BackoffAuthThrottle({ threshold: 5, baseCooldownSeconds: 5, maxCooldownSeconds: 900 }),
     // Audit 27 Nov 2026 item 1 (OB-914): the lockout above counts a forged sign-in against the address AND the person it
     // claims, so one device in a shop (one address for every device) cannot lock the others out, and an expired but

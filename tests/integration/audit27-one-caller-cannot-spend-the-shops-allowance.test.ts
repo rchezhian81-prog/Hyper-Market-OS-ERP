@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, TEST_IDP } from '../support/api-harness';
-import { TokenBucketRateLimiter, type Principal } from '../../services/kernel/src/index';
+import { TokenBucketRateLimiter } from '../../services/kernel/src/index';
+import { isCustomerCaller as isCustomer } from '../../services/api/src/rate-limit-settings';
 import { CUSTOMER_SUBJECT_PREFIX } from '../../services/identity/src/keycloak-customer-signer';
 
 /**
@@ -11,7 +12,6 @@ import { CUSTOMER_SUBJECT_PREFIX } from '../../services/identity/src/keycloak-cu
 
 const T = 'ab000000-0000-4000-8000-00000000a274';
 const bucket = (capacity: number) => new TokenBucketRateLimiter({ capacity, refillPerSecond: 0.0001 }, () => 0);
-const isCustomer = (p: Principal): boolean => p.userId.startsWith(CUSTOMER_SUBJECT_PREFIX);
 const me = { method: 'GET' as const, path: '/v1/identity/me' };
 
 describe('audit 27 Nov item 3 — the shop\'s and the customers\' allowances (real router, in memory)', () => {
