@@ -18,6 +18,7 @@ const CONTROLS: readonly { readonly name: string; readonly pattern: RegExp; read
   { name: 'auth-attempt lockout', pattern: /\bauthThrottle:\s*new BackoffAuthThrottle\(/, gap: 'GAP-SEC-04' },
   { name: 'address-wide ceiling on forged sign-ins (audit 27 Nov item 1)', pattern: /\bsourceAuthThrottle:\s*new BackoffAuthThrottle\(/, gap: 'GAP-SEC-04' },
   { name: 'SHA-256-chained audit sink', pattern: /\baudit:\s*new SqlAuditSink\(/, gap: 'GAP-SEC-03' },
+  { name: 'anonymous refusals counted into the chained audit (audit 27 Nov item 2)', pattern: /new AuditedRefusalTally\(new SqlAuditSink\(pgPoolClient\(db\)/, gap: 'GAP-SEC-03' },
   { name: 'pinned token verifier (revocation-aware since GAP-SEC-05)', pattern: /\bauthenticate:\s*(?:revocationAwareAuthenticator\(|withOfficeCalls\(\{[\s\S]{0,400}?fallback:\s*revocationAwareAuthenticator\()/, gap: 'SEC-03 / GAP-SEC-05' },
   { name: 'token lifetime ceiling from configuration', pattern: /maxLifetimeSeconds:\s*Number\(settings\['IDP_MAX_TOKEN_LIFETIME_SECONDS'\]\)/, gap: 'GAP-SEC-05' },
   { name: 'transactional event store (atomic appendBatch)', pattern: /new SqlEventStore\(pgPoolClient\(/, gap: 'GAP-DATA-01' },

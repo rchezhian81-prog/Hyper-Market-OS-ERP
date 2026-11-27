@@ -7,9 +7,9 @@ import { AccessControl } from '../../packages/rbac/src/rbac';
 
 
 /** The tally, built where the kernel has one (before the fix it had none: then nothing is tallied and every refusal is written). */
-const tallyOver = (sink: AuditSink, cfg: { windowSeconds: number; maxKeys: number }, now: () => number): { flush(): Promise<void> } =>
-  typeof AuditedRefusalTally === 'function' ? new AuditedRefusalTally(sink, cfg, now) : { flush: async () => {} };
-const parse = (r: Parameters<AuditSink['record']>[0]) => (typeof parseRefusalTallyRow === 'function' ? parseRefusalTallyRow(r) : undefined);
+const tallyOver = (sink: AuditSink, cfg: { windowSeconds: number; maxKeys: number }, now: () => number): AuditedRefusalTally =>
+  typeof AuditedRefusalTally === 'function' ? new AuditedRefusalTally(sink, cfg, now) : ({ flush: async () => {} } as unknown as AuditedRefusalTally);
+const parse = (r: { readonly path: string; readonly permission: string }) => (typeof parseRefusalTallyRow === 'function' ? parseRefusalTallyRow(r) : undefined);
 
 /**
  * **Audit 27 Nov 2026, item 2 — the per-address limit runs before route matching, and refusals of callers nobody signed

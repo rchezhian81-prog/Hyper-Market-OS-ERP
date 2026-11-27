@@ -31,7 +31,7 @@ import { pgPoolClient, pgDedicatedSession, pgEndBackendVia, listenForEndedConnec
 import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
-  structuredLogger, combineObservers, RequestMetrics, TokenBucketRateLimiter, BackoffAuthThrottle,
+  structuredLogger, combineObservers, RequestMetrics, TokenBucketRateLimiter, BackoffAuthThrottle, AuditedRefusalTally,
   type Route,
 } from '../../kernel/src/index';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
@@ -2831,6 +2831,13 @@ export async function startApi(
     metrics.record,
   );
 
+  // Audit 27 Nov 2026 item 2 (OB-915): refusals of callers nobody signed in as (no token, a path that does not exist, the
+  // address limit) are COUNTED into the same chained audit_log — the first of each kind per minute at once, the rest as
+  // one row with the count — instead of one database write per junk request. Written every minute and at shutdown.
+  const refusalTally = new AuditedRefusalTally(new SqlAuditSink(pgPoolClient(db), (detail) => { err(`${detail}\n`); }), { windowSeconds: 60, maxKeys: 1000 });
+  const refusalTallyTimer = setInterval(() => { refusalTally.flush().catch((e: unknown) => { err(`refusal tally not written: ${String(e)}\n`); }); }, 60_000);
+  refusalTallyTimer.unref();
+
   const server = startHttpServer({
     router: built.router!,
     observe,
@@ -2915,6 +2922,7 @@ export async function startApi(
     // (`pgPoolClient`, audit FND-01) lets each write seal itself onto the previous one under a
     // per-tenant lock, so the SHA-256 chain (audit FND-02) cannot fork.
     audit: new SqlAuditSink(pgPoolClient(db), (detail) => { err(`${detail}\n`); }),
+    refusalTally,
 
     // Rate limiting and auth-attempt lockout (audit FND-03 / GAP-SEC-04). The API had exactly one
     // 429 in the whole product (the AI budget gate); nothing capped request volume and nothing slowed
@@ -3077,6 +3085,8 @@ export async function startApi(
       await opsAlertWorker.stop();
       if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();
+      clearInterval(refusalTallyTimer);
+      await refusalTally.flush(); // audit 27 Nov item 2: the last anonymous-refusal counts are kept before the database closes
       await secretUse.stop(); // W6: the last tally is kept before the database closes
       await db.end();
     },

@@ -12,9 +12,9 @@ import {
 
 
 /** The tally, built where the kernel has one (before the fix it had none: then nothing is tallied and every refusal is written). */
-const tallyOver = (sink: AuditSink, cfg: { windowSeconds: number; maxKeys: number }, now: () => number): { flush(): Promise<void> } =>
-  typeof AuditedRefusalTally === 'function' ? new AuditedRefusalTally(sink, cfg, now) : { flush: async () => {} };
-const parse = (r: Parameters<AuditSink['record']>[0]) => (typeof parseRefusalTallyRow === 'function' ? parseRefusalTallyRow(r) : undefined);
+const tallyOver = (sink: AuditSink, cfg: { windowSeconds: number; maxKeys: number }, now: () => number): AuditedRefusalTally =>
+  typeof AuditedRefusalTally === 'function' ? new AuditedRefusalTally(sink, cfg, now) : ({ flush: async () => {} } as unknown as AuditedRefusalTally);
+const parse = (r: { readonly path: string; readonly permission: string }) => (typeof parseRefusalTallyRow === 'function' ? parseRefusalTallyRow(r) : undefined);
 
 /**
  * **Audit 27 Nov 2026, item 2 — through the REAL head-office router: the per-address limit runs before the route is
@@ -37,7 +37,7 @@ describe('audit 27 Nov item 2 — real router, in memory', () => {
     expect((await h.raw({ method: 'GET', path: '/v1/does-not-exist-9', clientIp: '203.0.113.9' })).status).toBe(429);
   });
 
-  it('200 anonymous refusals are four rows adding up to 200; the owner\'s refusal and a forged sign-in are a row each', async () => {
+  it('200 anonymous refusals are counted (two rows now, the rest as counts); a forged sign-in is a row of its own', async () => {
     let nowMs = 5_000_000;
     const rows: Row[] = [];
     const sink: AuditSink = { record: (r) => { rows.push(r); } };
@@ -93,7 +93,7 @@ describe.skipIf(!DATABASE_URL)('audit 27 Nov item 2 — on PostgreSQL, in the re
     await refusalTally.flush();
     const rows = await anonymousRows();
     expect(rows.length).toBe(4);
-    const counts = rows.map((r) => parse({ tenantId: r.tenant_id, userId: r.user_id, method: r.method, path: r.path, status: r.status, traceId: r.trace_id, permission: r.permission })?.count ?? 1);
+    const counts = rows.map((r) => parse({ path: r.path, permission: r.permission })?.count ?? 1);
     expect(counts.reduce((a, b) => a + b, 0), 'all 120 refusals are on the record').toBe(120);
 
     const signedIn = await pool.query('SELECT count(*)::int AS n FROM audit_log WHERE tenant_id = $1 AND user_id = $2 AND status = 403 AND trace_id LIKE $3', [tenant, 'u-cashier', `${run}-403-%`]);

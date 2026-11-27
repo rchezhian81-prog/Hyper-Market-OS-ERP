@@ -31,6 +31,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner decision needed:** none (OB-914 may be reversed: see the report's options).
 - **Not done:** the store computer's own login gate (OB-429, `edge/store-edge/src/box-login-gate.ts`) still stops calling after one refusal, as before; its comment still says "keyed on the address" (that file belongs to another conversation today).
 
+## Audit 27 Nov — item 2: the address limit runs first; anonymous refusals are counted, not written one each (OB-915 · D-132)
+- **Was it real?** Yes, at e8cbd0db. A request to a path with no route was answered 404 before the per-address limit ran (a scanner could hammer unknown paths at full speed), and every refused request — 401, 404, 429 — wrote its own audit row, all on the one 'unauthenticated' chain under one lock. **Proved first:** `tests/unit/audit27-limit-before-route-and-refusal-tally.test.ts` and `tests/integration/audit27-anonymous-refusals-are-counted-not-written-each.test.ts` (real router, in memory and on PostgreSQL: 120 anonymous refusals wrote 120 rows) — 6 of 7 failed before (scratchpad `audit27/item2-before.txt`), all pass after (`audit27/item2-after.txt`).
+- **Requirements checked (no conflict):** hard rule 6 (never delete audit evidence), M34-FR-01 (every SENSITIVE action recorded), M02 (every login, logout and lock audited), SEC-07, NFR-15, D13-FR-06. Nothing asks for one row per anonymous junk request; a failed LOGIN is kept one row each (and per try on the shop's record).
+- **Done (branch `claude/audit-02-limit-before-route`):**
+  - **The per-address limit runs first**, for every request, before the route is looked up and before sign-in.
+  - **Anonymous refusals are counted** into the same chained, append-only audit_log: per status, reason and source network (last part masked) per minute — the FIRST of each kind written at once (a crash can never lose that it happened), the rest as ONE row with the count when the minute closes (and at shutdown). Past 1000 kinds at once they share one "other" count, so a flood from many networks is still a handful of rows. Nothing is dropped: the counts add up to every refusal.
+  - **Still one row each:** every refusal of a signed-in person, every refused sign-in (a token presented and not believed), every 5xx.
+- **Decided under OB-801 (evening list):** OB-915 (which refusals are counted, the minute, the 1000 cap, the first written at once, the row's shape — no database change).
+- **Owner, in the store:** nothing to do. Nothing on any screen changes.
+- **Owner decision needed:** none.
+- **Not done:** a 404 is answered before sign-in is checked, so a signed-in person's request to a path that does not exist is counted with the anonymous ones (as before it was written as 'unauthenticated'). The counts are rows in the audit trail; no screen shows them yet.
+
 ## D-129 — the till's cash movements and close wait at most 5 seconds (22 Nov 2026) · D-130 closed too
 - **Why:** P-08 "no silent failure". The float, cash loan, pickup, safe drop and the shift close still asked the store computer with no time limit (up to 4 times). A slow store computer left the cashier waiting with nothing on the screen. They were left out of OB-908 because their words "the cash is NOT recorded yet" would be untrue after a time-out — the store computer may have recorded it. **Proved first:** a store computer that takes the call and never answers made the till hang (unit test: 8 s time-out on all five calls; browser test: no message in 15 s on the float and the close).
 - **Done (branch `claude/d129-cash-timeout`, pushed; no pull request yet):**
