@@ -67,6 +67,47 @@ export function claimedIdentityOf(token: string): { readonly tenantId: string | 
   }
 }
 
+/**
+ * Audit 27 Nov 2026 item 1: the key the sign-in lockout counts a failed try against — the source address AND the shop and
+ * person the credential CLAIMS (read without believing it, from a signed token's payload or a store-PC office-call seal's).
+ * A shop's devices all leave from one address; keying on the address alone let one device lock every other out. The
+ * claim is attacker-written, so a forger can change it on every try — which is why every counted failure ALSO counts
+ * against the address-wide ceiling (`KernelOptions.sourceAuthThrottle`). A credential with no readable claim shares one
+ * key per address. Never holds the token or any secret.
+ */
+export function signInCallerKey(clientIp: string, token: string): string {
+  const parts = token.split('.');
+  let who = '-/-';
+  if (parts.length === 3 && parts[1] !== undefined && parts[1].length <= 8_192) {
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, unknown>;
+      if (payload !== null && typeof payload === 'object') {
+        const tenant = cleanClaim(payload['tenant_id']) ?? cleanClaim(payload['tenantId']);
+        const user = cleanClaim(payload['sre_user_id']) ?? cleanClaim(payload['sub']) ?? cleanClaim(payload['userId']);
+        who = `${tenant ?? '-'}/${user ?? '-'}`;
+      }
+    } catch { /* unreadable: the per-address "no claim" key */ }
+  }
+  return `ip:${clientIp}|as:${who}`;
+}
+
+/**
+ * Audit 27 Nov 2026 item 1: the identity verifier's refusals reached only AFTER a token's signature verified with a trusted
+ * key (services/identity/src/token.ts `TokenRefusal`, and `revoked`, which is checked after verification). Such a token
+ * cannot be a guess, so the sign-in lockout does not count it. An allow-list on purpose: a refusal not named here — a
+ * forged or unreadable token, or a reason added later — counts (fail-safe).
+ */
+const AFTER_THE_SIGNATURE: ReadonlySet<string> = new Set([
+  'payload_unreadable', 'no_expiry', 'expired', 'not_yet_valid', 'no_issued_at', 'lifetime_too_long', 'issuer_not_ours',
+  'audience_not_ours', 'no_subject', 'subject_not_this_issuers', 'no_tenant', 'tenant_not_this_issuers', 'channel_ambiguous',
+  'revoked',
+]);
+
+/** Did the token's signature verify before it was refused? */
+export function refusedAfterTheSignature(reason: string): boolean {
+  return AFTER_THE_SIGNATURE.has(reason);
+}
+
 /** The source address as a class and a masked network — never the whole address. */
 export function sourceOf(clientIp: string | undefined): { readonly sourceClass: OfficeSignInAttempt['sourceClass']; readonly sourceNetwork: string } {
   const ip = (clientIp ?? '').trim().replace(/^::ffff:/i, '');

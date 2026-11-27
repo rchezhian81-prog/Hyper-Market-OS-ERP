@@ -37,7 +37,8 @@
 //     parameter or a path segment a caller controls.
 
 import { createHmac, timingSafeEqual, verify as verifySignature, type KeyObject } from 'node:crypto';
-import type { Principal } from '../../kernel/src/index';
+import type { AuthenticationContext, Principal } from '../../kernel/src/index';
+import { refusedAfterTheSignature } from '../../kernel/src/sign-in-attempts';
 import { withMultiFactor } from './amr';
 
 /** Why a token was not believed. Never returned to the caller — the reply is always "unauthenticated". */
@@ -338,11 +339,12 @@ export function tokenAuthenticator(
   policy: TokenPolicy,
   onRefusal?: (r: TokenRefusal, detail: string) => void,
   now: () => number = () => Date.now(),
-): (token: string) => Principal | undefined {
-  return (token) => {
+): (token: string, request?: AuthenticationContext) => Principal | undefined {
+  return (token, request) => {
     const verdict = verifyToken(token, policy, now());
     if (verdict.ok) return verdict.principal;
     onRefusal?.(verdict.refusedBecause!, verdict.detail);
+    request?.onRefused?.({ signatureVerified: refusedAfterTheSignature(verdict.refusedBecause!), reason: verdict.refusedBecause! });
     return undefined;
   };
 }

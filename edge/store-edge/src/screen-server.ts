@@ -28,6 +28,7 @@
 import { periodFromUrl } from './report-period';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { allowedHostNames, hostAllowed, NOT_THIS_COMPUTER } from './host-allow-list';
+import { readableAddress, UNREADABLE_ADDRESS } from './request-address';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, screenBrand, catalogueForViewer, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
@@ -115,6 +116,8 @@ export function directoryProducts(pack: ScreenInput['pack'], query: string, limi
  * on a private compose network with the public reverse proxy in front (ADR-0018): `EDGE_SCREEN_HOST` names
  * the address explicitly, the boot log says so out loud, and no host port is ever published for it.
  */
+/** Audit 27 Nov 2026 item 4: the words when a request could not be answered because of a problem on this box. */
+export const SCREEN_REQUEST_FAILED = 'This page could not be answered because of a problem on this store computer. Check whether what you did went through before doing it again, and tell the manager if it keeps happening.';
 export const SCREEN_HOST = '127.0.0.1';
 
 /** The marker each shell carries where its payload belongs. */
@@ -942,7 +945,10 @@ export async function startScreenServer(input: {
   // OB-840: the person the remote door let through, for THIS request only (set by the remote listener, read below).
   const remoteOf = new WeakMap<IncomingMessage, RemotePerson>();
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
-    void (async () => {
+    (async () => {
+      // Audit 27 Nov 2026 item 4: an address that cannot be read (a request line such as `GET //`) is answered 400 in
+      // words, before anything else looks at it.
+      if (!readableAddress(req.url)) { req.resume(); send(res, 400, 'text/plain; charset=utf-8', UNREADABLE_ADDRESS); return; }
       const remote = remoteOf.get(req);
       // OB-259: the office's two doors — the only writes this socket takes, and only when the gate is on.
       const doorPath = (req.url ?? '/').split('?')[0];
@@ -1310,7 +1316,14 @@ export async function startScreenServer(input: {
       const notice = input.licence !== undefined && (APP_SHELL[route.screen].dir === 'web-erp' || route.screen === 'owner') ? licenceNotice(input.licence.deps.now().standing) : null;
       const noticed = withLicenceNotice(served, notice);
       send(res, 200, type, !barred ? noticed : noticed.includes('</body>') ? noticed.replace('</body>', `${SIGN_OUT_BAR}</body>`) : `${noticed}${SIGN_OUT_BAR}`);
-    })();
+    })().catch((e: unknown) => {
+      // Audit 27 Nov 2026 item 4: nothing one request does may end the store computer's process. Said on stderr (P-08) and
+      // answered in words; never left as an unhandled rejection, which would stop the box.
+      process.stderr.write(`screen request ${req.method ?? '?'} could not be answered: ${e instanceof Error ? e.message : String(e)}\n`);
+      req.resume();
+      if (res.headersSent) { res.destroy(); return; }
+      send(res, 500, 'text/plain; charset=utf-8', SCREEN_REQUEST_FAILED);
+    });
   };
   // Audit 27 Nov 2026 item 6 (DNS rebinding): the screens answer the loopback names, the address they were told to bind
   // and the names the deployment configured (`allowedHosts` — the hosted copy's public name the proxy forwards for

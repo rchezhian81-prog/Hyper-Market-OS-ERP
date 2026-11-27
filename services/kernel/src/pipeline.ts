@@ -26,7 +26,8 @@ import {
 import { isWrite, type Method, type Router } from './router';
 import { evaluateStepUp } from './step-up';
 import type { RateLimiter, AuthThrottle } from './rate-limit';
-import { officeSignInAttempt, type SignInAttemptLog } from './sign-in-attempts';
+import type { RefusalTally } from './refusal-tally';
+import { officeSignInAttempt, signInCallerKey, type SignInAttemptLog } from './sign-in-attempts';
 import { newWriteWitness, witnessing } from '../../../packages/persistence/src/write-witness';
 
 export interface Principal {
@@ -133,6 +134,21 @@ export interface AuthenticationContext {
   readonly query: Readonly<Record<string, string>>;
   readonly body: unknown;
   readonly idempotencyKey: string | undefined;
+  /**
+   * Audit 27 Nov 2026 item 1: an authenticator that refuses a credential says here WHY — above all whether the credential's
+   * signature checked (a token head office's own key signed, refused later because it expired, was revoked, names the wrong
+   * shop …). Such a credential cannot be a guess, so it never counts towards a sign-in lockout. An authenticator that says
+   * nothing is treated as reporting a forgery (fail-safe: the try counts).
+   */
+  readonly onRefused?: (refusal: AuthRefusal) => void;
+}
+
+/** Why an authenticator refused a credential — see `AuthenticationContext.onRefused`. Never sent to the caller. */
+export interface AuthRefusal {
+  /** True only when the credential's signature (or seal) verified with a key this service trusts. */
+  readonly signatureVerified: boolean;
+  /** The machine reason (`expired`, `signature_does_not_verify`, `stale`, `revoked` …), for the operator only. */
+  readonly reason: string;
 }
 
 export interface StoredResult {
@@ -349,16 +365,43 @@ export interface KernelOptions {
   readonly audit?: AuditSink;
   /**
    * Request rate limiter (audit FND-03). Optional in the type (a test that is not about limiting
-   * omits it) and supplied in a deployment. Keyed per source IP before authentication (flood
-   * protection) and per tenant after (fair share).
+   * omits it) and supplied in a deployment. Keyed per source IP, before anything else (flood protection).
    */
   readonly rateLimit?: RateLimiter;
+  /**
+   * Audit 27 Nov 2026 item 3: the SHOP's own allowance (fair share between shops), keyed on the signed tenant after
+   * authentication, for staff and store computers. A limiter of its own — never the per-address one — and larger, so one
+   * caller spending its address's allowance has not spent the shop's. Absent → no per-shop limit (a test).
+   */
+  readonly tenantRateLimit?: RateLimiter;
+  /**
+   * Audit 27 Nov 2026 item 3: the shop's CUSTOMERS' allowance (the customer app), keyed on the signed tenant, apart from the
+   * staff and store computers' — so a busy hour on the customer app never refuses a till, and the tills never refuse a
+   * customer. Used for a caller `isCustomer` says is one; absent → customers draw on `tenantRateLimit` like everyone else.
+   */
+  readonly customerRateLimit?: RateLimiter;
+  /** Audit 27 Nov 2026 item 3: is this signed caller a customer (the customer realm's people)? Read from the signed principal. */
+  readonly isCustomer?: (principal: Principal) => boolean;
   /**
    * Auth-attempt lockout (audit FND-03). Optional in the type; supplied in a deployment. Consulted
    * before authenticating a source and updated with the outcome, so repeated failed sign-ins from
    * one source back off exponentially.
    */
   readonly authThrottle?: AuthThrottle;
+  /**
+   * Audit 27 Nov 2026 item 1: the ADDRESS-WIDE ceiling on forged sign-ins. `authThrottle` is keyed on the source address
+   * AND the person a refused token claims, so one device at a shop (which shares one address) cannot lock the others out.
+   * A forger who changes the claimed name on every try would escape that, so every counted failure from an address also
+   * counts here, against a higher threshold. Optional in the type; supplied in a deployment (main.ts).
+   */
+  readonly sourceAuthThrottle?: AuthThrottle;
+  /**
+   * Audit 27 Nov 2026 item 2: where a refusal of a caller NOBODY signed in as goes instead of one audit row each — counted
+   * per status, reason and source network per window, the first of each written at once (see `refusal-tally.ts`). A
+   * signed-in person's refusals, refused sign-ins and 5xx are always written one row each. Absent → every refusal is
+   * written one row each, as before (a test). Supplied in a deployment (main.ts).
+   */
+  readonly refusalTally?: RefusalTally;
   /**
    * D13-FR-06 (W3): where each failed office sign-in, and each lockout it trips, is KEPT (head office writes it
    * append-only on PostgreSQL). The lockout itself stays the in-memory `authThrottle`; this is only the record. Never
@@ -470,12 +513,25 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
   let matchedApi: string | undefined;
   let resolvedAccess: AccessControl | undefined;
 
-  const writeAudit = async (status: number): Promise<void> => {
+  // Audit 27 Nov item 2: a credential was presented and not believed — a refused sign-in, kept one row each.
+  let credentialRefused = false;
+
+  const writeAudit = async (status: number, code?: string): Promise<void> => {
     if (opts.audit === undefined) return;
     // Successful reads are not audited — the volume would bury the writes. Everything else is:
     // every write, and every refusal of any kind.
     const interesting = isWrite(auditedMethod) || status >= 400;
     if (!interesting) return;
+    // Audit 27 Nov item 2: a refusal of a caller nobody signed in as (no token, a path that does not exist, the address
+    // limit) is COUNTED — the first of each kind written at once, the rest as one row with the count (refusal-tally.ts) —
+    // so a flood of anonymous junk is not a flood of database writes. Never a signed-in person's refusal, never a refused
+    // sign-in, never a 5xx: those stay one row each.
+    if (opts.refusalTally !== undefined && auditPrincipal === undefined && !credentialRefused && status >= 400 && status < 500) {
+      await opts.refusalTally.count({
+        status, code: code ?? String(status), method: auditedMethod, path: request.path, permission: auditPermission, traceId, clientIp,
+      });
+      return;
+    }
     await opts.audit.record({
       tenantId: auditPrincipal?.tenantId ?? 'unauthenticated',
       userId: auditPrincipal?.userId ?? 'unauthenticated',
@@ -519,6 +575,14 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
   const clientIp = request.clientIp ?? 'unknown';
 
   try {
+    // Per-IP flood limit, before anything else — before authentication AND before the route is looked up: a source
+    // hammering the API — the sign-in path, or paths that do not exist — is capped whether or not it ever presents a
+    // valid token or names a real route (audit FND-03; audit 27 Nov 2026 item 2).
+    if (opts.rateLimit !== undefined) {
+      const perIp = await opts.rateLimit.take(`ip:${clientIp}`);
+      if (!perIp.allowed) throw rateLimited(perIp.retryAfterSeconds);
+    }
+
     const matched = opts.router.match(request.method, request.path);
     if (matched === undefined) throw notFound(`${request.method} ${request.path}`);
     const { route, params } = matched;
@@ -527,33 +591,44 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     auditPermission = route.permission;
     auditedMethod = route.method;
 
-    // Per-IP flood limit, before authentication: a source hammering the API — including the sign-in
-    // path — is capped whether or not it ever presents a valid token (audit FND-03).
-    if (opts.rateLimit !== undefined) {
-      const perIp = await opts.rateLimit.take(`ip:${clientIp}`);
-      if (!perIp.allowed) throw rateLimited(perIp.retryAfterSeconds);
-    }
-
     const header = request.headers['authorization'] ?? request.headers['Authorization'] ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
     if (token === '') throw unauthenticated();
 
-    // A source that has failed sign-in too many times is refused WITHOUT the token being examined,
+    // A caller that has failed sign-in too many times is refused WITHOUT the token being examined,
     // so a brute-force run slows to the backoff's pace instead of the network's (audit FND-03).
+    // Audit 27 Nov item 1: the lockout is keyed on the address AND the person the token claims (read without believing it),
+    // so one device in a shop — which leaves from one address — cannot lock every other device out. The address-wide
+    // ceiling (`sourceAuthThrottle`, a higher threshold) stops a forger who changes the claimed name on every try.
+    const callerKey = signInCallerKey(clientIp, token);
+    const sourceKey = `ip:${clientIp}`;
     if (opts.authThrottle !== undefined) {
-      const lock = opts.authThrottle.status(`ip:${clientIp}`);
+      const lock = opts.authThrottle.status(callerKey);
+      if (lock.locked) throw tooManySignInAttempts(lock.retryAfterSeconds);
+    }
+    if (opts.sourceAuthThrottle !== undefined) {
+      const lock = opts.sourceAuthThrottle.status(sourceKey);
       if (lock.locked) throw tooManySignInAttempts(lock.retryAfterSeconds);
     }
 
+    const told: { refusal?: AuthRefusal } = {};
     const principal = await opts.authenticate(token, {
       method: request.method, path: request.path, query: request.query ?? {}, body: request.body,
       idempotencyKey: request.headers['idempotency-key'] ?? request.headers['Idempotency-Key'],
+      onRefused: (refusal) => { told.refusal = refusal; },
     });
     if (principal === undefined) {
-      // Record the failure so repeated guessing from this source backs off. Reported after the
-      // audit is written on the way out; the caller still gets a plain 401, not a hint of the lock.
-      opts.authThrottle?.fail(`ip:${clientIp}`);
-      // D13-FR-06: keep the failed try, and the lockout if this one tripped it (the source was not locked a moment ago).
+      credentialRefused = true;
+      // A credential whose signature verified (an EXPIRED sign-in, a revoked one, a stale store-PC seal) is not a guess:
+      // nobody guesses a correctly signed token. It is refused and kept, but never counted towards a lockout. Anything
+      // else — forged, badly signed, unreadable, or an authenticator that did not say — counts. The caller still gets a
+      // plain 401, not a hint of the lock.
+      const aGuess = told.refusal?.signatureVerified !== true;
+      if (aGuess) {
+        opts.authThrottle?.fail(callerKey);
+        opts.sourceAuthThrottle?.fail(sourceKey);
+      }
+      // D13-FR-06: keep the failed try, and the lockout if this one tripped it (the caller was not locked a moment ago).
       if (opts.signInLog !== undefined) {
         const at = new Date(opts.now?.() ?? Date.now()).toISOString();
         const keep = async (outcome: 'failed' | 'locked_out', lockedForSeconds?: number): Promise<void> => {
@@ -562,19 +637,25 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
           } catch { /* the record is the adapter's to report; the caller is told "unauthenticated" and no more */ }
         };
         await keep('failed');
-        const lock = opts.authThrottle?.status(`ip:${clientIp}`);
-        if (lock?.locked === true) await keep('locked_out', lock.retryAfterSeconds);
+        if (aGuess) {
+          const locks = [opts.authThrottle?.status(callerKey), opts.sourceAuthThrottle?.status(sourceKey)].filter((l) => l?.locked === true);
+          if (locks.length > 0) await keep('locked_out', Math.max(...locks.map((l) => l!.retryAfterSeconds)));
+        }
       }
       throw unauthenticated();
     }
-    // A genuine sign-in clears the source's failure count — one good login is not held against it.
-    opts.authThrottle?.succeed(`ip:${clientIp}`);
+    // A genuine sign-in clears the caller's failure count — one good login is not held against it — and the address's.
+    opts.authThrottle?.succeed(callerKey);
+    opts.sourceAuthThrottle?.succeed(sourceKey);
     auditPrincipal = principal;
 
     // Per-tenant fair share, after authentication: one tenant's burst cannot starve another's lane
-    // (audit FND-03). Keyed on the signed tenant, never anything the caller supplied.
-    if (opts.rateLimit !== undefined) {
-      const perTenant = await opts.rateLimit.take(`tenant:${principal.tenantId}`);
+    // (audit FND-03). Keyed on the signed tenant, never anything the caller supplied. Audit 27 Nov item 3: the shop's
+    // allowance is its own limiter (never the per-address one), and its customers have a separate allowance.
+    const customer = opts.customerRateLimit !== undefined && opts.isCustomer?.(principal) === true;
+    const shopLimit = customer ? opts.customerRateLimit : opts.tenantRateLimit;
+    if (shopLimit !== undefined) {
+      const perTenant = await shopLimit.take(`${customer ? 'customers' : 'tenant'}:${principal.tenantId}`);
       if (!perTenant.allowed) throw rateLimited(perTenant.retryAfterSeconds);
     }
 
@@ -760,7 +841,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
 
     // The refusal goes on the record too. An audit trail that holds only what succeeded cannot
     // answer the question it exists for: who tried.
-    await writeAudit(failure.status);
+    await writeAudit(failure.status, (failure.body as { error?: { code?: string } } | undefined)?.error?.code);
     return finish(failure);
   }
 }

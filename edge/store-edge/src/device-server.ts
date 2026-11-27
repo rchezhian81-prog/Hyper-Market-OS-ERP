@@ -34,6 +34,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer as createTlsServer, type Server } from 'node:https';
 import { allowedHostNames, hostAllowed, NOT_THIS_COMPUTER, NOT_THIS_COMPUTER_CODE } from './host-allow-list';
+import { readableAddress, UNREADABLE_ADDRESS } from './request-address';
 import { createServer as createFrontServer, type Socket } from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -353,7 +354,10 @@ export function startDeviceServer(input: {
     }
     void (async () => {
       const raw = req.url ?? '/';
-      const url = ((): URL => { try { return new URL(raw, 'http://device'); } catch { return new URL('/', 'http://device'); } })();
+      // Audit 27 Nov 2026 item 4: an address that cannot be read (`GET //`) is answered 400 in words — never quietly read as
+      // the home page.
+      if (!readableAddress(raw)) { req.resume(); send(res, 400, 'text/plain; charset=utf-8', UNREADABLE_ADDRESS); return; }
+      const url = new URL(raw, 'http://device');
       const pathname = url.pathname;
 
       // ── Enrolment: the one route open to a device that holds no credential yet ──
@@ -563,7 +567,14 @@ export function startDeviceServer(input: {
         deviceId: auth.deviceId,
         ...(stamping === null ? {} : { phoneSignIn: { ...stamping, boxNow: input.now() } }),
       }));
-    })();
+    })().catch((e: unknown) => {
+      // Audit 27 Nov 2026 item 4: nothing one request does may end the store computer's process. Said on stderr (P-08) and
+      // answered in words; never left as an unhandled rejection, which would stop the box.
+      process.stderr.write(`handheld request ${req.method ?? '?'} could not be answered: ${e instanceof Error ? e.message : String(e)}\n`);
+      req.resume();
+      if (res.headersSent) { res.destroy(); return; }
+      sendJson(res, 500, { error: 'request_failed', why: 'This request could not be answered because of a problem on the store computer. Check whether it went through before doing it again, and tell the manager if it keeps happening.' });
+    });
   });
 
   // A failed handshake (a device that does not trust this store computer yet, a scanner probing the port) is the
