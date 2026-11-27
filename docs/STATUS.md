@@ -19,6 +19,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Pending list 27 Nov — item 4: the MRP box and failed-check count on the handheld's receive screen (27 Nov 2026)
+- **Was it still missing?** No. Batch 20a (#969) built both on the warehouse handheld: "MRP on the pack (next item)" keyed on the handheld's keypad, and "Failed quality check / refused at the door"; a different MRP is flagged for the buyer and failed units are held out and booked quarantined. STATUS still listed it as not done.
+- **Proved again after D-031 (#986), which now holds scans until "send":** the browser test `tests/e2e/b20a-the-handheld-takes-the-pack-mrp-and-a-failed-check.e2e.ts`, the unit and integration tests of batch 20a and D-031 (in memory and PostgreSQL) all pass — the MRP and the failed check ride inside the one receipt.
+- **Done:** the old "not done" lines in STATUS now say done, with the pull request. No code changed.
+- **Owner, on a handheld (after the next update):** choose the delivery → tap "MRP on the pack", key the MRP → scan the item; for a bad carton tap "Failed quality check / refused at the door" and scan it → "Delivery complete — send". Goods receipt review shows the MRP difference and the held-out units.
+- **Blocked:** nothing.
+
 ## Pending list 27 Nov — item 3: D-031 — the handheld holds its receiving scans until "Delivery complete — send the receipt" (27 Nov 2026 · OB-926 · OB-927 · OB-928 · D-144)
 - **Was it still broken?** Yes, at main 87c34775. Each receiving scan on the warehouse handheld was its own record: it went to the store computer at once and head office put the goods in its stock on arrival — before the person pressed "Delivery complete — send the receipt". **Proved first** (committed on its own): `tests/unit/d031-the-handheld-holds-scans-until-send.test.ts` and `tests/integration/d031-held-scans-reach-head-office-only-when-sent.test.ts` — 11 of 13 failed (the store computer had the 3 scans before "send"; head office's stock rose). Before / after runs: scratchpad `audit27/pending03-before.txt`, `audit27/pending03-after.txt`.
 - **Done (branch `claude/pending-03-d031-hold-scans-until-send`, pushed; no pull request yet):**
@@ -257,8 +264,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **Search box** on Goods receipt review, Suppliers, Waste & write-off and Approvals.
 - **Owner, in the store:** (1) install the next store-PC update; on a fresh install sell one item — the bill reads `1L01/26-27/00001`; Tills & devices lists the till with `L01`. (2) Open About (or Licence) on the store PC — English only; press தமிழ் — Tamil only; open Software update — still Tamil. (3) Sign out and back in — the sign-in page opens in the language you last chose. (4) Buying — the last two cards read "Open orders" and "Reorder". (5) Today → Receive: type the MRP off a pack and, for a bad carton, the number that failed the check. (6) Type a supplier's name in the new search box on Suppliers.
 - **Owner decision needed (money, batched):** OB-866 — where a supplier bill's "Round off" posts (A same round-off account as sales; B a separate purchase round-off account the accountant names; C no change). A1 waits for it.
-- **Not done:** A1 (round off) — waiting for OB-866. The MRP box and the failed-check count are on Receive (office); the warehouse handheld's receive screen does not have them yet. The CA's written confirmation of OB-862 is an owner action.
-- **Next:** the owner's answer on OB-866; then the handheld's MRP box.
+- **Not done:** A1 (round off) — waiting for OB-866. The MRP box and the failed-check count are on Receive (office); the warehouse handheld's receive screen does not have them yet. _(Done since: batch 20a, #969 — the handheld has both; still proved after D-031's change, pending list item 4, 27 Nov 2026.)_ The CA's written confirmation of OB-862 is an owner action.
+- **Next:** the owner's answer on OB-866; then the handheld's MRP box. _(Both done since: OB-866 B in batch 19, #966; the handheld's MRP box in batch 20a, #969.)_
 ## Batch 18b (19 Nov 2026) · Download to Excel, Print PO / GRN / statement, reports for a past period (D-080 – D-085 · OB-867 – OB-870)
 - **Owner asked:** the most-needed missing options (audit of 19 Nov): B1, R1, P1, B2, O1, O3.
 - **Done (branch `claude/batch-18b`, no pull request yet):**
@@ -300,7 +307,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - S2–S5 (past write-offs, past counts, stockout cost, back-store sharing);
   - A2 (GST rate filled in from the item), A3 (done in 18b as B2);
   - O2 (the 18 reports that cannot run yet);
-  - the handheld Receive's MRP and failed-check boxes.
+  - the handheld Receive's MRP and failed-check boxes. _(Done since: batch 20a, #969.)_
 
 ## Where things stand — 19 November 2026
 - **Batch 17 merged (#962), 19 Nov**: one language at a time (OB-855), the menu stays put, a truthful status badge, one form layout. Store PC release follows from main.
