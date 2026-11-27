@@ -33,6 +33,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer as createTlsServer, type Server } from 'node:https';
+import { allowedHostNames, hostAllowed, NOT_THIS_COMPUTER, NOT_THIS_COMPUTER_CODE } from './host-allow-list';
 import { createServer as createFrontServer, type Socket } from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -297,6 +298,11 @@ export function startDeviceServer(input: {
   readonly port: number;
   /** The address to bind — `DEVICE_HOST` (loopback) unless a deployment names the shop's address. */
   readonly host?: string;
+  /**
+   * Audit 27 Nov 2026 item 6: names this door answers besides the loopback names, `host` and the certificate's addresses
+   * (`EDGE_ALLOWED_HOSTS` — the hosted demo's public name through its relay). Anything else is refused (DNS rebinding).
+   */
+  readonly allowedHosts?: readonly string[];
   readonly appsDir: string;
   /** Per request, so a handheld reloaded at four o'clock gets four o'clock's assignment. */
   readonly snapshot: () => ScreenInput;
@@ -332,7 +338,19 @@ export function startDeviceServer(input: {
   let material = input.tls.material;
   const secure = (m: DeviceTlsMaterial) => ({ key: m.socketKeyPem, cert: m.socketChainPem });
 
+  // Audit 27 Nov 2026 item 6 (DNS rebinding): the door answers the loopback names, the address it binds, the shop-network
+  // addresses its certificate was made for (a handheld reaches it by the store PC's address on the wifi) and the
+  // configured names; a request naming anything else is refused before the enrolment check or anything else.
+  const doorNames = allowedHostNames({
+    ...(input.host === undefined ? {} : { bind: input.host }),
+    extra: [...input.tls.addresses, ...(input.allowedHosts ?? [])],
+  });
   const server: Server = createTlsServer({ ...secure(material), minVersion: 'TLSv1.2' }, (req: IncomingMessage, res: ServerResponse) => {
+    if (!hostAllowed(req.headers.host, doorNames)) {
+      req.resume();
+      sendJson(res, 403, { error: NOT_THIS_COMPUTER_CODE, why: NOT_THIS_COMPUTER });
+      return;
+    }
     void (async () => {
       const raw = req.url ?? '/';
       const url = ((): URL => { try { return new URL(raw, 'http://device'); } catch { return new URL('/', 'http://device'); } })();
