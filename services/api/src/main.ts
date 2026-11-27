@@ -1029,7 +1029,12 @@ export function buildSurface(deps: {
         invoice: empty(undefined), invoices: empty([]), recordInvoice: () => {}, purchaseOrder: empty(undefined), permissionsOfUser: empty(undefined),
         latestMatch: empty(undefined), recordMatch: () => {}, matchPolicy: empty(undefined), recordMatchPolicy: () => {}, applyBankChange: () => {}, openCommitments: empty(undefined), now,
       },
-    } : { ...invoiceIngestionAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, ...(deps.invoiceExtractor === undefined ? {} : { extractor: deps.invoiceExtractor }) }),
+    } : { ...((ingest) => ({
+      ...ingest, recordAudit: auditTrail?.recordAudit,
+      // Pending item 6 (D-150): the bill an e-invoice or a read scan puts on the register is on the audit trail too, as a typed
+      // capture is — before, the register's own capture here had no audit writer, so `invoice.capture.e_invoice` was never kept.
+      purchase: { ...ingest.purchase, recordAudit: auditTrail?.recordAudit },
+    }))(invoiceIngestionAdapter({ store, now })), ...(deps.invoiceExtractor === undefined ? {} : { extractor: deps.invoiceExtractor }) }),
     // The supplier ACCOUNT (SP-7b · F04's payable half): a projection over the invoice, match, order and receipt registers.
     ...supplierAccountRoutes(store === undefined ? {
       invoices: empty([]), latestMatches: empty(new Map()), purchaseOrders: empty([]), receipts: empty([]), payments: empty([]), debitNoteIssues: empty([]), now,

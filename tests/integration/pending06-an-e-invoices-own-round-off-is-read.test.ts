@@ -4,6 +4,7 @@ import { useRestartableBackings } from '../support/p3-backings';
 import { P3, p3Shop, caller, issuedOrder, received } from '../support/p3-purchase';
 import { parseGstEInvoice } from '../../packages/purchasing/src/invoice-extraction';
 import { DEFAULT_RETAIL_POSTING_MAP, type PostingMap } from '../../packages/finance/src/index';
+import { capturePortalInvoice, type PurchaseDeps, type SupplierInvoiceRecord } from '../../services/purchase/src/index';
 
 // Pending list 27 Nov 2026 — item 6 (OB-866 B follow-through · M07-FR-04 · WF-05 · D03-FR-02): a GST e-invoice's own round-off
 // figure (`ValDtls.RndOffAmt`) is read into the bill's round off exactly as a typed round off is — signed, at most ±₹1.00, part
@@ -52,6 +53,26 @@ describe('the e-invoice reader reads ValDtls.RndOffAmt — signed, exactly, or s
       expect(p.ok && 'roundOffMinor' in p.invoice).toBe(false);
       expect(p.ok && p.invoice.warnings).toEqual(expect.arrayContaining([`this e-invoice is a ${typ === 'CRN' ? 'credit' : 'debit'} note (${typ}): its round off (RndOffAmt) is not read — a person decides the difference`]));
     }
+  });
+});
+
+describe('the register\'s capture holds a read round off to the typed rule (unit)', () => {
+  it('a round off over ±₹1.00, or not whole paise, is refused and nothing is recorded; within it, it is part of the total', async () => {
+    const kept: SupplierInvoiceRecord[] = [];
+    const deps = {
+      invoice: () => undefined, purchaseOrder: () => undefined, recordInvoice: (_t: string, r: SupplierInvoiceRecord) => { kept.push(r); },
+      now: () => '2026-11-27T06:00:00.000Z',
+    } as unknown as PurchaseDeps;
+    const input = (roundOffMinor: number, declaredTotalMinor: number) => ({
+      invoiceId: 'inv-u', supplierId: 'sup-1', poId: null, declaredTotalMinor, submittedBy: 'u-b', reviewedBy: 'u-b', submissionId: 'd-u', branchId: null, roundOffMinor,
+      lines: [{ productId: 'rice', quantity: 10, unitPriceMinor: 5_080, lineTotalMinor: 50_800 }],
+    });
+    expect(await capturePortalInvoice(deps, 'T', input(-140, 50_660))).toMatchObject({ ok: false, code: 'round_off_more_than_one_rupee' });
+    expect(await capturePortalInvoice(deps, 'T', input(-0.4, 50_799.6))).toMatchObject({ ok: false, code: 'not_readable_as_a_supplier_invoice' });
+    expect(await capturePortalInvoice(deps, 'T', input(-40, 50_800))).toMatchObject({ ok: false, code: 'does_not_add_up_to_the_invoice_total' });
+    expect(kept).toEqual([]);
+    expect(await capturePortalInvoice(deps, 'T', input(-40, 50_760))).toMatchObject({ ok: true, record: { totalMinor: 50_760, roundOffMinor: -40 } });
+    expect(kept).toHaveLength(1);
   });
 });
 

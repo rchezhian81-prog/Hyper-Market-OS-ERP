@@ -22,7 +22,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { parseGstEInvoice, type ExtractedInvoice, type ExtractedInvoiceLine, type InvoiceExtractor } from '../../../packages/purchasing/src/invoice-extraction';
-import { capturePortalInvoice, type PurchaseDeps } from './index';
+import { capturePortalInvoice, readRoundOff, type PurchaseDeps } from './index';
 
 /** Lines read below this confidence must have their figures typed by the person confirming. */
 export const LOW_CONFIDENCE = 0.9;
@@ -103,6 +103,16 @@ export interface InvoiceIngestionDeps {
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** D-044: paise as a person reads rupees — −₹1.40. */
+const rupeesOf = (minor: number): string => `${minor < 0 ? '−' : ''}₹${(Math.abs(minor) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * OB-866 B (pending item 6, 27 Nov 2026): the round off an e-invoice prints (`RndOffAmt`) that head office TAKES as the bill's
+ * round off — the same rule as a typed one (at most ±₹1.00). A larger figure is not taken: 0 here, said on the draft, and the
+ * bill's total then does not add up, so a person decides the difference as before.
+ */
+const roundOffTaken = (x: ExtractedInvoice): number => { const r = readRoundOff(x.roundOffMinor); return typeof r === 'number' ? r : 0; };
+
 const isNonNegInt = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
 const refuse = (status: number, code: string, whatHappened: string, nextSafeAction = 'Nothing was recorded.') =>
   apiError(status, { code, whatHappened, wasItSaved: 'not_saved', nextSafeAction });
@@ -161,6 +171,9 @@ export function invoiceIngestionRoutes(deps: InvoiceIngestionDeps): readonly Rou
         // The supplier: named, else found by the GSTIN on the bill in the supplier master; neither → said.
         let supplierId = isStr(b['supplierId']) ? b['supplierId'].trim() : null;
         if (supplierId === null && extracted?.supplierGstin) supplierId = (await deps.supplierByGstin(ctx.tenantId, extracted.supplierGstin)) ?? null;
+        if (extracted?.roundOffMinor !== undefined && roundOffTaken(extracted) !== extracted.roundOffMinor) {
+          problems.push(`the e-invoice's round off (RndOffAmt) is ${rupeesOf(extracted.roundOffMinor)} — more than one rupee either way, so it is not taken as a round off: the difference is shown for a person to decide`);
+        }
         if (extracted !== null && supplierId === null) problems.push(`no supplier in the supplier master has GSTIN ${extracted.supplierGstin ?? '(none on the bill)'}`);
         const mapped = supplierId === null ? [] : await deps.mappings(ctx.tenantId, supplierId);
         const lines: DraftLine[] = (extracted?.lines ?? []).map((l) => ({
@@ -223,9 +236,12 @@ export function invoiceIngestionRoutes(deps: InvoiceIngestionDeps): readonly Rou
         // part of what it totals — kept on the invoice as its landed charges, exactly as the typed capture keeps them.
         const otherMinor = doc.extracted.otherChargesMinor ?? 0;
         const charges = otherMinor > 0 ? { freightMinor: 0, dutyMinor: 0, otherMinor } : undefined;
-        const declaredTotalMinor = otherMinor + lines.reduce((s, l) => s + (l['lineTotalMinor'] as number) + ((l['cgstMinor'] as number | undefined) ?? 0) + ((l['sgstMinor'] as number | undefined) ?? 0) + ((l['igstMinor'] as number | undefined) ?? 0), 0);
+        // OB-866 B (pending item 6): the e-invoice's own round off, within ±₹1.00, is the bill's round off — part of the total
+        // checked against `TotInvVal`, kept on the invoice, matched and posted exactly as a typed one. Larger: not taken (said).
+        const roundOffMinor = roundOffTaken(doc.extracted);
+        const declaredTotalMinor = otherMinor + roundOffMinor + lines.reduce((s, l) => s + (l['lineTotalMinor'] as number) + ((l['cgstMinor'] as number | undefined) ?? 0) + ((l['sgstMinor'] as number | undefined) ?? 0) + ((l['igstMinor'] as number | undefined) ?? 0), 0);
         if (doc.extracted.statedTotalMinor !== null && doc.extracted.statedTotalMinor !== declaredTotalMinor && b['acceptTotalDifference'] !== true) {
-          throw refuse(422, 'does_not_add_up_to_the_bill', `The confirmed lines${charges === undefined ? '' : ' and the bill\'s other charges'} come to ${declaredTotalMinor} paise but the bill states ${doc.extracted.statedTotalMinor} (a round-off, a charge or a misread figure).`, 'Correct the lines, or confirm with acceptTotalDifference: true and say why on the match. Nothing was recorded.');
+          throw refuse(422, 'does_not_add_up_to_the_bill', `The confirmed lines${charges === undefined ? '' : ' and the bill\'s other charges'}${roundOffMinor === 0 ? '' : ' and its round off'} come to ${declaredTotalMinor} paise but the bill states ${doc.extracted.statedTotalMinor} (a round-off, a charge or a misread figure).`, 'Correct the lines, or confirm with acceptTotalDifference: true and say why on the match. Nothing was recorded.');
         }
         const poId = isStr(b['poId']) ? b['poId'].trim() : doc.poId;
         const source = doc.channel === 'e_invoice' ? `e-invoice/${doc.extracted.irn ?? doc.extracted.supplierInvoiceNo ?? documentId}` : `ocr/${documentId}`;
@@ -235,6 +251,7 @@ export function invoiceIngestionRoutes(deps: InvoiceIngestionDeps): readonly Rou
           // R3 · A17: the bill's own number and date as read off it — what the GSTR-2B lists it by.
           supplierInvoiceNo: doc.extracted.supplierInvoiceNo, supplierInvoiceDate: doc.extracted.invoiceDate,
           ...(charges === undefined ? {} : { charges }),
+          ...(roundOffMinor === 0 ? {} : { roundOffMinor }),
         });
         if (!out.ok) throw refuse(out.code === 'invoice_id_already_used' ? 409 : 422, out.code, out.detail);
         const at = deps.now();
