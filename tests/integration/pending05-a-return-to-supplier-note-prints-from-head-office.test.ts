@@ -51,7 +51,7 @@ describe.each(useBackings())('pending 5: a return-to-supplier note prints from h
     }
     // Oil in batch B-OLD (expiring 15 Nov 2026) at ₹150; ghee at ₹150.
     await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-oil', productId: 'OIL', locationId: 'store-1', kind: 'received', quantityMinor: 120, uom: 'ea', occurredAt: '2026-11-01T09:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 15_000, batchId: 'B-OLD', expiry: '2026-11-15' }, 'u-owner'), 'oil');
-    await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-ghee', productId: 'GHEE', locationId: 'store-1', kind: 'received', quantityMinor: 500, uom: 'ea', occurredAt: '2026-11-01T09:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 15_000 }, 'u-owner'), 'ghee');
+    await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-ghee', productId: 'GHEE', locationId: 'store-1', kind: 'received', quantityMinor: 1000, uom: 'ea', occurredAt: '2026-11-01T09:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 15_000 }, 'u-owner'), 'ghee');
 
     // A ₹900 return, approved by a second person (the owner) — the same approval as a write-off of that value.
     const big = { productId: 'OIL', locationId: 'store-1', qty: 6, uom: 'ea', supplierId: 'sup-1', reason: 'damaged', batchId: 'B-OLD', note: 'pouches torn' };
@@ -62,7 +62,9 @@ describe.each(useBackings())('pending 5: a return-to-supplier note prints from h
     const rts = (made.body as { shelfReturn: { documentNumber: string; at: string; debitNote: { number: string } } }).shelfReturn;
     expect(rts.documentNumber).toMatch(/^RTS1\/\d\d-\d\d\/00001$/);
 
-    const stockBefore = (await req('GET', '/v1/inventory/availability', undefined, 'u-owner', { productId: 'OIL' })).body;
+    const stockNow = async (): Promise<unknown> => ((await req('GET', '/v1/inventory/availability', undefined, 'u-owner', { productId: 'OIL' })).body as { rows: { locationId: string; onHandMinor: number; movements: number }[] }).rows.map((r) => [r.locationId, r.onHandMinor, r.movements]);
+    const stockBefore = await stockNow();
+    expect(stockBefore).toEqual([['store-1', 114, 2]]);
     const accountBefore = (await req('GET', '/v1/purchase/suppliers/sup-1/account', undefined, 'u-acct')).body as { totals: unknown };
 
     // The store manager prints it.
@@ -91,10 +93,12 @@ describe.each(useBackings())('pending 5: a return-to-supplier note prints from h
     expect([none.status, codeOf(none)]).toEqual([404, 'print_source_not_found']);
 
     // Printing changed nothing: the stock and the supplier's account read the same.
-    expect((await req('GET', '/v1/inventory/availability', undefined, 'u-owner', { productId: 'OIL' })).body).toEqual(stockBefore);
+    expect(await stockNow()).toEqual(stockBefore);
     expect(((await req('GET', '/v1/purchase/suppliers/sup-1/account', undefined, 'u-acct')).body as { totals: unknown }).totals).toEqual(accountBefore.totals);
 
     // The supplier accepts it: the note now says so, with the credit note, what came off, what did not and why, and the GST.
+    // (OB-881 B checks the credit note's GST against the highest rate head office knows on the item: a bill that charged 5%.)
+    await ok(req('POST', '/v1/purchase/invoices/inv-oil/capture', { supplierId: 'sup-1', declaredTotalMinor: 157_500, lines: [{ productId: 'OIL', quantity: 10, unitPriceMinor: 15_000, lineTotalMinor: 150_000, cgstMinor: 3_750, sgstMinor: 3_750 }] }), 'bill');
     await ok(req('POST', '/v1/purchase/suppliers/sup-1/shelf-return-debit-notes/DN-RTS-rts-d/accept', { supplierCreditNoteNo: 'CN-77', supplierCreditNoteDate: '2026-11-18', acceptedMinor: 75_000, reason: 'one pouch was not his', cgstMinor: 1_875, sgstMinor: 1_875 }, 'u-acct'), 'accepted');
     const after = (await req('GET', '/v1/documents/print/supplier-returns/rts-d')).body as { view: PrintView };
     expect(after.view.supplierReturn!.acceptance).toEqual({ creditNoteNo: 'CN-77', creditNoteDate: '2026-11-18', acceptedMinor: 75_000, differenceMinor: 15_000, reason: 'one pouch was not his', gst: { cgstMinor: 1_875, sgstMinor: 1_875, igstMinor: 0 } });
@@ -102,18 +106,18 @@ describe.each(useBackings())('pending 5: a return-to-supplier note prints from h
       'Supplier accepted, credit note CN-77 dated 18/11/2026 — ₹750.00 taken off what is owed; ₹150.00 not accepted (one pouch was not his); GST on the supplier\'s credit note ₹37.50',
     );
 
-    // Above the e-way-bill limit: the return leaves under a generated e-way bill, and the note prints its number.
-    const ghee = { productId: 'GHEE', locationId: 'store-1', qty: 400, uom: 'ea', supplierId: 'sup-1', reason: 'near_expiry' };
-    const gheeAsk = await askForApproval(h, T, 'u-mgr', { kind: 'stock_write_off', subjectRef: 'rts-e', details: actionDetails(ghee, { returnId: 'rts-e' }), valueMinor: 6_000_000 });
+    // Above the e-way-bill limit (₹1,20,000, above the intra-State ₹1,00,000): the return leaves under a generated e-way bill, and the note prints its number.
+    const ghee = { productId: 'GHEE', locationId: 'store-1', qty: 800, uom: 'ea', supplierId: 'sup-1', reason: 'near_expiry' };
+    const gheeAsk = await askForApproval(h, T, 'u-mgr', { kind: 'stock_write_off', subjectRef: 'rts-e', details: actionDetails(ghee, { returnId: 'rts-e' }), valueMinor: 12_000_000 });
     const gheeId = (gheeAsk.body as { requestId: string }).requestId;
     expect((await decide(h, T, 'u-owner', gheeId)).status).toBe(201);
     const movement = 'shelf-return-rts-e';
-    await ok(req('POST', `/v1/finance/e-way-bill/movements/${movement}/submit`, { request: { supplierGstin: TN_SHOP, recipientGstin: TN_SUPPLIER, documentType: 'CHL', documentNumber: 'RTS-rts-e', documentDate: '2026-11-20', hsnCode: '1512', consignmentValueMinor: 6_000_000, supplyRoute: 'intra_state', movementReason: 'supplier_return', fromPincode: '641601', toPincode: '641001' } }, 'u-owner'), 'ewb submit');
+    await ok(req('POST', `/v1/finance/e-way-bill/movements/${movement}/submit`, { request: { supplierGstin: TN_SHOP, recipientGstin: TN_SUPPLIER, documentType: 'CHL', documentNumber: 'RTS-rts-e', documentDate: '2026-11-20', hsnCode: '1512', consignmentValueMinor: 12_000_000, supplyRoute: 'intra_state', movementReason: 'supplier_return', fromPincode: '641601', toPincode: '641001' } }, 'u-owner'), 'ewb submit');
     await ok(req('POST', `/v1/finance/e-way-bill/movements/${movement}/record-response`, { result: { status: 'generated', ewbNo: '391000654321', ewbDate: '2026-11-20', validUpto: '2026-11-21' } }, 'u-owner'), 'ewb generated');
     await ok(req('POST', '/v1/inventory/shelf-returns/rts-e', { ...ghee, approvalId: gheeId }), 'ghee return');
     const gheeView = ((await req('GET', '/v1/documents/print/supplier-returns/rts-e')).body as { view: PrintView }).view;
     expect(gheeView.supplierReturn).toMatchObject({ ewbNo: '391000654321', approvedBy: 'u-owner', reason: 'near_expiry' });
-    expect(gheeView.lines[0]).toMatchObject({ batchId: null, expiry: null, valueMinor: 6_000_000 });
+    expect(gheeView.lines[0]).toMatchObject({ batchId: null, expiry: null, valueMinor: 12_000_000 });
     expect(printLayout(gheeView, 'en').facts).toContainEqual({ label: 'E-way bill', value: '391000654321' });
   }, 120_000);
 });

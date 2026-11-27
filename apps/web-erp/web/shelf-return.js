@@ -35,9 +35,30 @@ function paintList() {
   const name = (id) => suppliers.find((s) => s.supplierId === id)?.name ?? id;
   ul.replaceChildren(...rows.map((r) => {
     const li = document.createElement('li'); li.dataset.return = r.returnId;
-    li.textContent = `${r.documentNumber} · ${r.productId} × ${r.quantityMinor} · ${name(r.supplierId)} · ${w(r.reason)} · ${w('debitNote')} ${r.debitNoteNumber} · ₹${(r.valueMinor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const text = document.createElement('span');
+    text.textContent = `${r.documentNumber} · ${r.productId} × ${r.quantityMinor} · ${name(r.supplierId)} · ${w(r.reason)} · ${w('debitNote')} ${r.debitNoteNumber} · ₹${(r.valueMinor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    li.append(text);
+    const printer = printNoteButton(r);
+    if (printer !== null) li.append(' ', printer);
     return li;
   }));
+}
+
+/**
+ * Pending 5: "Print return note" — the return on the shared A4 sheet (`window.srePrint`, batch 18b): its RTS number, the
+ * SDN debit note, the batch and expiry, why, who, and where the debit note stands. Read from head office; a note opened
+ * once prints again with the internet off. Read-only: it changes no stock and no money.
+ */
+function printNoteButton(r) {
+  if (!window.srePrint) return null;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sre-btn print-rts';
+  b.dataset.return = r.returnId;
+  b.textContent = w('printNote');
+  b.setAttribute('aria-label', w('printNoteFor').replace('{n}', r.documentNumber));
+  b.addEventListener('click', () => { void window.srePrint.openPrint({ kind: 'supplier_return', id: r.returnId }); });
+  return b;
 }
 
 const form = () => ({

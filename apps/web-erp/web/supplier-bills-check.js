@@ -103,6 +103,13 @@ function paintShelfNotes() {
     const head = `${d.number ?? d.debitNoteRef}${d.returnNumber ? ` (${d.returnNumber})` : ''} · ${d.productId} × ${d.quantityMinor} · ${money(d.valueMinor)}`;
     const a = d.acceptance;
     li.append(el('strong', a === null ? `${head} — ${w('shelfWaiting')}` : `${head} — ${w('shelfAccepted')} ${a.supplierCreditNoteNo} · ${a.supplierCreditNoteDate} · ${money(a.acceptedMinor)} ${w('shelfTakenOff')}`, 'shelf-head'));
+    // Pending 5: the return-to-supplier note on the shared A4 sheet — read-only, prints again offline once opened.
+    if (window.srePrint && d.returnId) {
+      const pr = el('button', w('shelfPrint'), 'sre-btn print-rts'); pr.type = 'button'; pr.dataset.return = d.returnId;
+      pr.setAttribute('aria-label', w('shelfPrintFor').replace('{n}', d.returnNumber ?? d.returnId));
+      pr.addEventListener('click', () => { void window.srePrint.openPrint({ kind: 'supplier_return', id: d.returnId }); });
+      li.append(' ', pr);
+    }
     const gstBack = a?.gst ? a.gst.cgstMinor + a.gst.sgstMinor + a.gst.igstMinor : 0;
     if (gstBack > 0) li.append(el('span', `${money(gstBack)} ${w('shelfGstReversed')}`, 'muted shelf-gst'));
     if (a !== null && a.differenceMinor > 0) li.append(el('span', `${money(a.differenceMinor)} ${w('shelfNotAccepted')}${a.reason ? ` — ${a.reason}` : ''}`, 'muted shelf-diff'));

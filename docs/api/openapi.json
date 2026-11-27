@@ -23969,6 +23969,63 @@
         }
       }
     },
+    "/v1/documents/print/supplier-returns/{returnId}": {
+      "get": {
+        "operationId": "getDocumentsPrintSupplierReturnsByReturnId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.commitment.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "returnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.commitment.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDocumentsPrintSupplierReturnsByReturnIdReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/documents/print/supplier-statements/{supplierId}": {
       "get": {
         "operationId": "getDocumentsPrintSupplierStatementsBySupplierId",
@@ -134015,6 +134072,20 @@
         "x-derived-from": "services/platform/src/document-print.ts"
       },
       "GetDocumentsPrintPurchaseOrdersByPoIdReply": {
+        "type": "object",
+        "required": [
+          "view"
+        ],
+        "properties": {
+          "view": {
+            "$ref": "#/components/schemas/PrintView"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/document-print.ts"
+      },
+      "GetDocumentsPrintSupplierReturnsByReturnIdReply": {
         "type": "object",
         "required": [
           "view"
@@ -315341,6 +315412,26 @@
                 "type": "number"
               }
             ]
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "expiry": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
           }
         },
         "additionalProperties": true
@@ -315423,6 +315514,149 @@
         },
         "additionalProperties": true
       },
+      "PrintSupplierReturn": {
+        "type": "object",
+        "required": [
+          "debitNoteNumber",
+          "reason",
+          "note",
+          "returnedFrom",
+          "raisedBy",
+          "approvedBy",
+          "ewbNo",
+          "valueSource",
+          "acceptance"
+        ],
+        "properties": {
+          "debitNoteNumber": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "returnedFrom": {
+            "type": "string"
+          },
+          "raisedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "ewbNo": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "valueSource": {
+            "type": "string",
+            "enum": [
+              "cost_unknown",
+              "stock_cost"
+            ]
+          },
+          "acceptance": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "creditNoteNo",
+                  "creditNoteDate",
+                  "acceptedMinor",
+                  "differenceMinor",
+                  "reason",
+                  "gst"
+                ],
+                "properties": {
+                  "creditNoteNo": {
+                    "type": "string"
+                  },
+                  "creditNoteDate": {
+                    "type": "string"
+                  },
+                  "acceptedMinor": {
+                    "type": "number"
+                  },
+                  "differenceMinor": {
+                    "type": "number"
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "gst": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "cgstMinor",
+                          "sgstMinor",
+                          "igstMinor"
+                        ],
+                        "properties": {
+                          "cgstMinor": {
+                            "type": "number"
+                          },
+                          "sgstMinor": {
+                            "type": "number"
+                          },
+                          "igstMinor": {
+                            "type": "number"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
       "PrintView": {
         "type": "object",
         "required": [
@@ -315443,6 +315677,7 @@
             "enum": [
               "goods_receipt",
               "purchase_order",
+              "supplier_return",
               "supplier_statement"
             ]
           },
@@ -315515,6 +315750,9 @@
               }
             },
             "additionalProperties": true
+          },
+          "supplierReturn": {
+            "$ref": "#/components/schemas/PrintSupplierReturn"
           },
           "readAt": {
             "type": "string"
