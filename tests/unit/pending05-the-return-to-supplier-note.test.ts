@@ -12,7 +12,7 @@ import { readPrintView } from '../../apps/web-erp/src/print-documents-browser';
  *     a second person did), the e-way bill number (only when one applies) and where the debit note stands — "waiting for
  *     the supplier to accept" or "supplier accepted, credit note …";
  *   • the line with its batch and expiry (when held), quantity, rate, GST RATE and value — GST amounts are not worked out
- *     (OB-876 A): "GST amounts are on the debit note";
+ *     (OB-876 A): "GST amounts are on the supplier's credit note";
  *   • signature lines: handed over by (store) / received by (the supplier's driver). English and Tamil.
  * Nothing is invented: a fact head office does not hold reads "Not on record".
  */
@@ -53,7 +53,7 @@ describe('pending 5 — the return-to-supplier note (A4)', () => {
     expect(page.table.head).toEqual(['No.', 'Item', 'HSN', 'Batch / expiry', 'Quantity', 'Rate (₹)', 'GST rate', 'Value (₹)']);
     expect(page.table.rows).toEqual([['1', 'Sunflower oil 1L (OIL)', '1512', 'B-OLD · expires 15/11/2026', '6', '150.00', '5%', '900.00']]);
     expect(page.totals).toEqual([{ label: 'Total value at these rates', value: '₹900.00', strong: true }]);
-    expect(page.notes.join(' ')).toMatch(/before GST.*GST amounts are on the debit note/);
+    expect(page.notes.join(' ')).toMatch(/before GST.*GST amounts are on the supplier's credit note/);
     expect(page.signatures).toEqual(['Handed over by (store)', 'Received by (supplier\'s driver)']);
   });
 

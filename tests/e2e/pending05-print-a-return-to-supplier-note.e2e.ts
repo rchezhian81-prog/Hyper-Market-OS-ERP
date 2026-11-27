@@ -111,7 +111,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('pending 5 
       const rows = await s.page.locator('.sre-print-lines tbody tr').allInnerTexts();
       expect(rows.map((r) => r.split('\t').map((c) => c.trim()))).toEqual([['1', 'Sunflower oil 1L (OIL)', '1512', 'B-OLD · expires 15/11/2026', '2', '150.00', '5%', '300.00']]);
       expect(await s.page.textContent('.sre-print-totals')).toMatch(/Total value at these rates\s*₹300\.00/);
-      expect((await s.page.locator('.sre-print-note').allInnerTexts()).join(' ')).toMatch(/GST amounts are on the debit note/);
+      expect((await s.page.locator('.sre-print-note').allInnerTexts()).join(' ')).toMatch(/GST amounts are on the supplier's credit note/);
       expect(await s.page.locator('.sre-print-signature').allInnerTexts()).toEqual(['Handed over by (store)', 'Received by (supplier\'s driver)']);
       await shot(s.page, 'p05-2-return-note-a4-english');
       await s.page.emulateMedia({ media: 'print' });
