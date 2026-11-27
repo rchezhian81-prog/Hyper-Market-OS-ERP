@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 2586. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 2588. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 100 · Integration (in-process) 104 · Real PostgreSQL 104 · Browser (stub cloud) 104 · Browser (connected) 102 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 104.
 - Labels that do NOT hold: none.
@@ -79,9 +79,9 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | D14 | E2E_VERIFIED | 10 | 10 | 6 | 6 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A01 | E2E_VERIFIED | 14 | 14 | 9 | 4 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A02 | E2E_VERIFIED | 13 | 12 | 7 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A03 | E2E_VERIFIED | 12 | 13 | 7 | 3 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A03 | E2E_VERIFIED | 13 | 13 | 7 | 3 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A04 | E2E_VERIFIED | 9 | 8 | 6 | 5 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A05 | E2E_VERIFIED | 3 | 8 | 5 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A05 | E2E_VERIFIED | 4 | 8 | 5 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A06 | E2E_VERIFIED | 9 | 7 | 5 | 7 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A07 | E2E_VERIFIED | 7 | 4 | 3 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A08 | E2E_VERIFIED | 9 | 8 | 4 | 9 | 6 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
@@ -117,7 +117,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | QG-08 | E2E_VERIFIED | 4 | 8 | 5 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | QG-09 | E2E_VERIFIED | 2 | 1 | 1 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | QG-10 | E2E_VERIFIED | 3 | 4 | 2 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| QG-11 | E2E_VERIFIED | 3 | 3 | 3 | 4 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| QG-11 | E2E_VERIFIED | 4 | 4 | 4 | 4 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | QG-12 | E2E_VERIFIED | 3 | 3 | 3 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | MG-01 | E2E_VERIFIED | 9 | 3 | 1 | 2 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | MG-02 | E2E_VERIFIED | 7 | 5 | 3 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
@@ -226,7 +226,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **QG-08** — browser: `the-quality-gates-page-reads-the-recovery-and-the-outside-evidence.e2e.ts` · connected: `the-quality-gates-page-reads-the-recovery-and-the-outside-evidence.e2e.ts` · real PostgreSQL: `a-rehearsed-rollback-reconciles.test.ts`, `backup-is-one-moment.test.ts`, `recovery-rehearsal.test.ts`, `scanner-findings-and-gate-decisions-are-recorded.test.ts`, `w4-qg08-the-scheduled-rollback-drill-is-the-evidence-the-gate-reads.test.ts`
 - **QG-09** — browser: `the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts` · connected: `the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts` · real PostgreSQL: `the-adoption-gate-names-who-is-not-ready.test.ts`
 - **QG-10** — browser: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · connected: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · real PostgreSQL: `qg10-the-release-snapshot-reads-the-real-books-on-postgresql.test.ts`, `the-gates-read-their-outside-evidence-and-head-offices-records.test.ts`
-- **QG-11** — browser: `data-quality-inbox-on-the-production-api.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts`, `pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · connected: `data-quality-inbox-on-the-production-api.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts`, `pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`, `pending08-qg11-the-ai-evaluations-reading-from-head-office.test.ts`
+- **QG-11** — browser: `data-quality-inbox-on-the-production-api.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts`, `pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · connected: `data-quality-inbox-on-the-production-api.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts`, `pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`, `pending08-qg11-go-is-refused-until-the-evaluations-pass.test.ts`, `pending08-qg11-the-ai-evaluations-reading-from-head-office.test.ts`
 - **QG-12** — browser: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · connected: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · real PostgreSQL: `a-rehearsed-rollback-reconciles.test.ts`, `scanner-findings-and-gate-decisions-are-recorded.test.ts`, `the-gates-read-their-outside-evidence-and-head-offices-records.test.ts`
 - **MG-01** — browser: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts`, `u6-the-old-system-page-loads-the-delta-once.e2e.ts` · connected: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts`, `u6-the-old-system-page-loads-the-delta-once.e2e.ts` · real PostgreSQL: `the-old-shop-arrives-whole.test.ts`
 - **MG-02** — browser: `w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts` · connected: `w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts` · real PostgreSQL: `backup-is-one-moment.test.ts`, `the-old-shop-arrives-whole.test.ts`, `we-get-it-out-ourselves.test.ts`

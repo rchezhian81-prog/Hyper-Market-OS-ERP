@@ -77,6 +77,7 @@ export const GATES_COPY = {
     qg11NotPassed: 'This is evidence for the owner\'s QG-11 decision, not the decision — the gate is not passed until he records it with his signed review.',
     qg11HoldsUntil: 'QG-11 holds until every agent in the evaluation set has a complete, passing evaluation against a live model (R8, OB-382).',
     qg11Unread: 'The AI evaluations reading could not be read — this is not the same as "none".',
+    qg11GoRefused: 'Head office refuses GO on QG-11 until then (owner\'s decision, 27 Nov 2026 — OB-935); HOLD and REWORK can still be recorded.',
     qg11NotRun: 'no evaluation has been run yet',
     qg11NotComplete: 'NOT COMPLETE: it did not reach a model, so it proves nothing',
     qg11Unsafe: 'UNSAFE: {u} unsafe case; {p} of {t} passed',
@@ -153,6 +154,7 @@ export const GATES_COPY = {
     qg11NotPassed: 'இது உரிமையாளரின் QG-11 முடிவுக்கான சான்று, முடிவு அல்ல — அவர் கையொப்பமிட்ட மதிப்பாய்வுடன் பதிவு செய்யும் வரை வாயில் கடக்கவில்லை.',
     qg11HoldsUntil: 'மதிப்பீட்டுத் தொகுப்பின் ஒவ்வொரு உதவியாளருக்கும் நேரடி மாதிரிக்கு எதிராக முழுமையான, தேறிய மதிப்பீடு வரும் வரை QG-11 நிறுத்தி வைக்கப்படுகிறது (R8, OB-382).',
     qg11Unread: 'செயற்கை நுண்ணறிவு மதிப்பீட்டு வாசிப்பைப் படிக்க முடியவில்லை — இது "எதுவும் இல்லை" என்பதற்குச் சமம் அல்ல.',
+    qg11GoRefused: 'அதுவரை QG-11 க்கு GO வைத் தலைமை அலுவலகம் மறுக்கிறது (உரிமையாளரின் முடிவு, 27 நவம்பர் 2026 — OB-935); HOLD மற்றும் REWORK இன்னும் பதிவு செய்யலாம்.',
     qg11NotRun: 'இன்னும் எந்த மதிப்பீடும் செய்யப்படவில்லை',
     qg11NotComplete: 'முழுமையில்லை: அது எந்த மாதிரியையும் அடையவில்லை, எனவே எதையும் நிரூபிக்கவில்லை',
     qg11Unsafe: 'பாதுகாப்பற்றது: {u} பாதுகாப்பற்ற சோதனை; {t} இல் {p} தேறியது',
@@ -313,7 +315,7 @@ function qg11AgentState(e: Qg11ControlRead['agents'][number]['lastEvaluation']):
 export function qg11ReadingView(lang: Lang, out: Outcome<Qg11ControlRead> | null): Qg11ReadingViewShape {
   const w = (k: string) => gatesWords(lang, k);
   if (out === null || out.result !== 'ok') {
-    return { icon: '⚠', tone: 'error', state: 'unread', headline: out === null ? w('qg11Unread') : `${w('qg11Unread')} ${gatesOutcomeWords(lang, out)}`, agents: [], lines: [w('qg11HoldsUntil')] };
+    return { icon: '⚠', tone: 'error', state: 'unread', headline: out === null ? w('qg11Unread') : `${w('qg11Unread')} ${gatesOutcomeWords(lang, out)}`, agents: [], lines: [w('qg11HoldsUntil'), w('qg11GoRefused')] };
   }
   const r = out.value;
   const inSet = r.agents.filter((a) => a.evaluationCases > 0);
@@ -335,9 +337,9 @@ export function qg11ReadingView(lang: Lang, out: Outcome<Qg11ControlRead> | null
   const own = r.agents.filter((a) => a.ceilingMinor !== null).map((a) => a.agentId);
   const controls = [r.provider.configured ? w('qg11Provider') : w('qg11ProviderNone'), kill, cap, own.length === 0 ? w('qg11OwnNone') : fill(w('qg11Own'), { who: own.join(', ') })];
   const short = agents.filter((a) => a.state !== 'passed').length;
-  if (!r.provider.configured) return { icon: '⚠', tone: 'error', state: 'no_live_model', headline: w('qg11NoLiveModel'), agents, lines: [...controls, w('qg11HoldsUntil')] };
-  if (agents.length === 0) return { icon: '⚠', tone: 'error', state: 'holds', headline: w('qg11Empty'), agents, lines: [...controls, w('qg11HoldsUntil')] };
-  if (short > 0) return { icon: '⚠', tone: 'error', state: 'holds', headline: fill(w('qg11HoldsN'), { n: short, m: agents.length }), agents, lines: [...controls, w('qg11HoldsUntil')] };
+  if (!r.provider.configured) return { icon: '⚠', tone: 'error', state: 'no_live_model', headline: w('qg11NoLiveModel'), agents, lines: [...controls, w('qg11HoldsUntil'), w('qg11GoRefused')] };
+  if (agents.length === 0) return { icon: '⚠', tone: 'error', state: 'holds', headline: w('qg11Empty'), agents, lines: [...controls, w('qg11HoldsUntil'), w('qg11GoRefused')] };
+  if (short > 0) return { icon: '⚠', tone: 'error', state: 'holds', headline: fill(w('qg11HoldsN'), { n: short, m: agents.length }), agents, lines: [...controls, w('qg11HoldsUntil'), w('qg11GoRefused')] };
   return { icon: '✓', tone: 'ok', state: 'evaluations_clean', headline: w('qg11Clean'), agents, lines: [...controls, w('qg11NotPassed')] };
 }
 

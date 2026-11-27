@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2586,
+  "testFiles": 2588,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -4470,7 +4470,7 @@
       "id": "A03",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 13,
         "realDb": 7,
         "browser": 3,
@@ -4490,6 +4490,7 @@
           "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/fefo-near-expiry.test.ts",
+          "tests/unit/pending08-qg11-go-refusal-rule.test.ts",
           "tests/unit/pending08-qg11-the-ai-evaluations-reading.test.ts",
           "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
@@ -4596,7 +4597,7 @@
       "id": "A05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 8,
         "realDb": 5,
         "browser": 3,
@@ -4608,7 +4609,8 @@
         "unit": [
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
-          "tests/unit/ai-governance-rules.test.ts"
+          "tests/unit/ai-governance-rules.test.ts",
+          "tests/unit/pending08-qg11-go-refusal-rule.test.ts"
         ],
         "integration": [
           "tests/integration/ai-agents-draft-for-people.test.ts",
@@ -6403,9 +6405,9 @@
       "id": "QG-11",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 3,
-        "integration": 3,
-        "realDb": 3,
+        "unit": 4,
+        "integration": 4,
+        "realDb": 4,
         "browser": 4,
         "connected": 4,
         "device": 0,
@@ -6414,17 +6416,20 @@
       "files": {
         "unit": [
           "tests/unit/ai-inbox-withholds-findings-without-evidence.test.ts",
+          "tests/unit/pending08-qg11-go-refusal-rule.test.ts",
           "tests/unit/pending08-qg11-the-ai-evaluations-reading.test.ts",
           "tests/unit/the-gate-readings-never-read-silence-as-a-pass.test.ts"
         ],
         "integration": [
           "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
+          "tests/integration/pending08-qg11-go-is-refused-until-the-evaluations-pass.test.ts",
           "tests/integration/pending08-qg11-the-ai-evaluations-reading-from-head-office.test.ts"
         ],
         "realDb": [
           "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
+          "tests/integration/pending08-qg11-go-is-refused-until-the-evaluations-pass.test.ts",
           "tests/integration/pending08-qg11-the-ai-evaluations-reading-from-head-office.test.ts"
         ],
         "browser": [

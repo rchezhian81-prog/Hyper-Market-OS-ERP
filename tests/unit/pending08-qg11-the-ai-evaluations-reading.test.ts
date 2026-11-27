@@ -37,7 +37,10 @@ describe('QG-11: the AI evaluations reading on the Quality gates page', () => {
     expect(notComplete.agents[0]).toMatchObject({ icon: '⚠', state: 'not_complete' });
     expect(notComplete.agents[0]!.words).toBe('A01 · Assistant A01 — NOT COMPLETE: it did not reach a model, so it proves nothing · run evr-A01-1 · 2026-11-27 10:00');
     expect(notComplete.lines).toContain('QG-11 holds until every agent in the evaluation set has a complete, passing evaluation against a live model (R8, OB-382).');
-    expect(all(notComplete)).not.toMatch(/\bpassed\b|GO/);
+    // OB-935 (owner decided A): the reading says head office refuses GO until then — the only "GO" it ever says.
+    const GO_REFUSED = 'Head office refuses GO on QG-11 until then (owner\'s decision, 27 Nov 2026 — OB-935); HOLD and REWORK can still be recorded.';
+    expect(notComplete.lines.at(-1)).toBe(GO_REFUSED);
+    expect(all(notComplete).replace(GO_REFUSED, '')).not.toMatch(/\bpassed\b|GO/);
   });
 
   it('says the kill switch and the budgets in words, set or not', () => {
@@ -88,7 +91,7 @@ describe('QG-11: the AI evaluations reading on the Quality gates page', () => {
   it('Tamil: every word of the reading has its Tamil twin', () => {
     const v = qg11ReadingView('ta', ok(control()));
     expect(v.headline).toBe(gatesWords('ta', 'qg11NoLiveModel'));
-    for (const k of ['qg11H', 'qg11Lead', 'qg11NoLiveModel', 'qg11Holds', 'qg11HoldsN', 'qg11Empty', 'qg11Clean', 'qg11NotPassed', 'qg11HoldsUntil', 'qg11Unread',
+    for (const k of ['qg11H', 'qg11Lead', 'qg11NoLiveModel', 'qg11Holds', 'qg11HoldsN', 'qg11Empty', 'qg11Clean', 'qg11NotPassed', 'qg11HoldsUntil', 'qg11GoRefused', 'qg11Unread',
       'qg11NotRun', 'qg11NotComplete', 'qg11Unsafe', 'qg11Failed', 'qg11Passed', 'qg11RunK', 'qg11KillOff', 'qg11KillMaster', 'qg11KillScoped',
       'qg11CapNone', 'qg11Cap', 'qg11OwnNone', 'qg11Own', 'qg11ProviderNone', 'qg11Provider', 'cannotReadAi']) {
       expect(gatesWords('ta', k), k).not.toBe(gatesWords('en', k));

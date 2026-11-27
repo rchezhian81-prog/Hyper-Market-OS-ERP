@@ -16,7 +16,9 @@ import { startInboxShop, OWNER, MGR, ok, type InboxShop } from './lib/ai-inbox-s
  *     yet" and the gate HOLDS until R8 (OB-382);
  *   • an evaluation the owner runs reaches no model: it is shown NOT COMPLETE — it proves nothing;
  *   • a scoped kill switch and a shop budget are said as head office holds them; the store manager reads the same reading;
- *   • QG-11 still reads "Not decided — silence is not approval": a reading is never a decision.
+ *   • QG-11 still reads "Not decided — silence is not approval": a reading is never a decision;
+ *   • OB-935 (owner decided A): pressing GO on QG-11 is head office's refusal, naming each assistant without a complete,
+ *     passing evaluation, in plain words — nothing recorded; HOLD is recorded in the owner's name.
  * Synthetic data only. Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
  */
 
@@ -118,5 +120,36 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('QG-11: the
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
     expect((await shop.cloud().request({ method: 'GET', path: '/v1/compliance/gate-decisions/QG-11/R8', userId: OWNER })).body).toMatchObject({ count: 0 });
+
+    // ── OB-935 (owner decided A, 27 Nov 2026): GO on QG-11 is head office's refusal, naming the assistants, in plain words;
+    //    nothing is recorded. HOLD with evidence is recorded in the owner's name.
+    s = await open(OWNER);
+    try {
+      const said = await standing(s.page, 'no_live_model');
+      expect(said).toContain('Head office refuses GO on QG-11 until then (owner\'s decision, 27 Nov 2026 — OB-935); HOLD and REWORK can still be recorded.');
+      expect(await qg11(s.page).locator('.blockers').innerText()).toMatch(/A06 · .+'s latest evaluation \(run evr-A06-[^)]+\) is NOT COMPLETE — it never reached a model, so it proves nothing/);
+      await s.page.selectOption('#decide-gate', 'QG-11');
+      await s.page.check('input[name="decision"][value="GO"]');
+      await s.page.fill('#evidence-label', 'The AI evaluations reading');
+      await s.page.fill('#evidence-ref', 'Quality gates page, QG-11 row');
+      await s.page.fill('#rationale', 'trying to pass it');
+      await s.page.click('#record');
+      await s.page.waitForFunction(() => /QG-11 cannot be GO while/.test((globalThis as unknown as { document: { getElementById(x: string): { textContent: string | null } | null } }).document.getElementById('decide-status')?.textContent ?? ''), undefined, { timeout: 15_000 });
+      const refused = (await s.page.textContent('#decide-status')) ?? '';
+      expect(refused).toMatch(/^Head office refused: QG-11 cannot be GO while \d+ thing\(s\) block it: /);
+      expect(refused).toMatch(/A01 · [^;]+ has no evaluation on record — it needs a complete, passing evaluation against a live model \(no model is connected yet — EX-12, OB-296; live models are due at R8, OB-382\)/);
+      expect(refused).toMatch(/A06 · [^;]+'s latest evaluation \(run evr-A06-[^)]+\) is NOT COMPLETE/);
+      if (SHOTS !== undefined) await s.page.locator('#decide-section').screenshot({ path: join(SHOTS, 'qg11-go-refused-en.png') });
+      expect((await shop.cloud().request({ method: 'GET', path: '/v1/compliance/gate-decisions/QG-11/R8', userId: OWNER })).body).toMatchObject({ count: 0 });
+
+      await s.page.check('input[name="decision"][value="HOLD"]');
+      await s.page.fill('#rationale', 'Hold until every assistant passes against a live model (R8)');
+      await s.page.click('#record');
+      await s.page.waitForFunction(() => (globalThis as unknown as { document: { querySelector(x: string): { getAttribute(a: string): string | null } | null } }).document.querySelector('#gates li.row[data-gate="QG-11"]')?.getAttribute('data-state') === 'HOLD', undefined, { timeout: 15_000 });
+      expect(await s.page.textContent('#decide-status')).toContain('Recorded at head office, in your name.');
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+    const hist = (await shop.cloud().request({ method: 'GET', path: '/v1/compliance/gate-decisions/QG-11/R8', userId: OWNER })).body as { history: { decision: string; decidedBy: string }[] };
+    expect(hist.history.map((d) => [d.decision, d.decidedBy])).toEqual([['HOLD', OWNER]]);
   }, 240_000);
 });

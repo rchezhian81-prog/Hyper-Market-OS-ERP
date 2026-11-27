@@ -97,7 +97,8 @@ describe('QG-11 — the AI evaluations reading on the Quality gates page (pendin
     for (const v of silent) {
       expect(v.state).not.toBe('evaluations_clean');
       expect(v.icon).toBe('⚠');
-      expect(v.lines.at(-1)).toMatch(/^QG-11 holds until every agent/);
+      expect(v.lines.at(-2)).toMatch(/^QG-11 holds until every agent/);
+      expect(v.lines.at(-1)).toMatch(/^Head office refuses GO on QG-11 until then \(owner's decision, 27 Nov 2026 — OB-935\)/); // OB-935
     }
   });
 });
