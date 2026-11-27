@@ -47,10 +47,13 @@ describe('the e-invoice reader reads ValDtls.RndOffAmt — signed, exactly, or s
     expect(parseGstEInvoice(eInvoice('A6', { RndOffAmt: -1.4, TotInvVal: 532 }))).toMatchObject({ ok: true, invoice: { roundOffMinor: -140 } });
   });
 
-  it('a credit or debit note\'s round off is not read (no rule for it yet) — said, so it stays a difference a person decides', () => {
+  // OB-937 A (27 Nov 2026): head office now REFUSES a credit or debit note on Supplier bills (pending09 test); the reader still
+  // names it and still does not take its round off.
+  it('a credit or debit note\'s round off is not read (no rule for it yet) — said; the reader names the note so head office refuses it', () => {
     for (const typ of ['CRN', 'DBN']) {
       const p = parseGstEInvoice(eInvoice(`N-${typ}`, { RndOffAmt: -0.4, TotInvVal: 533 }, typ));
       expect(p.ok && 'roundOffMinor' in p.invoice).toBe(false);
+      expect(p.ok && p.invoice.documentType).toBe(typ);
       expect(p.ok && p.invoice.warnings).toEqual(expect.arrayContaining([`this e-invoice is a ${typ === 'CRN' ? 'credit' : 'debit'} note (${typ}): its round off (RndOffAmt) is not read — a person decides the difference`]));
     }
   });

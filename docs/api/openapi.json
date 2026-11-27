@@ -296444,6 +296444,9 @@
           "roundOffMinor": {
             "type": "number"
           },
+          "documentType": {
+            "type": "string"
+          },
           "confidence": {
             "type": "number"
           },

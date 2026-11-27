@@ -335,6 +335,9 @@ $('hand-in').addEventListener('click', async () => {
   };
   const answer = await session.handIn(picked, { supplierId: $('hand-supplier').value, poId: $('hand-po').value });
   if (!answer.ok && !answer.unreachable && answer.status === 0) { sayLocal($('hand-status'), answer.code === 'not_json' ? t('notJson') : t('notBill')); return; }
+  // OB-937 A: a supplier's credit or debit note is refused by head office — said in plain words, never made a bill.
+  const plain = typeof session.handInWords === 'function' ? session.handInWords(lang, answer) : null;
+  if (plain !== null) { sayLocal($('hand-status'), plain); return; }
   const doc = answer.ok ? answer.value.document : null;
   say($('hand-status'), answer, answer.ok ? (answer.value.alreadyReceived ? t('alreadyHanded') : doc.state === 'draft' ? t('handed') : t('handedScan')) : '');
   if (answer.ok) { openDoc = doc; await refresh(); renderDrawer(); }
