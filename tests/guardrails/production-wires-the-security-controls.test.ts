@@ -41,6 +41,6 @@ describe('guardrail: the production composition wires every security control the
     expect(/^\s*\/\/.*authThrottle:/m.test(MAIN), 'the auth throttle line is commented out').toBe(false);
     expect(/^\s*\/\/.*sourceAuthThrottle:/m.test(MAIN), 'the address-wide sign-in ceiling line is commented out').toBe(false);
     expect(/^\s*\/\/.*audit:\s*new SqlAuditSink/m.test(MAIN), 'the audit sink line is commented out').toBe(false);
-    expect(CONTROLS[3]!.pattern.test('authenticate: () => undefined,')).toBe(false);
+    expect(CONTROLS.find((c) => c.name.startsWith('pinned token verifier'))!.pattern.test('authenticate: () => undefined,')).toBe(false);
   });
 });
