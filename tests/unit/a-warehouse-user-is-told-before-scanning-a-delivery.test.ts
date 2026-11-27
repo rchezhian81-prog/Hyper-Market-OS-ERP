@@ -134,11 +134,14 @@ describe('the warehouse handheld refuses "Receive a delivery" before any scan �
     expect(outbox.all()).toHaveLength(1);
   });
 
-  it('allowed — or not told (an older store computer: head office decides, as before): the scan is received and queued', () => {
+  it('allowed — or not told (an older store computer: head office decides, as before): the scan is received, held, and queued in the receipt', () => {
     for (const receiving of [{ allowed: true }, undefined]) {
       const { s, outbox } = session(receiving);
       expect(s.receivingRefusal()).toBeUndefined();
       expect(s.receive({ commandId: 'c-1', grnId: 'g-1', barcode: '890RICE', scannedQuantity: 1, source: 'po' }).result.accepted).toBe(true);
+      // D-031: held on the phone until the receipt is sent, then ONE record.
+      expect(outbox.all()).toHaveLength(0);
+      expect(s.completeReceiving({ grnId: 'g-1' }).accepted).toBe(true);
       expect(outbox.all()).toHaveLength(1);
     }
   });

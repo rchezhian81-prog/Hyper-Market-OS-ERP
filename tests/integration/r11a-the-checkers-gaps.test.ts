@@ -283,6 +283,7 @@ describe.each(backings)('R11-A — on $name', ({ harness }) => {
       barcodes: [{ barcode: '890RICE', productId: 'p-rice', level: 'unit' }], packs: [{ productId: 'p-rice', baseUom: 'ea', levels: [{ level: 'unit', containsMinor: 1, barcode: '890RICE' }] }] as never,
     }, outbox, { now: () => AT });
     expect(phone.receive({ commandId: 'c-1', grnId: 'g-1', barcode: '890RICE', scannedQuantity: 1, source: 'po' }).result.accepted).toBe(true);
+    expect(phone.completeReceiving({ grnId: 'g-1' }).accepted).toBe(true); // D-031: received = sent as the receipt
     phone.barNewWork(judgeClientVersion(OLD, POLICY, 'warehouse').words!);
     expect(phone.putAway({ commandId: 'mv-1', scannedProductId: 'p-rice', scannedBinId: 'BIN-A', batchId: null, quantityMinor: 1, uom: 'EA', at: AT }).result.accepted).toBe(true);
     const move = outbox.all().map((i) => i.event).find((e) => e.type === 'WarehouseMovementApplied')!;

@@ -102,6 +102,16 @@ const WORDS = {
     deliveriesAsOf: 'Orders as head office last sent them to the store computer, at',
     recvHowMany: 'How many of this item?', recvHowManyHint: 'Key the number in this delivery (1 if only one). OK records them.',
     doneReceiving: 'Delivery complete — send the receipt',
+    // D-031: the scans wait on this phone until the receipt is sent; a wrong one is removed before sending.
+    heldHeading: 'Waiting to send — not in stock yet',
+    heldHint: 'These scans stay on this phone until you press "Delivery complete — send the receipt". Nothing reaches stock before that. Remove a wrong scan here before sending.',
+    heldNote: 'kept on this phone until you send the receipt',
+    removeScan: 'Remove', heldFailedFlag: 'failed the check — held back', heldMrp: 'MRP',
+    heldRemoved: '{n} removed before sending — kept in the record in your name',
+    sendAgain: 'Not sent yet — send again',
+    receipt_not_sent: 'Receipt not sent yet — the store computer cannot be reached',
+    receiptNotSentDetail: 'Everything is kept on this phone. It goes by itself as soon as the store computer answers, or press "Not sent yet — send again".',
+    receiptWaitingHint: 'The receipt is on this phone and goes by itself when the store computer answers. It can no longer be changed.',
     tempLabel: 'Arrival temperature (chilled or frozen goods)', tempNotTaken: 'not taken',
     tempTitle: 'Arrival temperature, °C', tempHint: 'Probe the goods and key the reading, for example 3.5 or -18. It goes with every scan until you change it.', tempNone: 'No reading',
     needTemp: 'The temperature must be a number of degrees',
@@ -140,6 +150,11 @@ const WORDS = {
     received: 'Received', unknown_barcode: 'Unknown barcode — set aside for someone to sort out',
     receiving_done: 'Receipt sent — head office will match the delivery to the order',
     nothing_received: 'Nothing has been received on this handheld for this delivery yet',
+    // D-031: the held scans — removed before sending, a delivery already sent, a receipt at its most lines, unreadable held scans
+    scan_removed: 'Scan removed — it will not be sent', scan_not_held: 'That scan is not waiting to be sent — nothing changed',
+    receipt_already_sent: 'This delivery was already sent — nothing was received',
+    receipt_full: 'This receipt is full — send it now',
+    held_scans_unreadable: 'The scans kept on this phone cannot be read — call the store manager',
     // OB-172: the receiving checklist for chilled, frozen or raw-meat goods, done at the door before the receipt is sent
     checklist_required: 'Chilled or frozen goods — do the receiving checklist first',
     checklist_incomplete: 'The receiving checklist is not finished',
@@ -215,6 +230,15 @@ const WORDS = {
     deliveriesAsOf: 'தலைமை அலுவலகம் கடைக் கணினிக்குக் கடைசியாக அனுப்பிய ஆர்டர்கள், நேரம்',
     recvHowMany: 'இந்தப் பொருள் எத்தனை?', recvHowManyHint: 'இந்தச் சரக்கில் உள்ள எண்ணிக்கையை உள்ளிடவும் (ஒன்று மட்டும் என்றால் 1). சரி அழுத்தினால் பதிவாகும்.',
     doneReceiving: 'வரவு முடிந்தது — ரசீதை அனுப்பு',
+    heldHeading: 'அனுப்பக் காத்திருக்கிறது — இன்னும் இருப்பில் இல்லை',
+    heldHint: '«வரவு முடிந்தது — ரசீதை அனுப்பு» அழுத்தும் வரை இந்த ஸ்கேன்கள் இந்தக் கைப்பேசியிலேயே இருக்கும். அதற்கு முன் எதுவும் இருப்பில் சேராது. தவறான ஸ்கேனை அனுப்பும் முன் இங்கே நீக்கவும்.',
+    heldNote: 'ரசீதை அனுப்பும் வரை இந்தக் கைப்பேசியில் வைக்கப்படும்',
+    removeScan: 'நீக்கு', heldFailedFlag: 'சோதனையில் தோல்வி — தடுத்து வைக்கப்பட்டது', heldMrp: 'MRP',
+    heldRemoved: 'அனுப்பும் முன் {n} நீக்கப்பட்டது — உங்கள் பெயரில் பதிவில் வைக்கப்பட்டுள்ளது',
+    sendAgain: 'இன்னும் அனுப்பப்படவில்லை — மீண்டும் அனுப்பு',
+    receipt_not_sent: 'ரசீது இன்னும் அனுப்பப்படவில்லை — கடை கணினியை அடைய முடியவில்லை',
+    receiptNotSentDetail: 'எல்லாம் இந்தக் கைப்பேசியில் வைக்கப்பட்டுள்ளது. கடை கணினி பதில் அளித்தவுடன் தானாகச் செல்லும், அல்லது «இன்னும் அனுப்பப்படவில்லை — மீண்டும் அனுப்பு» அழுத்தவும்.',
+    receiptWaitingHint: 'ரசீது இந்தக் கைப்பேசியில் உள்ளது; கடை கணினி பதில் அளித்தவுடன் தானாகச் செல்லும். இனி அதை மாற்ற முடியாது.',
     tempLabel: 'வந்தபோது வெப்பநிலை (குளிர்/உறைந்த பொருட்கள்)', tempNotTaken: 'எடுக்கப்படவில்லை',
     tempTitle: 'வந்தபோது வெப்பநிலை, °C', tempHint: 'பொருளை அளந்து அளவை அழுத்தவும், உதாரணமாக 3.5 அல்லது -18. மாற்றும் வரை ஒவ்வொரு ஸ்கேனுடனும் செல்லும்.', tempNone: 'அளவு இல்லை',
     needTemp: 'வெப்பநிலை ஒரு எண்ணாக இருக்க வேண்டும்',
@@ -247,6 +271,10 @@ const WORDS = {
     received: 'பெறப்பட்டது', unknown_barcode: 'தெரியாத பார்கோடு — சரிபார்க்க ஒதுக்கி வைக்கப்பட்டது',
     receiving_done: 'ரசீது அனுப்பப்பட்டது — தலைமை அலுவலகம் வரவை ஆர்டருடன் ஒப்பிடும்',
     nothing_received: 'இந்த வரவுக்கு இந்தக் கருவியில் இன்னும் எதுவும் பெறப்படவில்லை',
+    scan_removed: 'ஸ்கேன் நீக்கப்பட்டது — அது அனுப்பப்படாது', scan_not_held: 'அந்த ஸ்கேன் அனுப்பக் காத்திருக்கவில்லை — எதுவும் மாறவில்லை',
+    receipt_already_sent: 'இந்த வரவு ஏற்கெனவே அனுப்பப்பட்டது — எதுவும் பெறப்படவில்லை',
+    receipt_full: 'இந்த ரசீது நிறைந்துவிட்டது — இப்போதே அனுப்பவும்',
+    held_scans_unreadable: 'இந்தக் கைப்பேசியில் வைக்கப்பட்ட ஸ்கேன்களைப் படிக்க முடியவில்லை — கடை மேலாளரை அழைக்கவும்',
     checklist_required: 'குளிர் அல்லது உறைந்த பொருட்கள் — முதலில் பெறுதல் சரிபார்ப்பைச் செய்யவும்',
     checklist_incomplete: 'பெறுதல் சரிபார்ப்பு முடியவில்லை',
     checklistTitle: 'பெறுதல் சரிபார்ப்பு — குளிர் மற்றும் உறைந்த பொருட்கள்', checklistHint: 'வாசலில் ஒவ்வொரு சோதனையையும் குறிக்கவும். அது உங்கள் பெயரில் ரசீதுடன் செல்லும்.',
@@ -782,8 +810,12 @@ function render() {
   renderMrp(); // batch 20a
   say(el('receive-failed'), t('recvFailed'), 'shield-alert'); // batch 20a
   // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
-  say(el('done-receiving'), t('doneReceiving'), 'send');
-  el('done-receiving').hidden = !(real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId));
+  // D-031: a receipt sent while the store computer could not be reached says so, with "send again" (it also goes by itself).
+  const receiptWaiting = real !== undefined && typeof real.receiptWaiting === 'function' && real.receiptWaiting(grnId);
+  say(el('done-receiving'), receiptWaiting ? t('sendAgain') : t('doneReceiving'), 'send');
+  el('done-receiving').dataset.waiting = String(receiptWaiting);
+  el('done-receiving').hidden = !(receiptWaiting || (real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId)));
+  renderHeld(receiptWaiting);
   sayAction(el('put-away'), t('putAway'), 'layers', t('waitsForBin'));
   el('put-away').disabled = selected === null;
   say(el('pick-heading'), t('toPick'), 'shopping-basket');
@@ -883,7 +915,9 @@ function render() {
   host.textContent = '';
   // With pick work but nothing to put away, the goods-in heading would sit over nothing.
   el('goods-in-heading').hidden = items.length === 0 && (lines.length > 0 || issues.length > 0 || transfersHeld > 0);
-  if (items.length === 0 && lines.length === 0 && issues.length === 0 && transfersHeld === 0) {
+  // D-031: scans waiting to be sent are work in hand — the "no work given" words never stand under them.
+  const holding = real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId);
+  if (items.length === 0 && lines.length === 0 && issues.length === 0 && transfersHeld === 0 && !holding) {
     el('empty').hidden = false;
     el('empty').textContent = `${t('noWork')} ${t('noWorkBody')}`;
     return;
@@ -905,6 +939,48 @@ function render() {
     row.addEventListener('click', () => { selected = index; selectedPick = null; selectedIssue = null; render(); });
     host.append(row);
   });
+}
+
+/**
+ * D-031: the scans HELD on this phone for the delivery — not in stock until the receipt is sent. Each row: the item, how many,
+ * a failed check or the pack's MRP when there was one, and "Remove" (taken off before sending; the removal is kept in the
+ * person's name and travels with the receipt). Read from the phone's own storage, so the list is the same after a reload.
+ */
+function renderHeld(receiptWaiting) {
+  const held = real && typeof real.heldReceipt === 'function' ? real.heldReceipt(grnId) : { scans: [], removed: [] };
+  say(el('held-heading'), t('heldHeading'), 'clock');
+  el('held-heading').dataset.count = String(held.scans.length);
+  el('held-heading').hidden = held.scans.length === 0;
+  el('held-hint').hidden = held.scans.length === 0 && !receiptWaiting;
+  el('held-hint').textContent = receiptWaiting && held.scans.length === 0 ? t('receiptWaitingHint') : t('heldHint');
+  el('held-removed').hidden = held.removed.length === 0 || held.scans.length === 0;
+  el('held-removed').textContent = t('heldRemoved').replace('{n}', String(held.removed.length));
+  el('held-scans').replaceChildren(...held.scans.map((x) => {
+    const row = document.createElement('div');
+    row.className = 'item held' + (x.qcFailed ? ' recalled' : '');
+    row.dataset.commandId = x.commandId;
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = nameOf(x.productId) + (x.batchId ? ` · ${x.batchId}` : '');
+    const qty = document.createElement('div');
+    qty.className = 'qty';
+    sayAmount(qty, x.quantityMinor, x.uom);
+    row.append(what, qty);
+    const notes = [shopTimeOf(x.at), x.qcFailed ? t('heldFailedFlag') : '', typeof x.mrpMinor === 'number' ? `${t('heldMrp')} ₹${(x.mrpMinor / 100).toFixed(2)}` : ''].filter((n) => n !== '');
+    if (notes.length > 0) { const f = document.createElement('div'); f.className = 'when'; f.textContent = notes.join(' · '); row.append(f); }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'remove';
+    remove.dataset.remove = x.commandId;
+    say(remove, t('removeScan'), 'trash');
+    remove.addEventListener('click', () => {
+      const out = real.removeHeldScan({ grnId, commandId: x.commandId });
+      feltResult(out.signal);
+      render();
+    });
+    row.append(remove);
+    return row;
+  }));
 }
 
 /**
@@ -1153,11 +1229,11 @@ el('receive').addEventListener('click', async () => {
     ...(manufacturedOn === null ? {} : { manufacturedOn }),
     ...(packMrpMinor === null ? {} : { mrpMinor: packMrpMinor }), // batch 20a: the pack's MRP, for this one scan
   });
-  feltResult(out.signal);
+  // D-031: an accepted scan is held on this phone until the receipt is sent — said with it.
+  feltResult(out.signal.feedback === 'accept' ? { ...out.signal, detail: `${out.signal.detail} — ${t('heldNote')}` } : out.signal);
   if (out.signal.feedback === 'accept') packMrpMinor = null;
   if (out.signal.feedback === 'accept' && known !== undefined) lastReceivedProduct = known.productId; // batch 20e
   render();
-  if (out.signal.feedback === 'accept') void syncToBox();
 });
 
 /**
@@ -1179,11 +1255,10 @@ el('receive-failed').addEventListener('click', async () => {
     ...(manufacturedOn === null ? {} : { manufacturedOn }),
     ...(packMrpMinor === null ? {} : { mrpMinor: packMrpMinor }),
   });
-  feltResult(out.signal.feedback === 'accept' ? { ...out.signal, detail: `${t('receivedFailed')} — ${out.signal.detail}` } : out.signal);
+  feltResult(out.signal.feedback === 'accept' ? { ...out.signal, detail: `${t('receivedFailed')} — ${out.signal.detail} — ${t('heldNote')}` } : out.signal);
   if (out.signal.feedback === 'accept') packMrpMinor = null;
   if (out.signal.feedback === 'accept' && known !== undefined) lastReceivedProduct = known.productId; // batch 20e
   render();
-  if (out.signal.feedback === 'accept') void syncToBox();
 });
 
 /**
@@ -1193,6 +1268,15 @@ el('receive-failed').addEventListener('click', async () => {
  */
 el('done-receiving').addEventListener('click', async () => {
   if (real === undefined) return;
+  // D-031: the receipt is already on this phone (sent while the store computer could not be reached) — try again now.
+  if (el('done-receiving').dataset.waiting === 'true' && !real.receivingOpen(grnId)) {
+    await syncToBox();
+    feltResult(real.receiptWaiting(grnId)
+      ? { feedback: 'warn', code: 'receipt_not_sent', detail: t('receiptNotSentDetail'), sound: 'warn', vibrateMs: 120 }
+      : { feedback: 'accept', code: 'receiving_done', detail: '', sound: 'ok', vibrateMs: 40 });
+    render();
+    return;
+  }
   // OB-172: a chilled / frozen / raw-meat delivery asks for the receiving checklist first (head office's own, from the store
   // setup — no network needed). Cancelled → nothing is sent; the delivery stays open on this handheld.
   const need = typeof real.deliveryChecklist === 'function' ? real.deliveryChecklist(grnId) : { known: false, coldChain: [] };
@@ -1202,9 +1286,13 @@ el('done-receiving').addEventListener('click', async () => {
     if (checklist === null) return;
   }
   const out = real.completeReceiving({ grnId, ...(checklist === undefined ? {} : { checklist }) });
-  feltResult(out.signal);
   render();
-  if (out.signal.feedback === 'accept') void syncToBox();
+  if (out.signal.feedback !== 'accept') { feltResult(out.signal); return; }
+  // D-031: the receipt (every held scan inside it) is on this phone's queue; hand it to the store computer now. If it cannot be
+  // reached, say so plainly — nothing is lost: it is kept here and goes by itself, or with "send again".
+  await syncToBox();
+  feltResult(real.receiptWaiting(grnId) ? { feedback: 'warn', code: 'receipt_not_sent', detail: t('receiptNotSentDetail'), sound: 'warn', vibrateMs: 120 } : out.signal);
+  render();
 });
 
 /**

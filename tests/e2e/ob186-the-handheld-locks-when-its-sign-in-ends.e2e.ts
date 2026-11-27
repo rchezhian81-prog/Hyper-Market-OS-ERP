@@ -155,10 +155,10 @@ describe.skipIf(!HAVE_BROWSER)('OB-186: the handheld locks to the sign-in page w
     await page.keyboard.press('Enter');
   };
 
-  /** The two records A made are on the phone, still waiting, still stamped with A's sign-in. */
+  /** The record A made (the receipt, the scan inside it — D-031) is on the phone, still waiting, still stamped with A's sign-in. */
   const stillQueued = async (page: Page, ref: string): Promise<void> => {
     const q = await queued(page);
-    expect(q.map((i) => i.event.type)).toEqual(['ReceivingScanned', 'ReceivingCompleted']);
+    expect(q.map((i) => i.event.type)).toEqual(['ReceivingCompleted']); // D-031: the scan travels inside the receipt
     for (const i of q) expect(i).toMatchObject({ state: 'pending', stamp: { userId: 'u-worker', ref } });
   };
 
@@ -173,7 +173,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-186: the handheld locks to the sign-in page w
     expect(await page.textContent('[data-sign-in-left]')).toBe('Sign-in ends in 4 h 0 min · உள்நுழைவு முடிய 4 மணி 0 நிமிடம்');
     expect(await logged()).toEqual([]);
     await context.unroute('**/lane/outbox');
-    await expect.poll(async () => (await logged()).map((e) => e.type), { timeout: 30_000 }).toEqual(['ReceivingScanned', 'ReceivingCompleted']);
+    await expect.poll(async () => (await logged()).map((e) => e.type), { timeout: 30_000 }).toEqual(['ReceivingCompleted']);
     const done = (await logged()).find((e) => e.type === 'ReceivingCompleted')!;
     expect(done.payload).toMatchObject({
       grnId: 'grn-ice', completedBy: 'u-worker',

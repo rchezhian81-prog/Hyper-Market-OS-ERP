@@ -523,6 +523,24 @@ export interface AssembledFromScans {
   readonly onHandMovementIds: readonly string[];
   /** Lines whose checked outcome (sellable + held) differs from what the scans posted on-hand — a visible exception, never a silent fix. */
   readonly disagreements: readonly { readonly lineId: string; readonly scannedOnHandMinor: number; readonly sellableMinor: number; readonly heldMinor: number }[];
+  /**
+   * D-031: scans the person took off the receipt on the handheld BEFORE sending it — never booked, kept here with who removed
+   * them and when (hard rule #6: nothing done at the door is silently dropped). Absent when none were removed.
+   */
+  readonly removedOnPhone?: readonly RemovedOnPhone[];
+}
+
+/** D-031: one scan removed on the handheld before the receipt was sent, as the receipt carried it. */
+export interface RemovedOnPhone {
+  readonly commandId: string;
+  readonly productId: string;
+  readonly batchId: string | null;
+  readonly quantityMinor: number;
+  readonly state: string;
+  readonly receivedBy: string;
+  readonly at: string;
+  readonly removedBy: string;
+  readonly removedAt: string;
 }
 
 /** What a receipt posts against its purchase order (SP-6 · F01): the received quantity per product, keyed on the receipt. */

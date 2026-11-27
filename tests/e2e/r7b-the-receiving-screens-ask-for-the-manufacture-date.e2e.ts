@@ -171,9 +171,13 @@ describe.skipIf(!HAVE_BROWSER)('OB-504: the receiving screens ask for the month 
     await page.waitForSelector('#banner:not([hidden])');
     await says(page, '#banner-title', 'Received');
     await page.click('#banner-ok');
-    const scans = async () => (await logged(edge)).filter((e) => e.type === 'ReceivingScanned');
-    for (let i = 0; i < 50 && (await scans()).length === 0; i += 1) await page.waitForTimeout(100);
-    expect((await scans())[0]?.payload).toMatchObject({ productId: 'p-det', manufacturedOn: '2026-09' });
+    // D-031: held on the phone until the receipt is sent; the month travels on its line inside the receipt.
+    await page.click('#done-receiving');
+    await page.waitForSelector('#banner:not([hidden])');
+    await page.click('#banner-ok');
+    const receipts = async () => (await logged(edge)).filter((e) => e.type === 'ReceivingCompleted');
+    for (let i = 0; i < 50 && (await receipts()).length === 0; i += 1) await page.waitForTimeout(100);
+    expect(((await receipts())[0]?.payload['scans'] as unknown[])[0]).toMatchObject({ productId: 'p-det', manufacturedOn: '2026-09' });
 
     await page.click('#lang');
     await says(page, '#recv-mfg', 'தயாரிப்பு மாதம்');

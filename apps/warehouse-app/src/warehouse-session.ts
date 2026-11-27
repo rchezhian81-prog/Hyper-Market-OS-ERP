@@ -24,7 +24,8 @@
 // only until the handheld was closed. The queue is not optional, because a forgotten queue is
 // invisible. Every accepted action queues its event.
 
-import { makeEvent } from '../../../packages/contracts/src/event';
+import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
+import type { SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { normaliseUom, toDecimalString } from '../../../packages/contracts/src/quantity';
 import {
@@ -42,6 +43,8 @@ import { isExpired } from '../../../packages/fefo/src/fefo';
 import { isAdjustmentReason, type AdjustmentReasonCode } from '../../../packages/adjustment/src/adjustment';
 import type { StockState } from '../../../packages/stock/src/position';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { noDeviceStore, type DeviceStore } from '../../../packages/sync/src/device-outbox';
+import { HeldReceipts, type HeldScan, type RemovedScan } from './held-receipts';
 import {
   judgeDockChecklist, coldChainAmong, readReceivingChecklistSetup,
   type DockChecklistAnswer, type FoodSafetyCheck, type ReceivingChecklistSetup,
@@ -81,6 +84,9 @@ export const FEEDBACK_CODES = Object.freeze([
   'counted', 'adjustment_requested', 'not_a_quantity', 'no_reason',
   // the delivery declared complete — sent as ONE receipt for head office to assemble against the order (SP-6b)
   'receiving_done', 'nothing_received',
+  // D-031: scans are HELD on the phone until the receipt is sent — a held scan removed (or not held), a delivery already sent,
+  // a receipt at its most lines, and held scans this phone could not read (nothing is written over them)
+  'scan_removed', 'scan_not_held', 'receipt_already_sent', 'receipt_full', 'held_scans_unreadable',
   // OB-172: a chilled/frozen delivery is not declared complete without its receiving checklist, ticked in full
   'checklist_required', 'checklist_incomplete',
   // SP-8c: the back store ISSUES against a floor indent (tap the line → scan the bin you take from → scan the item → confirm)
@@ -305,6 +311,36 @@ export const HANDHELD_COUNT_REASON = 'cycle_count';
  * the goods receipt from the scans it already holds and folds it into the purchase order — nothing in it moves stock.
  */
 export const RECEIVING_COMPLETED = 'ReceivingCompleted';
+/**
+ * D-031: the most scans ONE receipt holds. Since D-031 the receipt travels as one record with every line inside it, and the
+ * store computer takes a phone's hand-over of at most 256 KB (twenty records at a time): 300 lines is well inside that.
+ * Decided under OB-801 (OB-927) — a setting in code, reversible.
+ */
+export const MAX_SCANS_PER_RECEIPT = 300;
+/** D-031: a held scan as the "Waiting to send" list shows it. */
+export interface HeldScanView {
+  readonly commandId: string;
+  readonly productId: string;
+  readonly name: string;
+  readonly batchId: string | null;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly state: string;
+  readonly qcFailed: boolean;
+  readonly mrpMinor?: number;
+  readonly at: string;
+  /** The quantity in words ("4", "1.5 kg"). */
+  readonly quantity: string;
+}
+/** D-031: what this phone holds for a delivery — the scans waiting to be sent, and those removed before sending. */
+export interface HeldReceiptView {
+  readonly grnId: string;
+  readonly scans: readonly HeldScanView[];
+  readonly removed: readonly (HeldScanView & { readonly removedBy: string; readonly removedAt: string })[];
+  /** True once the receipt was sent (it is on the phone's queue, or already with the store computer). */
+  readonly sent: boolean;
+}
+export interface RemoveHeldScanResult { readonly removed: boolean; readonly signal: FeedbackSignal }
 /** SP-8c: the event a back-store ISSUE against a floor indent travels under — the cloud re-runs the indent + transfer engines on it. */
 export const FLOOR_INDENT_ISSUED = 'FloorIndentIssued';
 /** OB-288 lane 2 · WF-07 offline: a transfer sent from this store (the cloud re-runs the transfer engine on head office's own stock). */
@@ -560,6 +596,14 @@ export interface HandheldAsn {
 }
 
 const gKey = (productId: string, batchId: string | null): string => `${productId}|${batchId ?? ''}`;
+/** The queue key of a delivery's one receipt (SP-6b) — the same on every phone build, so a retry is never a second receipt. */
+const receiptKey = (grnId: string): string => `recv-done:${grnId}`;
+/** D-031: one held scan as a line inside the receipt — the delivery and the store are the receipt's own, so not repeated. */
+function receiptLine(x: HeldScan): Record<string, unknown> {
+  const { grnId: _g, storeId: _s, stamp: _t, ...line } = x;
+  void _g; void _s; void _t;
+  return line;
+}
 
 /**
  * A warehouse worker's cached assignment. Everything is local and synchronous; the handheld works
@@ -582,6 +626,9 @@ export class WarehouseSession {
   private readonly indents = new Map<string, { readonly line: AssignedIndentLine; issuedMinor: number }>();
   private readonly appliedCommandIds: string[] = [];
   private readonly receivedSoFar: Record<string, number> = {};
+  /** D-031: the receiving scans held on this phone until the receipt is sent (the phone's own storage). */
+  private readonly held: HeldReceipts;
+  private readonly stampHeld: ((event: DomainEvent) => SignInStamp | undefined) | undefined;
   /** The store computer's word on each item it took, keyed by queue key — filled by `noteBoxStatus` (SP-3a). */
   private readonly boxWord = new Map<string, BoxItemStatus>();
 
@@ -596,7 +643,18 @@ export class WarehouseSession {
     private readonly assignment: WarehouseAssignment,
     /** Where every accepted receipt and put-away is queued for sync. Required — see the file note. */
     private readonly outbox: SyncOutbox,
-    options: { readonly currency?: CurrencyCode; readonly now?: () => string } = {},
+    options: {
+      readonly currency?: CurrencyCode; readonly now?: () => string;
+      /** D-031: where the held receiving scans are kept — the phone's storage (absent: kept in memory only, as in a test). */
+      readonly held?: DeviceStore | HeldReceipts;
+      /** D-031: told when the held scans cannot be read (P-08) — the page shows it. */
+      readonly onHeldProblem?: (why: string) => void;
+      /**
+       * D-031 · OB-180: the page's sign-in stamper, asked for every HELD scan exactly as for every queued record — so a scan
+       * made after the sign-in ended (its four hours, or the clock turned back) still finds the end and locks the screen.
+       */
+      readonly stampHeld?: (event: DomainEvent) => SignInStamp | undefined;
+    } = {},
   ) {
     this.bins = assignment.bins;
     this.contents = { ...(assignment.contents ?? {}) };
@@ -612,6 +670,17 @@ export class WarehouseSession {
     for (const item of assignment.goodsIn ?? []) this.goods.set(gKey(item.productId, item.batchId), { ...item });
     for (const line of assignment.pickLines ?? []) this.picks.set(line.lineId, { line: { ...line, batchId: line.batchId ?? null }, pickedMinor: 0 });
     for (const line of assignment.indentLines ?? []) this.indents.set(`${line.indentId}|${line.productId}`, { line, issuedMinor: 0 });
+    this.stampHeld = options.stampHeld;
+    this.held = options.held instanceof HeldReceipts ? options.held : new HeldReceipts(options.held ?? noDeviceStore(), options.onHeldProblem);
+    for (const grnId of this.held.grnIds()) {
+      // A phone that stopped after queuing a receipt and before clearing its held list: the receipt carries those scans.
+      if (this.outbox.find(receiptKey(grnId)) !== undefined) { this.held.clear(grnId); continue; }
+      for (const scan of this.held.scansOf(grnId)) {
+        this.appliedCommandIds.push(scan.commandId);
+        // What is held for the delivery being received counts against its order after a reload too.
+        if (grnId === assignment.grnId) this.receivedSoFar[scan.productId] = (this.receivedSoFar[scan.productId] ?? 0) + scan.quantityMinor;
+      }
+    }
   }
 
   /**
@@ -866,9 +935,10 @@ export class WarehouseSession {
 
   /**
    * Receive one scan at the back door (M07 / §31.1), through the authoritative receiving engine.
-   * An accepted receipt adds to the put-away worklist and queues a `GoodsReceived` event; a refusal
-   * (unknown barcode, off-order, over-delivery/DSD needing a separate approver §28, price change)
-   * queues nothing and returns the reason as scan feedback. Duplicate-scan is a harmless no-op.
+   * D-031: an accepted scan is HELD on this phone (its own storage) until the receipt is sent — nothing is queued for the store
+   * computer and nothing joins the put-away worklist before then; a refusal (unknown barcode, off-order, over-delivery/DSD
+   * needing a separate approver §28, price change, a delivery already sent) holds nothing and returns the reason as scan
+   * feedback. Duplicate-scan is a harmless no-op.
    */
   receive(input: ReceiveInput, approval?: ReceiveApproval): ReceiveActionResult {
     // OB-521: the first scan of a delivery STARTS receiving it; the rest of a delivery already begun here is finished.
@@ -877,6 +947,18 @@ export class WarehouseSession {
     if (notYours !== undefined) return { result: { commandId: input.commandId, outcome: NOT_YOURS_TO_RECEIVE, accepted: false, quantityMinor: 0, detail: notYours.detail }, signal: notYours };
     const barred = this.newWorkRefusal(() => this.receiptScansOf(input.grnId.trim()).length > 0);
     if (barred !== undefined) return { result: { commandId: input.commandId, outcome: 'app_version_too_old', accepted: false, quantityMinor: 0, detail: barred.detail }, signal: barred };
+    // D-031: the scan is held on this phone until the receipt is sent — refused (nothing held) when that cannot be done safely.
+    const notHeld = (code: string, detail: string): ReceiveActionResult =>
+      ({ result: { commandId: input.commandId, outcome: code as ReceiveResult['outcome'], accepted: false, quantityMinor: 0, detail }, signal: signalFor('reject', code, detail) });
+    if (this.outbox.find(receiptKey(input.grnId.trim())) !== undefined) {
+      return notHeld('receipt_already_sent', `delivery ${input.grnId} was already sent as one receipt — nothing was received. A late item is received in the office (Receive), or on the next delivery.`);
+    }
+    if (this.held.unreadable) {
+      return notHeld('held_scans_unreadable', 'the scans held on this phone could not be read, so nothing new is held over them — nothing was received. Call the store manager before scanning again.');
+    }
+    if (this.held.scansOf(input.grnId.trim()).length >= MAX_SCANS_PER_RECEIPT) {
+      return notHeld('receipt_full', `this receipt already holds ${MAX_SCANS_PER_RECEIPT} scans, the most one receipt carries — nothing was received. Send it now ("Delivery complete — send the receipt"); the rest of the delivery is received in the office (Receive).`);
+    }
     // Batch 20a: an MRP that is not a whole number of paise above zero is refused here, offline — nothing is received or queued.
     if (input.mrpMinor !== undefined && (!Number.isSafeInteger(input.mrpMinor) || input.mrpMinor <= 0)) {
       const detail = 'The MRP on the pack must be an amount in rupees above 0. Nothing was received — key the MRP again, or clear it.';
@@ -918,73 +1000,117 @@ export class WarehouseSession {
       return { result, signal: signalFor(feedback, result.outcome, result.detail, result.resolutionRequired ?? false) };
     }
 
-    // Accepted. Record it against the GRN, add to the put-away worklist, and queue it.
+    // Accepted. Record it against the GRN and HOLD it on this phone (D-031): nothing is queued for the store computer and
+    // nothing is put on the put-away list until the person sends the receipt — it is not stock until then.
     this.appliedCommandIds.push(result.commandId);
     const productId = result.productId!;
     this.receivedSoFar[productId] = (this.receivedSoFar[productId] ?? 0) + result.quantityMinor;
     const batchId = input.batchId ?? null;
     // Batch 20a: units that failed the check or were refused at the door are held out of stock (quarantine) — never on sale.
     const state: StockState = input.qcFailed === true ? 'quarantine' : (input.stockState ?? 'on_hand');
-    // Batch 20a: goods held out (failed the check, damaged, quarantined) wait APART from the good ones of the same product and
-    // batch — before, a later held scan turned the good units held too. Put-away still finds only the good ones (gKey).
-    const key = state === 'on_hand' ? gKey(productId, batchId) : `${gKey(productId, batchId)}|${state}`;
-    const prior = this.goods.get(key);
-    this.goods.set(key, {
-      productId, batchId,
-      quantityMinor: (prior?.quantityMinor ?? 0) + result.quantityMinor,
-      uom: prior?.uom ?? 'EA',
-      state,
-      expiry: input.expiry ?? prior?.expiry ?? null,
-      recalled: this.isRecalled(productId, batchId),
-    });
-
-    // One SCAN, keyed on its own command id (§31.1). Head office appends the `received` movement at the store and
-    // keeps the scan on the GRN's register (SP-3a); the whole receipt is assembled there later (SP-6).
-    this.outbox.enqueue(makeEvent({
-      id: `recv-${input.grnId}-${result.commandId}`,
-      type: RECEIVING_SCANNED,
-      occurredAt: command.at,
-      idempotencyKey: `recv:${input.grnId}:${result.commandId}`,
-      source: this.assignment.assignmentId,
-      payload: {
-        grnId: input.grnId, commandId: result.commandId, productId, batchId,
-        quantityMinor: result.quantityMinor, uom: prior?.uom ?? 'EA', source: input.source,
-        poId: input.poId ?? null, state, expiry: input.expiry ?? null, receivedBy: this.assignment.workerId,
-        storeId: this.assignment.storeId, at: command.at,
-        ...(input.temperatureC === undefined || !Number.isFinite(input.temperatureC) ? {} : { temperatureC: input.temperatureC }),
-        ...(input.manufacturedOn === undefined || input.manufacturedOn.trim() === '' ? {} : { manufacturedOn: input.manufacturedOn.trim() }),
-        // Batch 20a: the MRP on the pack and "failed the check / refused at the door" — head office judges both, as for Receive (office).
-        ...(input.mrpMinor === undefined ? {} : { mrpMinor: input.mrpMinor }),
-        ...(input.qcFailed === true ? { qcFailed: true } : {}),
-      },
+    const scan: HeldScan = {
+      grnId: input.grnId, commandId: result.commandId, productId, batchId,
+      quantityMinor: result.quantityMinor, uom: this.goods.get(gKey(productId, batchId))?.uom ?? 'EA', source: input.source,
+      poId: input.poId ?? null, state, expiry: input.expiry ?? null, receivedBy: this.assignment.workerId,
+      storeId: this.assignment.storeId, at: command.at,
+      ...(input.temperatureC === undefined || !Number.isFinite(input.temperatureC) ? {} : { temperatureC: input.temperatureC }),
+      ...(input.manufacturedOn === undefined || input.manufacturedOn.trim() === '' ? {} : { manufacturedOn: input.manufacturedOn.trim() }),
+      // Batch 20a: the MRP on the pack and "failed the check / refused at the door" — head office judges both, as for Receive (office).
+      ...(input.mrpMinor === undefined ? {} : { mrpMinor: input.mrpMinor }),
+      ...(input.qcFailed === true ? { qcFailed: true as const } : {}),
+    };
+    // OB-180: stamped with the sign-in it was made under, like every record this phone makes (a scan after the sign-in ended
+    // is kept unstamped, and the stamper locks the screen).
+    const stamp = this.stampHeld?.(makeEvent({
+      id: `recv-${input.grnId}-${result.commandId}`, type: RECEIVING_SCANNED, occurredAt: command.at,
+      idempotencyKey: `recv:${input.grnId}:${result.commandId}`, source: this.assignment.assignmentId, payload: scan,
     }));
+    this.held.hold(stamp === undefined ? scan : { ...scan, stamp });
 
     return { result, signal: signalFor('accept', 'received', result.detail) };
   }
 
-  /** This handheld's receiving scans for a delivery — from the DURABLE queue, so they are the same after the app was closed. */
-  private receiptScansOf(grnId: string) {
-    return this.outbox.all().filter((i) => i.event.type === RECEIVING_SCANNED && (i.event.payload as { grnId?: string }).grnId === grnId);
+  /** Put a SENT scan on the put-away worklist: good goods by product + batch; held-out goods apart from them (batch 20a). */
+  private addToGoodsIn(scan: HeldScan): void {
+    const state = scan.state as StockState;
+    const key = state === 'on_hand' ? gKey(scan.productId, scan.batchId) : `${gKey(scan.productId, scan.batchId)}|${state}`;
+    const prior = this.goods.get(key);
+    this.goods.set(key, {
+      productId: scan.productId, batchId: scan.batchId,
+      quantityMinor: (prior?.quantityMinor ?? 0) + scan.quantityMinor,
+      uom: prior?.uom ?? scan.uom,
+      state,
+      expiry: scan.expiry ?? prior?.expiry ?? null,
+      recalled: this.isRecalled(scan.productId, scan.batchId),
+    });
+  }
+
+  /** D-031: what this phone holds for a delivery — the scans waiting to be sent and those removed before sending. */
+  heldReceipt(grnId: string): HeldReceiptView {
+    const id = grnId.trim();
+    const view = (x: HeldScan): HeldScanView => ({
+      commandId: x.commandId, productId: x.productId, name: this.productName(x.productId), batchId: x.batchId,
+      quantityMinor: x.quantityMinor, uom: x.uom, state: x.state, qcFailed: x.qcFailed === true || x.state === 'quarantine',
+      ...(x.mrpMinor === undefined ? {} : { mrpMinor: x.mrpMinor }), at: x.at, quantity: quantityWords(x.quantityMinor, x.uom),
+    });
+    return {
+      grnId: id,
+      scans: this.held.scansOf(id).map(view),
+      removed: this.held.removedOf(id).map((r: RemovedScan) => ({ ...view(r), removedBy: r.removedBy, removedAt: r.removedAt })),
+      sent: this.outbox.find(receiptKey(id)) !== undefined,
+    };
+  }
+
+  /**
+   * D-031: take a wrong scan off the receipt BEFORE it is sent. It is never dropped: it moves to the receipt's removed list
+   * with who removed it and when, and that list travels inside the receipt. What it counted against the order is given back.
+   */
+  removeHeldScan(input: { readonly grnId: string; readonly commandId: string; readonly at?: string }): RemoveHeldScanResult {
+    const notYours = this.receivingRefusal(); // OB-773
+    if (notYours !== undefined) return { removed: false, signal: notYours };
+    const grnId = input.grnId.trim();
+    const removed = this.held.remove(grnId, input.commandId, this.assignment.workerId, input.at ?? this.at());
+    if (removed === undefined) {
+      return { removed: false, signal: signalFor('reject', 'scan_not_held', `that scan is not waiting to be sent on this phone for delivery ${grnId} — nothing changed`) };
+    }
+    if (grnId === this.assignment.grnId) this.receivedSoFar[removed.productId] = Math.max(0, (this.receivedSoFar[removed.productId] ?? 0) - removed.quantityMinor);
+    return { removed: true, signal: signalFor('accept', 'scan_removed', `${this.productName(removed.productId)} ${quantityWords(removed.quantityMinor, removed.uom)} taken off the receipt — it will not be sent, and the removal is kept in your name`) };
+  }
+
+  /** D-031: true while the receipt was sent here but the store computer has not taken it yet (no signal) — said, never hidden. */
+  receiptWaiting(grnId: string): boolean {
+    const key = receiptKey(grnId.trim());
+    return this.outbox.pending().some((i) => i.key === key);
+  }
+
+  /**
+   * This handheld's receiving scans for a delivery: the ones queued one by one before D-031 (a phone updated mid-delivery —
+   * they travel as they always did) followed by the ones HELD on this phone. Both durable, so the same after a reload.
+   */
+  private receiptScansOf(grnId: string): readonly HeldScan[] {
+    const queued = this.outbox.all().filter((i) => i.event.type === RECEIVING_SCANNED && (i.event.payload as { grnId?: string }).grnId === grnId)
+      .map((i) => i.event.payload as HeldScan);
+    return [...queued, ...this.held.scansOf(grnId)];
   }
 
   /** True while this handheld has received something for the delivery and not yet sent it as ONE receipt (SP-6b). */
   receivingOpen(grnId: string): boolean {
-    return this.receiptScansOf(grnId.trim()).length > 0 && this.outbox.find(`recv-done:${grnId.trim()}`) === undefined;
+    return this.receiptScansOf(grnId.trim()).length > 0 && this.outbox.find(receiptKey(grnId.trim())) === undefined;
   }
 
   /**
-   * Declare the delivery COMPLETE (SP-6b · M07-FR-01): one `ReceivingCompleted`, keyed on the GRN id, queued BEHIND the
-   * scans it covers, so head office assembles ONE goods receipt from the scans it already holds — against the order named
-   * here — and folds it into the purchase order. Nothing moves on this handheld and no quantity travels: the scans are the
-   * truth, this only says they are all in. Refused when nothing was received here (a completion with no scans would be a
-   * dead-letter at head office) and, harmlessly, when the delivery was already completed.
+   * Declare the delivery COMPLETE (SP-6b · M07-FR-01): one `ReceivingCompleted`, keyed on the GRN id. D-031: it carries the
+   * scans HELD on this phone inside it (and every scan removed before sending), so head office books them and assembles ONE
+   * goods receipt in one go, against the order named here; scans an older build queued one by one travel ahead of it as
+   * before. Refused when nothing was received here (a completion with no scans would be a dead-letter at head office) and,
+   * harmlessly, when the delivery was already completed.
    */
   /**
    * OB-172: what "Delivery complete" asks for this delivery — the receiving checklist to offer (head office's own, from the
    * store setup) and the chilled / frozen / raw-meat products this handheld received on it. Offline; decides nothing.
    */
   deliveryChecklist(grnId: string): DeliveryChecklistNeed {
-    const scanned = this.receiptScansOf(grnId.trim()).map((i) => (i.event.payload as { productId: string }).productId);
+    const scanned = this.receiptScansOf(grnId.trim()).map((x) => x.productId);
     const check = this.receivingSetup?.checks[0];
     return { known: this.receivingSetup !== undefined, ...(check === undefined ? {} : { check }), coldChain: coldChainAmong(this.receivingSetup, scanned) };
   }
@@ -1007,18 +1133,20 @@ export class WarehouseSession {
       ({ accepted: false, grnId, scanCount: scans.length, signal: signalFor(feedback, code, detail) });
     const notYours = this.receivingRefusal(); // OB-773
     if (notYours !== undefined) return { accepted: false, grnId, scanCount: scans.length, signal: notYours };
-    if (this.outbox.find(`recv-done:${grnId}`) !== undefined) return refused('duplicate_ignored', `delivery ${grnId} was already sent as one receipt — nothing changed`, 'warn');
+    if (this.outbox.find(receiptKey(grnId)) !== undefined) return refused('duplicate_ignored', `delivery ${grnId} was already sent as one receipt — nothing changed`, 'warn');
     if (scans.length === 0) return refused('nothing_received', `nothing has been received on this handheld for delivery ${grnId} — scan the delivery in first`);
     const at = input.at ?? this.at();
     const poId = input.poId === undefined ? (this.assignment.poId ?? null) : input.poId;
     // OB-172 (OB-164 at the door, offline): a chilled/frozen delivery is not declared complete without its receiving
     // checklist, judged by head office's own rule; it is done by — and travels in the name of — the person signed in on
     // this phone (the box readdressed the assignment to them), INSIDE the one completion record the store computer seals.
-    const scanned = scans.map((i) => i.event.payload as { productId: string; temperatureC?: number });
+    const scanned = scans;
     const cold = coldChainAmong(this.receivingSetup, scanned.map((x) => x.productId));
     const probed = scanned.find((x) => cold.includes(x.productId) && typeof x.temperatureC === 'number');
     const answer = input.checklist === undefined ? undefined
       : input.checklist.readingTenthsC === undefined && probed?.temperatureC !== undefined ? { ...input.checklist, readingTenthsC: Math.round(probed.temperatureC * 10) } : input.checklist;
+    const held = this.held.scansOf(grnId);
+    const removed = this.held.removedOf(grnId);
     const verdict = judgeDockChecklist({
       setup: this.receivingSetup, grnId, productIds: scanned.map((x) => x.productId), ...(answer === undefined ? {} : { answer }),
       performedBy: this.assignment.workerId, performedAt: at,
@@ -1028,16 +1156,23 @@ export class WarehouseSession {
       id: `recv-done-${grnId}`,
       type: RECEIVING_COMPLETED,
       occurredAt: at,
-      idempotencyKey: `recv-done:${grnId}`,
+      idempotencyKey: receiptKey(grnId),
       source: this.assignment.assignmentId,
       payload: {
         grnId, poId, completedBy: this.assignment.workerId, storeId: this.assignment.storeId, at,
-        scanCount: scans.length, commandIds: scans.map((i) => (i.event.payload as { commandId: string }).commandId), source: 'warehouse-handheld',
+        scanCount: scans.length, commandIds: scans.map((x) => x.commandId), source: 'warehouse-handheld',
+        // D-031: the held scans travel INSIDE the receipt (one record, all its lines) with every scan removed before sending;
+        // head office books them only now. A receipt with none (an old phone's scans only) is exactly the old record.
+        ...(held.length === 0 ? {} : { scans: held.map(receiptLine) }),
+        ...(removed.length === 0 ? {} : { removed: removed.map((r) => ({ ...receiptLine(r), removedBy: r.removedBy, removedAt: r.removedAt })) }),
         ...(verdict.carried === undefined ? {} : { receivingChecklist: verdict.carried }),
         // OB-288 P3: the ASN this delivery was received against (head office compares its own copy with what was booked).
         ...(this.assignment.asn === undefined ? {} : { asnId: this.assignment.asn.asnId }),
       },
     }));
+    // Sent: the goods join the put-away list, and nothing for this delivery is held on the phone any more (the receipt has it).
+    for (const scan of held) this.addToGoodsIn(scan);
+    this.held.clear(grnId);
     const detail = `delivery ${grnId} sent as one receipt of ${scans.length} ${scans.length === 1 ? 'scan' : 'scans'} — head office assembles it against ${poId ?? 'no order'}`;
     return { accepted: true, grnId, scanCount: scans.length, signal: signalFor('accept', 'receiving_done', detail) };
   }

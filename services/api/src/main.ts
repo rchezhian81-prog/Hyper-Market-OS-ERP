@@ -739,9 +739,13 @@ export function buildSurface(deps: {
     ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */ };
   // SP-6b: the handheld's receiving scans assembled into ONE GRN against the order — the relayed receipt's deps plus the
   // SP-3a scan register; the assembly appends no stock movement of its own (the scans did).
+  // SP-3a: a handheld's receiving scans; D-031: also the lines a handheld carries INSIDE its receipt (held until "send").
+  const receivingScanDeps = store === undefined ? {
+    permissionsOfUser: empty(undefined), appendMovement: () => {}, isKnown: empty(false), scanExists: empty(false), recordScan: () => {}, scansOf: empty([]), now,
+  } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), ...r7bScanHooks({ store, now }) /* R7 OB-504 */ };
   const assembledGoodsReceiptDeps = store === undefined ? {
-    ...syncedGoodsReceiptDeps, scansOf: empty([]),
-  } : { ...assembledGoodsReceiptAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
+    ...syncedGoodsReceiptDeps, scansOf: empty([]), carriedScans: receivingScanDeps,
+  } : { ...assembledGoodsReceiptAdapter({ store, now }), carriedScans: receivingScanDeps, calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
     ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */ };
   // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count,
   // a pending adjustment request or a held receipt excess — through that subject's own decide step (the same code the
@@ -1272,9 +1276,7 @@ export function buildSurface(deps: {
       bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
       permissionsOfUser: empty(undefined),
     } : { ...syncedWarehouseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) }),
-    ...receivingScanRoutes(store === undefined ? {
-      permissionsOfUser: empty(undefined), appendMovement: () => {}, isKnown: empty(false), scanExists: empty(false), recordScan: () => {}, scansOf: empty([]), now,
-    } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), ...r7bScanHooks({ store, now }) /* R7 OB-504 */ }),
+    ...receivingScanRoutes(receivingScanDeps),
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {},
       unitCostAt: empty(undefined), knownLocation: empty(true), now,

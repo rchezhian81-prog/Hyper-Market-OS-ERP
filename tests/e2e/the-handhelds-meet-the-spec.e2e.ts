@@ -354,11 +354,12 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await taps.tap('#qty-ok');
     await page.waitForSelector('#banner.good:not([hidden])');
     expect(taps.reset(), 'receive a line').toBeLessThanOrEqual(3);
-    // The line is on the handheld's own queue before anything else happens — receiving works with the cable out (§31).
-    expect(await page.evaluate('globalThis.warehouseOutbox.unsentCount()')).toBe(1);
-    const queued = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.type, i.event.payload.productId ?? null])');
-    expect(queued).toHaveLength(1);
-    expect(JSON.stringify(queued)).toContain('p-rice');
+    // The line is saved on the handheld at once — held in the phone's own storage until the receipt is sent (D-031) —
+    // so receiving works with the cable out (§31).
+    expect(await page.evaluate('globalThis.warehouseOutbox.unsentCount()')).toBe(0);
+    const held = await page.evaluate('globalThis.warehouseSession.heldReceipt(globalThis.warehouseData.grnId).scans.map((x) => x.productId)');
+    expect(held).toEqual(['p-rice']);
+    expect(await page.evaluate("globalThis.localStorage.getItem('sre.warehouse.held-receipts.' + globalThis.warehouseData.storeId)")).toContain('p-rice');
 
     // QG-02 (lane 1 R4): delivery complete — one tap sends the receipt (SP-6b, ≤1); a dry-goods delivery asks no checklist.
     await page.click('#banner-ok');

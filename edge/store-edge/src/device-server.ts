@@ -50,7 +50,7 @@ import { deviceLaneOf, sessionHoursFor, type CheckOutcome, type SignInOutcome, t
 import type { SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
 import type { DomainEvent } from '../../../packages/contracts/src/event';
 import {
-  HANDHELD_AUTHORITY, signInEndedMessageFor, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
+  HANDHELD_AUTHORITY, signInEndedMessageFor, asPhoneHolder, personNamedBy, othersNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
 } from './handheld-sign-in';
 import { packTimeZone } from './shop-zone'; // OB-606/607 (R16-A): the handhelds date and time by the pack's zone
 import type { QueuePosDoor } from './queue-pos-door'; // D04-FR-05 queue-busting (OB-288 Pkg 6b): the queue till's door
@@ -476,6 +476,11 @@ export function startDeviceServer(input: {
           if (!named.ok) return { key: read.item.key, status: 'refused', reason: named.reason };
           if (!input.operators!.heldRecently(named.userId, auth.deviceId)) {
             return { key: read.item.key, status: 'refused', reason: `the record names ${named.userId}, who has not been signed in on this phone this shift` };
+          }
+          // D-031: a receipt carrying its scans inside it — each person who scanned a line held this phone too.
+          const stranger = othersNamedBy(read.item.event).find((u) => !input.operators!.heldRecently(u, auth.deviceId));
+          if (stranger !== undefined) {
+            return { key: read.item.key, status: 'refused', reason: `the receipt has a scan by ${stranger}, who has not been signed in on this phone this shift` };
           }
           const stamp = read.item.stamp;
           if (stamp !== undefined) {

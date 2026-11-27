@@ -157,9 +157,16 @@ describe.skipIf(!HAVE_BROWSER)('batch 20a — the handheld\'s receive takes the 
     if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, 'b20a-handheld-failed-check-en-360.png') });
     await page.click('#banner-ok');
 
-    const scans = async () => (await logged(edge)).filter((e) => e.type === 'ReceivingScanned');
-    for (let i = 0; i < 50 && (await scans()).length < 2; i += 1) await page.waitForTimeout(100);
-    const sent = (await scans()).map((e) => e.payload);
+    // D-031: both scans wait on the phone ("Waiting to send", the failed one marked) and go inside the receipt when it is sent.
+    await says(page, '#held-scans', 'failed the check — held back');
+    await says(page, '#held-scans', 'MRP ₹220.50');
+    expect(await logged(edge)).toEqual([]);
+    await page.click('#done-receiving');
+    await page.waitForSelector('#banner:not([hidden])');
+    await page.click('#banner-ok');
+    const receipts = async () => (await logged(edge)).filter((e) => e.type === 'ReceivingCompleted');
+    for (let i = 0; i < 50 && (await receipts()).length < 1; i += 1) await page.waitForTimeout(100);
+    const sent = ((await receipts())[0]!.payload['scans'] as Record<string, unknown>[]);
     expect(sent[0]).toMatchObject({ productId: 'p-oil', quantityMinor: 9, state: 'on_hand', mrpMinor: 22_050 });
     expect(sent[1]).toMatchObject({ productId: 'p-oil', quantityMinor: 3, state: 'quarantine', qcFailed: true });
     expect(sent[1]).not.toHaveProperty('mrpMinor');

@@ -330,7 +330,8 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     expect(scan('r-rice-dmg', RICE.barcode, DELIVERED.riceDamaged, { stockState: 'damaged' }).result, 'rice damaged').toMatchObject({ accepted: true });
     expect(scan('r-tom', TOMATO.barcode, DELIVERED.tomatoGrams).result, 'tomato grams').toMatchObject({ accepted: true });
     expect(phone.session.completeReceiving({ grnId })).toMatchObject({ accepted: true, scanCount: 3 });
-    expect(await phone.sync()).toMatchObject({ handed: 4, refused: 0, failed: 0 });
+    // D-031: the three scans were held on the phone and travel inside the ONE receipt record.
+    expect(await phone.sync()).toMatchObject({ handed: 1, refused: 0, failed: 0 });
     const relayed = await edge.syncOnce!();
     expect(relayed, JSON.stringify(edge.deviceEventsOutbox.deadLetters())).toMatchObject({ dead: 0 });
     const got = (await ok(call('GET', `/v1/inventory/goods-receipt/${grnId}`, OWNER), 'the assembled GRN')) as { grn: { receivedBy: string; relayedBy: string; source: string; warehouseId: string; captured: { lines: { lineId: string; productId: string; uom: string; disposition: string; sellableMinor: number; quarantinedMinor: number; unitCost: { minor: number } }[]; discrepancies: { kind: string; productId: string; quantityMinor: number }[] }; poReceipt: { receivedByProduct: Record<string, number> }; governanceFlags: string[] }; awaitingDisposition: string[] };

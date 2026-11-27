@@ -64,16 +64,20 @@ describe('warehouse PWA is fed its assignment and executes receiving + put-away 
     expect(s.goodsIn()).toEqual([]);
   });
 
-  it('receives an on-order scan, adds it to the put-away worklist, and queues it for sync', () => {
+  it('receives an on-order scan, holds it on the phone until the receipt is sent (D-031), then adds it to the put-away worklist and queues ONE receipt', () => {
     const { s, box } = session();
     const r = receiveOne();
     const out = s.receive(r('c1', '111', 100));
     expect(out.result.accepted).toBe(true);
     expect(out.signal).toMatchObject({ feedback: 'accept', sound: 'ok' });
+    // Held: not stock yet, nothing queued.
+    expect(s.goodsIn()).toEqual([]);
+    expect(box.pending()).toEqual([]);
+    expect(s.completeReceiving({ grnId: GRN }).accepted).toBe(true);
     expect(s.goodsIn()).toHaveLength(1);
     expect(s.goodsIn()[0]).toMatchObject({ productId: 'P1', quantityMinor: 100 });
-    // One accepted receipt, queued once for idempotent sync.
-    expect(box.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned']);
+    // One receipt, queued once for idempotent sync, with the scan inside it.
+    expect(box.pending().map((i) => i.event.type)).toEqual(['ReceivingCompleted']);
   });
 
   it('sends an unknown barcode to the resolution queue and banks nothing', () => {
@@ -111,13 +115,16 @@ describe('warehouse PWA is fed its assignment and executes receiving + put-away 
     const again = s.receive(r('c1', '111', 100));
     expect(again.signal.feedback).toBe('warn');
     expect(again.result.outcome).toBe('duplicate_ignored');
+    s.completeReceiving({ grnId: GRN });
     expect(s.goodsIn()[0]?.quantityMinor).toBe(100); // not doubled
     expect(box.pending()).toHaveLength(1);
+    expect((box.pending()[0]!.event.payload as { scans: unknown[] }).scans).toHaveLength(1);
   });
 
   it('suggests a bin, puts stock away into a real bin, updates the projection and queues the move', () => {
     const { s, box } = session();
     s.receive(receiveOne()('c1', '111', 100));
+    s.completeReceiving({ grnId: GRN }); // D-031: received goods are put away once the receipt is sent
 
     const suggestion = s.suggestBin({ productId: 'P1', quantityMinor: 50 });
     expect('binId' in suggestion).toBe(true);
@@ -127,12 +134,13 @@ describe('warehouse PWA is fed its assignment and executes receiving + put-away 
     expect(put.signal).toMatchObject({ feedback: 'accept' });
     expect(s.binContents()['B-PICK|P1|']).toBe(50);
     expect(s.goodsIn()[0]?.quantityMinor).toBe(50); // 100 received − 50 put away
-    expect(box.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned', 'WarehouseMovementApplied']);
+    expect(box.pending().map((i) => i.event.type)).toEqual(['ReceivingCompleted', 'WarehouseMovementApplied']);
   });
 
   it('refuses the wrong item, an unknown bin, an over-full bin and more than is in goods-in', () => {
     const { s } = session();
     s.receive(receiveOne()('c1', '111', 100));
+    s.completeReceiving({ grnId: GRN }); // D-031: received goods are put away once the receipt is sent
 
     // Wrong SKU — the scanned item is not what is waiting to be put away.
     expect(s.putAway({ commandId: 'mw', scannedProductId: 'P2', scannedBinId: 'B-PICK', quantityMinor: 1, uom: 'EA', at: NOW }).signal.code).toBe('wrong_sku');
@@ -172,6 +180,7 @@ describe('warehouse PWA is fed its assignment and executes receiving + put-away 
   it('treats a repeated put-away scan as a harmless no-op', () => {
     const { s, box } = session();
     s.receive(receiveOne()('c1', '111', 100));
+    s.completeReceiving({ grnId: GRN }); // D-031: received goods are put away once the receipt is sent
     s.putAway({ commandId: 'm1', scannedProductId: 'P1', scannedBinId: 'B-PICK', quantityMinor: 50, uom: 'EA', at: NOW });
     const again = s.putAway({ commandId: 'm1', scannedProductId: 'P1', scannedBinId: 'B-PICK', quantityMinor: 50, uom: 'EA', at: NOW });
     expect(again.signal.feedback).toBe('warn');

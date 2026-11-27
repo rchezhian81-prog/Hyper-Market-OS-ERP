@@ -127,7 +127,14 @@ describe.skipIf(!HAVE_BROWSER)('batch 20e — the warehouse handheld takes a pho
     const [photo] = await photos();
     expect(photo).toMatchObject({ grnId: 'grn-oil', kind: 'damage_photo', productId: 'p-oil', attachedBy: 'u-worker', mediaType: 'image/jpeg', source: 'warehouse-handheld', fileName: 'IMG_2041.jpg' });
     expect(Number(photo!['bytes'])).toBeLessThanOrEqual(153_600); // a 2400×1800 picture, made small on the phone
-    expect((await logged()).some((e) => e.type === 'ReceivingScanned')).toBe(true); // the scan went on its own
+    // D-031: the photo goes on its own queue at once; the scan waits on the phone until the receipt is sent — then the
+    // receipt reaches the store computer under the SAME delivery id the photo carries.
+    expect((await logged()).some((e) => e.type === 'ReceivingScanned' || e.type === 'ReceivingCompleted')).toBe(false);
+    await page.click('#done-receiving');
+    await page.waitForSelector('#banner:not([hidden])');
+    await page.click('#banner-ok');
+    for (let i = 0; i < 80 && !(await logged()).some((e) => e.type === 'ReceivingCompleted'); i += 1) await page.waitForTimeout(100);
+    expect((await logged()).find((e) => e.type === 'ReceivingCompleted')?.payload).toMatchObject({ grnId: 'grn-oil', scanCount: 1 });
     await page.waitForFunction(() => {
       const d = (globalThis as unknown as { document: { querySelector(q: string): { dataset: { state?: string } } | null } }).document;
       return d.querySelector('#photos-sent .photo')?.dataset.state === 'handed_to_box';

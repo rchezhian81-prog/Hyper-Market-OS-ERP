@@ -223583,6 +223583,69 @@
             },
             "additionalProperties": true
           },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string"
+                },
+                "batchId": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "commandId": {
+                  "type": "string"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "quantityMinor": {
+                  "type": "number"
+                },
+                "receivedBy": {
+                  "type": "string"
+                },
+                "removedAt": {
+                  "type": "string"
+                },
+                "removedBy": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "scans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "commandId": {
+                  "type": "string"
+                },
+                "grnId": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                },
+                "storeId": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "source": {
             "type": "string"
           },
@@ -226121,17 +226184,7 @@
           "flags": {
             "type": "array",
             "items": {
-              "type": "string",
-              "enum": [
-                "after_assembly",
-                "cold_chain_held",
-                "held_out_of_stock",
-                "mover_lacks_authority",
-                "mover_unknown",
-                "receiver_lacks_authority",
-                "receiver_unknown",
-                "unit_from_master"
-              ]
+              "type": "string"
             }
           }
         },
@@ -275990,6 +276043,12 @@
               },
               "additionalProperties": true
             }
+          },
+          "removedOnPhone": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemovedOnPhone"
+            }
           }
         },
         "additionalProperties": true
@@ -321602,6 +321661,57 @@
           },
           "active": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RemovedOnPhone": {
+        "type": "object",
+        "required": [
+          "commandId",
+          "productId",
+          "batchId",
+          "quantityMinor",
+          "state",
+          "receivedBy",
+          "at",
+          "removedBy",
+          "removedAt"
+        ],
+        "properties": {
+          "commandId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string"
+          },
+          "receivedBy": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "removedBy": {
+            "type": "string"
+          },
+          "removedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true

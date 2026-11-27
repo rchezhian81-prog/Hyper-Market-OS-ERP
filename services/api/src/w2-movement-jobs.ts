@@ -109,10 +109,15 @@ export const DIRECT_MOVEMENT_KINDS: Readonly<Record<string, Classify>> = Object.
  * re-checks that person's own word on each; here it also judges the kind. (An adjustment REQUEST is not here: it posts no
  * movement — it waits for a second person, who posts it.)
  */
-export const RELAYED_MOVEMENT_KINDS: Readonly<Record<string, { readonly person: string; readonly classify: Classify }>> = Object.freeze({
+/** D-031: the scans a handheld carried INSIDE its receipt (held until "send") — each names the person who scanned it. */
+const carriedReceivers = (b: Record<string, unknown>): readonly string[] =>
+  Array.isArray(b['scans']) ? (b['scans'] as unknown[]).flatMap((l) => (l !== null && typeof l === 'object' && typeof (l as Record<string, unknown>)['receivedBy'] === 'string' ? [String((l as Record<string, unknown>)['receivedBy']).trim()] : [])) : [];
+
+export const RELAYED_MOVEMENT_KINDS: Readonly<Record<string, { readonly person: string; readonly classify: Classify; readonly alsoNamed?: (body: Record<string, unknown>) => readonly string[]; readonly alsoClassify?: Classify }>> = Object.freeze({
   'POST /v1/warehouse/movements/:commandId/synced': { person: 'movedBy', classify: warehouseMove },
   'POST /v1/inventory/receiving-scans/:commandId/synced': { person: 'receivedBy', classify: fixed('receive', 'a receiving scan') },
-  'POST /v1/inventory/goods-receipt/:grnId/assembled': { person: 'completedBy', classify: fixed('receive', 'completing a delivery') },
+  // D-031: the person who sent the receipt completes it; each person who scanned a line carried inside it receives it.
+  'POST /v1/inventory/goods-receipt/:grnId/assembled': { person: 'completedBy', classify: fixed('receive', 'completing a delivery'), alsoNamed: carriedReceivers, alsoClassify: fixed('receive', 'a receiving scan') },
   'POST /v1/inventory/goods-receipt/:grnId/synced': { person: 'receivedBy', classify: fixed('receive', 'a goods receipt') },
   'POST /v1/inventory/counts/:countId/synced': { person: 'counterId', classify: fixed('count', 'a count') },
   'POST /v1/floor/indents/:indentId/issues/:issueId/synced': { person: 'issuedBy', classify: fixed('move_in_store', 'issuing stock from the back store to the floor') },
@@ -180,6 +185,11 @@ export function movementJobsSurface(surface: Route[], input: { readonly store?: 
           const person = str(bodyOf(ctx)[relayed.person]);
           if (person !== undefined) {
             const refused = movementKindRefusal(await reach(ctx, person), person, relayed.classify(bodyOf(ctx)), true);
+            if (refused !== undefined) throw refused;
+          }
+          for (const other of new Set(relayed.alsoNamed?.(bodyOf(ctx)) ?? [])) {
+            if (other === '' || other === person) continue;
+            const refused = movementKindRefusal(await reach(ctx, other), other, (relayed.alsoClassify ?? relayed.classify)(bodyOf(ctx)), true);
             if (refused !== undefined) throw refused;
           }
           return inner(ctx);

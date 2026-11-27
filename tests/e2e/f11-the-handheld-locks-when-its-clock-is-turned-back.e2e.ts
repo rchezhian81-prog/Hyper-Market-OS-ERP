@@ -71,6 +71,12 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
   });
 
+  /** D-031: the receiving scans held on the phone until the receipt is sent (its own storage, under the store). */
+  const held = (page: Page): Promise<{ commandId: string; stamp?: { userId: string; ref: string } }[]> => page.evaluate(() => {
+    const raw = (globalThis as unknown as { localStorage: { getItem(k: string): string | null } }).localStorage.getItem('sre.warehouse.held-receipts.store-1');
+    const saved = raw === null ? { receipts: {} } : JSON.parse(raw) as { receipts: Record<string, { scans: { commandId: string; stamp?: { userId: string; ref: string } }[] }> };
+    return Object.values(saved.receipts).flatMap((r) => r.scans);
+  });
   const queued = (page: Page): Promise<Queued[]> => page.evaluate(() => JSON.parse((globalThis as unknown as { localStorage: { getItem(k: string): string | null } }).localStorage.getItem('sre.warehouse.outbox.A-1') ?? '[]') as Queued[]);
   const where = (page: Page): Promise<string> => page.evaluate(() => (globalThis as unknown as Win).location.pathname + (globalThis as unknown as Win).location.search);
 
@@ -132,6 +138,12 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     const start = Date.now();
     const { page, posts } = await signedIn('warehouse', 'u-worker', start);
     const ref = (await page.evaluate(() => (globalThis as unknown as Win).phoneSignIn))!.ref;
+    // D-031: receiving scans are held on the phone until the receipt is sent, so the queue the screen hands over holds an
+    // earlier record (a put-away) — something for its hand-over timer to try, and stop trying once the screen locks.
+    await page.evaluate(() => (globalThis as unknown as { warehouseOutbox: { enqueue(e: unknown): void } }).warehouseOutbox.enqueue({
+      id: 'wh-move-mv-0', type: 'WarehouseMovementApplied', occurredAt: new Date().toISOString(), idempotencyKey: 'wh-move:mv-0', source: 'A-1',
+      payload: { commandId: 'mv-0', movedBy: 'u-worker', command: { commandId: 'mv-0', kind: 'put_away', storeId: 'store-1', productId: 'p-rice', batchId: null, quantityMinor: 1, uom: 'EA', fromBinId: null, toBinId: 'BIN-A', movedBy: 'u-worker', at: new Date().toISOString() }, movements: [] },
+    }));
     await page.click('#receive');
     await page.waitForSelector('#scan:not([hidden])');
     // Two hours of work: the strip ticks (the latest time this sign-in has seen is kept beside the queue).
@@ -140,7 +152,8 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     await page.click('#banner-ok');
-    expect((await queued(page)).map((i) => [i.event.type, i.stamp?.ref])).toEqual([['ReceivingScanned', ref]]);
+    // D-031: the scan is held on the phone (stamped with the sign-in it was made under); nothing is queued yet.
+    expect((await held(page)).map((i) => i.stamp?.ref)).toEqual([ref]);
 
     // The clock is turned back an hour. No timer runs (the clock is paused): it is the next SCAN that finds it.
     await page.clock.setSystemTime(start + 1 * H);
@@ -150,9 +163,11 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     await scan(page);
     await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await lockedForTheClock(page);
-    const q = await queued(page);
-    expect(q.map((i) => [i.event.type, i.state])).toEqual([['ReceivingScanned', 'pending'], ['ReceivingScanned', 'pending']]);
+    const q = await held(page);
+    expect(q).toHaveLength(2);
+    expect(q[0]!.stamp?.ref).toBe(ref);
     expect(q[1]!.stamp).toBeUndefined(); // kept on the phone — never lost — but never stamped as A's
+    expect((await queued(page)).map((i) => [i.event.type, i.state])).toEqual([['WarehouseMovementApplied', 'pending']]);
 
     // L3: the stamp key is gone from the page, and the old screen's sync timers no longer run.
     expect(await page.evaluate(() => (globalThis as unknown as Win).phoneSignIn)).toBeUndefined();
@@ -184,7 +199,7 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     await page.clock.setSystemTime(start + 1 * H);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await lockedForTheClock(page);
-    expect((await queued(page)).map((i) => [i.event.type, i.state, i.stamp?.userId])).toEqual([['ReceivingScanned', 'pending', 'u-worker']]);
+    expect((await held(page)).map((i) => i.stamp?.userId)).toEqual(['u-worker']); // D-031: held on the phone, kept
   });
 
   it('NEW-3 / OB-187: the driver screen does not lock at four hours; it locks at its own twelve, saying so', async () => {

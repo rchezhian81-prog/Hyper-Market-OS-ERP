@@ -144,7 +144,8 @@ describe.skipIf(!HAVE_BROWSER)('OB-180: the handheld stamps each record with the
     await page.click('#banner-ok');
     // Kept on the phone, each record stamped with A's sign-in; nothing on the box.
     const queued = await page.evaluate(() => JSON.parse((globalThis as unknown as { localStorage: { getItem(k: string): string | null } }).localStorage.getItem('sre.warehouse.outbox.A-1') ?? '[]') as { key: string; state: string; event: { type: string }; stamp?: { ref: string; userId: string } }[]);
-    expect(queued.map((i) => i.event.type)).toEqual(['ReceivingScanned', 'ReceivingCompleted']);
+    // D-031: the scan was held on the phone and travels inside the one receipt record.
+    expect(queued.map((i) => i.event.type)).toEqual(['ReceivingCompleted']);
     for (const i of queued) expect(i).toMatchObject({ state: 'pending', stamp: { ref: signInA!.ref, userId: 'u-worker' } });
     expect(JSON.stringify(queued)).not.toContain(signInA!.key); // the key is never written to the queue
     expect(await logged()).toEqual([]);
@@ -168,7 +169,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-180: the handheld stamps each record with the
 
     // ── 4. B's page hands the queue over: A's completion is sealed for A. ─────────────────────────────────────────────────
     await context.unroute('**/lane/outbox');
-    await expect.poll(async () => (await logged()).map((e) => e.type), { timeout: 20_000 }).toEqual(['ReceivingScanned', 'ReceivingCompleted']);
+    await expect.poll(async () => (await logged()).map((e) => e.type), { timeout: 20_000 }).toEqual(['ReceivingCompleted']);
     const done = (await logged()).find((e) => e.type === 'ReceivingCompleted')!;
     expect(done.payload).toMatchObject({
       grnId: 'grn-ice', completedBy: 'u-worker',
