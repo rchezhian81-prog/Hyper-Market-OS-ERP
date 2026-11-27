@@ -45,6 +45,13 @@ export interface ExtractedInvoice {
    * (freight, packing and the like that belong to no one line). Part of the printed total. Absent when the bill prints none.
    */
   readonly otherChargesMinor?: number;
+  /**
+   * OB-866 B (pending list item 6, 27 Nov 2026): the bill's own ROUND OFF as printed — the e-invoice's `ValDtls.RndOffAmt`,
+   * signed paise (−40 for −0.40). Part of the printed total. Read as printed, whatever its size: head office's own limit
+   * (at most ±₹1.00) decides whether it is taken as the bill's round off. Absent when the bill prints none (or nought), when
+   * the figure is unreadable (said in `warnings`), and on a credit or debit note (no rule for one yet — said).
+   */
+  readonly roundOffMinor?: number;
   readonly confidence: number;
   readonly warnings: readonly string[];
 }
@@ -73,6 +80,14 @@ export function rupeesToPaise(v: unknown): number | undefined {
   const m = /^(\d+)(?:\.(\d{1,2}))?$/.exec(text);
   if (m === null) return undefined;
   return Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
+}
+
+/** Signed rupees (−0.40, "-0.40", 0.6) → signed paise, exactly from the decimal text; undefined when it is not one. */
+export function signedRupeesToPaise(v: unknown): number | undefined {
+  const text = typeof v === 'number' ? (Number.isFinite(v) ? String(v) : '') : typeof v === 'string' ? v.trim() : '';
+  const minus = text.startsWith('-');
+  const paise = rupeesToPaise(minus || text.startsWith('+') ? text.slice(1) : text);
+  return paise === undefined ? undefined : minus ? -paise : paise;
 }
 
 /** A quantity in a unit → its smallest steps (kg/L → thousandths, from the decimal text); undefined when it does not fit. */
@@ -136,13 +151,25 @@ export function parseGstEInvoice(json: unknown): { readonly ok: true; readonly i
   const rawOther = isObj(val) ? val['OthChrg'] : undefined;
   const otherChargesMinor = rawOther === undefined || rawOther === null ? 0 : rupeesToPaise(rawOther);
   if (otherChargesMinor === undefined) warnings.push(`other charges "${String(rawOther)}" have more than two decimals or are not a number`);
+  // OB-866 B (pending item 6): the e-invoice's own round off (`RndOffAmt`, signed) is part of `TotInvVal`; read exactly, or said.
+  // Only on a tax invoice: a credit or debit note's round off has no rule here yet, so it is said and left to a person.
+  const rawRound = isObj(val) ? val['RndOffAmt'] : undefined;
+  const docType = str((doc as Record<string, unknown>)['Typ'])?.toUpperCase() ?? 'INV';
+  let roundOffMinor: number | undefined;
+  if (rawRound !== undefined && rawRound !== null) {
+    const read = signedRupeesToPaise(rawRound);
+    if (read === undefined) warnings.push(`round off (RndOffAmt) "${String(rawRound)}" has more than two decimals or is not a number — not read`);
+    else if (read !== 0 && docType !== 'INV') warnings.push(`this e-invoice is a ${docType === 'CRN' ? 'credit' : docType === 'DBN' ? 'debit' : docType} note (${docType}): its round off (RndOffAmt) is not read — a person decides the difference`);
+    else if (read !== 0) roundOffMinor = read;
+  }
   return {
     ok: true,
     invoice: {
       channel: 'e_invoice', engine: 'gst-e-invoice-json',
       supplierGstin: str((seller as Record<string, unknown>)['Gstin'])?.toUpperCase() ?? null,
       supplierInvoiceNo: str((doc as Record<string, unknown>)['No']), invoiceDate: isoFromDdMmYyyy((doc as Record<string, unknown>)['Dt']),
-      irn: str(json['Irn']), lines, statedTotalMinor, ...(otherChargesMinor !== undefined && otherChargesMinor > 0 ? { otherChargesMinor } : {}), confidence: 1, warnings,
+      irn: str(json['Irn']), lines, statedTotalMinor, ...(otherChargesMinor !== undefined && otherChargesMinor > 0 ? { otherChargesMinor } : {}),
+      ...(roundOffMinor === undefined ? {} : { roundOffMinor }), confidence: 1, warnings,
     },
   };
 }

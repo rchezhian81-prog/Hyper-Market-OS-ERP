@@ -77,6 +77,8 @@ export interface BillDocument {
     readonly irn: string | null; readonly statedTotalMinor: number | null; readonly engine: string;
     /** M07-FR-04: the e-invoice's other charges (`OthChrg`) head office read beside the lines — part of the printed total. */
     readonly otherChargesMinor?: number;
+    /** OB-866 B (pending item 6): the e-invoice's own round off (`RndOffAmt`), signed paise — part of the printed total. */
+    readonly roundOffMinor?: number;
   } | null;
   readonly lines: readonly BillLine[];
   readonly problems: readonly string[];
