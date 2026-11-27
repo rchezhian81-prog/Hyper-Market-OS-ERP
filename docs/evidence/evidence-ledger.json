@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2581,
+  "testFiles": 2583,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -669,10 +669,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 23,
-        "integration": 41,
-        "realDb": 17,
-        "browser": 20,
-        "connected": 5,
+        "integration": 42,
+        "realDb": 18,
+        "browser": 21,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -729,6 +729,7 @@
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
+          "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/receipt-excess-held.test.ts",
@@ -759,6 +760,7 @@
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
+          "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-dock-diary-and-the-asn-are-head-offices-own-record.test.ts",
@@ -777,6 +779,7 @@
           "tests/e2e/fix-batch5-the-back-store-and-receiving-work-by-name.e2e.ts",
           "tests/e2e/goods-receipt-delivery.e2e.ts",
           "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
+          "tests/e2e/pending06-an-e-invoices-own-round-off-is-read-on-supplier-bills.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-handhelds-meet-the-spec.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
@@ -790,6 +793,7 @@
           "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts",
           "tests/e2e/b18c-r2-a-saved-receipt-is-corrected-on-goods-receipt-review.e2e.ts",
           "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
+          "tests/e2e/pending06-an-e-invoices-own-round-off-is-read-on-supplier-bills.e2e.ts",
           "tests/e2e/u6-the-stock-ledger-quarantine-and-adjustment-pages.e2e.ts",
           "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],
@@ -3620,8 +3624,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 12,
-        "integration": 12,
-        "realDb": 7,
+        "integration": 13,
+        "realDb": 8,
         "browser": 9,
         "connected": 5,
         "device": 0,
@@ -3651,6 +3655,7 @@
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/goods-receipt.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
+          "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/purchase-price-variance-per-product-and-receipt.test.ts",
           "tests/integration/rebates.test.ts",
@@ -3662,6 +3667,7 @@
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/a-typed-scan-is-linked-to-its-invoice.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
+          "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
           "tests/integration/rebates.test.ts",
           "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts"
         ],
@@ -5121,10 +5127,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 4,
-        "integration": 11,
-        "realDb": 5,
-        "browser": 4,
-        "connected": 3,
+        "integration": 12,
+        "realDb": 6,
+        "browser": 5,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -5141,6 +5147,7 @@
           "tests/integration/connector-delivery.test.ts",
           "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
+          "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/purchase-to-payment.test.ts",
@@ -5152,17 +5159,20 @@
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
+          "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
           "tests/integration/purchase-to-payment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts"
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
           "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
+          "tests/e2e/pending06-an-e-invoices-own-round-off-is-read-on-supplier-bills.e2e.ts",
           "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
           "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/ob866-a-supplier-bills-round-off-is-typed-and-waits-for-the-accountant.e2e.ts",
+          "tests/e2e/pending06-an-e-invoices-own-round-off-is-read-on-supplier-bills.e2e.ts",
           "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
           "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],
