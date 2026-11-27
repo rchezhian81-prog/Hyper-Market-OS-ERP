@@ -3,9 +3,10 @@ import {
   gateEvidenceBlockers, readGateEvidence, blockersForRelease, latestEvidence, qg07Blockers, qg10Blockers, qg04SyncBlockers,
   NotGateEvidenceError, CUSTOMER_FACING_RELEASES, type GateEvidenceRecord,
 } from '../../packages/compliance/src/index';
+import { qg11ReadingView, type Qg11ControlRead } from '../../apps/web-erp/src/gates-session';
 
 /**
- * W3 · QG-04 · QG-05 · QG-06 · QG-07 · QG-10 (roadmap §22, §32, §35.1) — the pure readings behind the gate register's new
+ * W3 · QG-04 · QG-05 · QG-06 · QG-07 · QG-10 · QG-11 (roadmap §22, §32, §35.1) — the pure readings behind the gate register's new
  * machine checks. Nothing on record is a blocker by name, never a pass (P-08); a p95 is worked out from the measured figure.
  */
 
@@ -74,5 +75,30 @@ describe('QG-04 — the store computers\' own sync reports', () => {
     expect(qg04SyncBlockers([]).map((b) => b.ref)).toEqual(['sync:no-store-report']);
     expect(qg04SyncBlockers([{ storeId: 'S1', domains: [{ domain: 'sales', deadLettered: 3 }, { domain: 'returns', deadLettered: 0 }] }]).map((b) => b.ref)).toEqual(['sync:S1:sales:dead-letter']);
     expect(qg04SyncBlockers([{ storeId: 'S1', domains: [{ domain: 'sales', deadLettered: 0 }] }])).toEqual([]);
+  });
+});
+
+describe('QG-11 — the AI evaluations reading on the Quality gates page (pending item 8)', () => {
+  const read = (over: Partial<Qg11ControlRead> = {}): Qg11ControlRead => ({
+    agents: [], killSwitch: { masterOn: false, active: [] }, budget: { capMinor: 0, spentMinor: 0, platformCeilingMinor: 1_500_000 }, provider: { configured: false }, ...over,
+  });
+  const agentWith = (lastEvaluation: Qg11ControlRead['agents'][number]['lastEvaluation']) => ({ agentId: 'A01', name: 'a', enabled: true, stopped: false, stoppedBecause: null, ceilingMinor: null, evaluationCases: 3, lastEvaluation });
+  const run = (complete: boolean) => ({ runId: 'r', at: '2026-11-27T04:30:00.000Z', passed: 3, total: 3, unsafe: 0, complete, fitToFacePeople: true, detail: '' });
+  it('nothing read, nothing run, no agent in the set, no model — each HOLDS; never "evaluations clean"', () => {
+    const silent = [
+      qg11ReadingView('en', null), qg11ReadingView('en', { result: 'lost_link' }), qg11ReadingView('en', { result: 'ok', value: read() }),
+      qg11ReadingView('en', { result: 'ok', value: read({ provider: { configured: true } }) }),
+      qg11ReadingView('en', { result: 'ok', value: read({ provider: { configured: true }, agents: [agentWith(null)] }) }),
+      // A run that never reached a model proves nothing, even with every case "passed" and nothing unsafe.
+      qg11ReadingView('en', { result: 'ok', value: read({ provider: { configured: true }, agents: [agentWith(run(false))] }) }),
+      // A complete, passing run with no live model connected still holds.
+      qg11ReadingView('en', { result: 'ok', value: read({ agents: [agentWith(run(true))] }) }),
+    ];
+    for (const v of silent) {
+      expect(v.state).not.toBe('evaluations_clean');
+      expect(v.icon).toBe('⚠');
+      expect(v.lines.at(-2)).toMatch(/^QG-11 holds until every agent/);
+      expect(v.lines.at(-1)).toMatch(/^Head office refuses GO on QG-11 until then \(owner's decision, 27 Nov 2026 — OB-935\)/); // OB-935
+    }
   });
 });

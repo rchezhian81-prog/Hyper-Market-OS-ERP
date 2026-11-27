@@ -12,7 +12,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  blockedGates, findingBlocks, gateEvidenceBlockers, qg07Blockers, qg10Blockers, qg04SyncBlockers, qg03BranchProtectionBlockers, qg01RequirementRecordsBlockers,
+  blockedGates, findingBlocks, gateEvidenceBlockers, qg07Blockers, qg10Blockers, qg04SyncBlockers, qg03BranchProtectionBlockers, qg01RequirementRecordsBlockers, qg11EvaluationBlockers,
   type SecurityFinding, type GateDecision, type GateBlocker, type GateEvidenceRecord,
 } from '../../../packages/compliance/src/index';
 import { gateEvidenceRoutes, type GateEvidenceDeps } from '../../compliance/src/gate-evidence';
@@ -32,6 +32,9 @@ import { gateDecisionRoutes, type GateDecisionDeps } from '../../compliance/src/
 import type { OtherGateBlocker } from '../../compliance/src/risk';
 import { STREAM, streamName, riskRegisterAdapter, drReadinessAdapter } from './adapters';
 import { adoptionGateBlockers, qg02TrainingBlockers } from './lp-workforce-adapters'; // QG-09 adoption reading (OB-288 LP/workforce package)
+import { evaluationStore } from './ai-governance-stores';
+import { agentsInTheSet } from '../../ai/src/evaluations';
+import { AGENTS } from '../../../packages/ai/src/index';
 
 export const FINDINGS_STREAM = streamName(STREAM.compliance, 'findings');
 export const FINDING_SCANS_STREAM = streamName(STREAM.compliance, 'finding-scans');
@@ -107,7 +110,10 @@ export function gateEvidenceAdapter(input: { readonly store: EventStore; readonl
  *          it, is NOT KNOWN and holds the gate (what a reading found missing is an open high finding, above);
  *   QG-01  (W7) the CI's reading of the requirement records (the guardrail's own check): none on file, or a latest reading
  *          that could not read every record, is NOT KNOWN and holds the gate (a record missing a field is an open high
- *          finding on QG-01, above).
+ *          finding on QG-01, above);
+ *   QG-11  (OB-935, owner decided A, 27 Nov 2026) every assistant in the evaluation set needs a COMPLETE, PASSING latest
+ *          evaluation against a live model — none run, not complete (no model connected: OB-296, EX-12), unsafe or failing
+ *          holds the gate by name; evaluation records that could not be read hold it too.
  * Nothing on record is never a pass (P-08).
  */
 export async function gateBlockersBeyondRisks(store: EventStore, now: () => string, tenantId: string): Promise<readonly OtherGateBlocker[]> {
@@ -125,11 +131,19 @@ export async function gateBlockersBeyondRisks(store: EventStore, now: () => stri
   const scans = await all<{ tool: string; scannedAt: string; complete: boolean; runId: string }>(store, tenantId, FINDING_SCANS_STREAM, 'SecurityScanImported');
   const fromBranch = qg03BranchProtectionBlockers(scans).map(asCheck);
   const fromRecords = qg01RequirementRecordsBlockers(scans).map(asCheck); // W7 · QG-01
+  const fromAi = (await qg11Blockers(store, tenantId)).map(asCheck); // OB-935 · QG-11
   return [
     ...fromFindings, ...fromRecovery, ...await adoptionGateBlockers(store, now, tenantId), // QG-09 (OB-288 LP/workforce package)
     ...await qg02TrainingBlockers(store, now, tenantId), // W3 · OB-675: QG-02 training — the scored check per role
-    ...fromEvidence, ...fromSync, ...fromTotals, ...fromReleases, ...fromBranch, ...fromRecords,
+    ...fromEvidence, ...fromSync, ...fromTotals, ...fromReleases, ...fromBranch, ...fromRecords, ...fromAi,
   ];
+}
+
+/** OB-935 · QG-11: the evaluation set's assistants against their latest recorded runs; unreadable records hold the gate. */
+async function qg11Blockers(store: EventStore, tenantId: string): Promise<readonly GateBlocker[]> {
+  let runs: Awaited<ReturnType<ReturnType<typeof evaluationStore>['runs']>> | null;
+  try { runs = await evaluationStore({ store }).runs(tenantId); } catch { runs = null; }
+  return qg11EvaluationBlockers({ agents: agentsInTheSet().map((agentId) => ({ agentId, name: AGENTS[agentId].name })), runs });
 }
 
 export function gateDecisionAdapter(input: { readonly store: EventStore; readonly now: () => string }): GateDecisionDeps {

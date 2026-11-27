@@ -5,15 +5,14 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2583,
+  "testFiles": 2588,
   "sessions": {
     "total": 0,
     "pass": 0,
     "onDevice": 0
   },
   "labels": {
-    "E2E_VERIFIED": 101,
-    "INTEGRATION_TESTED": 3
+    "E2E_VERIFIED": 104
   },
   "totals": {
     "unit": 100,
@@ -4332,11 +4331,11 @@
       "id": "A01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
+        "unit": 14,
         "integration": 14,
         "realDb": 9,
-        "browser": 3,
-        "connected": 3,
+        "browser": 4,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -4353,6 +4352,8 @@
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/pending08-qg11-the-ai-evaluations-reading.test.ts",
+          "tests/unit/the-gate-readings-never-read-silence-as-a-pass.test.ts",
           "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
         "integration": [
@@ -4383,11 +4384,13 @@
           "tests/integration/the-shop-is-metered-for-information.test.ts"
         ],
         "browser": [
+          "tests/e2e/pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
           "tests/e2e/the-morning-brief-page-says-it-was-not-sent.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
           "tests/e2e/the-morning-brief-page-says-it-was-not-sent.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
@@ -4402,7 +4405,7 @@
       "id": "A02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 12,
         "realDb": 7,
         "browser": 3,
@@ -4421,6 +4424,7 @@
           "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/pending08-qg11-the-ai-evaluations-reading.test.ts",
           "tests/unit/replenishment-session.test.ts",
           "tests/unit/service-governance.test.ts",
           "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
@@ -4466,7 +4470,7 @@
       "id": "A03",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
+        "unit": 13,
         "integration": 13,
         "realDb": 7,
         "browser": 3,
@@ -4486,6 +4490,8 @@
           "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/fefo-near-expiry.test.ts",
+          "tests/unit/pending08-qg11-go-refusal-rule.test.ts",
+          "tests/unit/pending08-qg11-the-ai-evaluations-reading.test.ts",
           "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
         "integration": [
@@ -4591,7 +4597,7 @@
       "id": "A05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 8,
         "realDb": 5,
         "browser": 3,
@@ -4603,7 +4609,8 @@
         "unit": [
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
-          "tests/unit/ai-governance-rules.test.ts"
+          "tests/unit/ai-governance-rules.test.ts",
+          "tests/unit/pending08-qg11-go-refusal-rule.test.ts"
         ],
         "integration": [
           "tests/integration/ai-agents-draft-for-people.test.ts",
@@ -4640,11 +4647,11 @@
       "id": "A06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
-        "integration": 6,
-        "realDb": 4,
-        "browser": 6,
-        "connected": 4,
+        "unit": 9,
+        "integration": 7,
+        "realDb": 5,
+        "browser": 7,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -4657,6 +4664,7 @@
           "tests/unit/erp-operations-inbox-session.test.ts",
           "tests/unit/evidence-ledger.test.ts",
           "tests/unit/ops-operations-advisor.test.ts",
+          "tests/unit/pending08-qg11-the-ai-evaluations-reading.test.ts",
           "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
         "integration": [
@@ -4665,24 +4673,28 @@
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-operations-agent.test.ts",
           "tests/integration/ai-operations-worklist.test.ts",
-          "tests/integration/ai-proposes-people-decide.test.ts"
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/pending08-qg11-the-ai-evaluations-reading-from-head-office.test.ts"
         ],
         "realDb": [
           "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
-          "tests/integration/ai-proposes-people-decide.test.ts"
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/pending08-qg11-the-ai-evaluations-reading-from-head-office.test.ts"
         ],
         "browser": [
           "tests/e2e/lib/ai-inbox-shop.ts",
           "tests/e2e/operations-dismiss-delivery.e2e.ts",
           "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
           "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "connected": [
           "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
           "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
@@ -4697,7 +4709,7 @@
       "id": "A07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 6,
+        "unit": 7,
         "integration": 4,
         "realDb": 3,
         "browser": 2,
@@ -4712,6 +4724,7 @@
           "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/lp-worklist.test.ts",
+          "tests/unit/pending08-qg11-the-ai-evaluations-reading.test.ts",
           "tests/unit/service-governance.test.ts"
         ],
         "integration": [
@@ -4745,8 +4758,8 @@
         "unit": 9,
         "integration": 8,
         "realDb": 4,
-        "browser": 8,
-        "connected": 5,
+        "browser": 9,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -4782,6 +4795,7 @@
           "tests/e2e/data-quality-dismiss-delivery.e2e.ts",
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/lib/ai-inbox-shop.ts",
+          "tests/e2e/pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
@@ -4790,6 +4804,7 @@
         ],
         "connected": [
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
@@ -5817,19 +5832,20 @@
     },
     {
       "id": "WF-19",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 2,
+        "unit": 3,
         "integration": 4,
         "realDb": 4,
-        "browser": 3,
-        "connected": 3,
+        "browser": 4,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/erp-migration-session.test.ts",
+          "tests/unit/u6-the-old-system-page-loads-the-delta-once.test.ts",
           "tests/unit/w4-the-old-system-checks-load-steps-session.test.ts"
         ],
         "integration": [
@@ -5846,11 +5862,13 @@
         ],
         "browser": [
           "tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts",
+          "tests/e2e/u6-the-old-system-page-loads-the-delta-once.e2e.ts",
           "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts",
           "tests/e2e/w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts",
+          "tests/e2e/u6-the-old-system-page-loads-the-delta-once.e2e.ts",
           "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts",
           "tests/e2e/w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts"
         ],
@@ -5858,7 +5876,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-20",
@@ -6385,43 +6403,52 @@
     },
     {
       "id": "QG-11",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 1,
-        "integration": 2,
-        "realDb": 2,
-        "browser": 3,
-        "connected": 3,
+        "unit": 4,
+        "integration": 4,
+        "realDb": 4,
+        "browser": 4,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
-          "tests/unit/ai-inbox-withholds-findings-without-evidence.test.ts"
+          "tests/unit/ai-inbox-withholds-findings-without-evidence.test.ts",
+          "tests/unit/pending08-qg11-go-refusal-rule.test.ts",
+          "tests/unit/pending08-qg11-the-ai-evaluations-reading.test.ts",
+          "tests/unit/the-gate-readings-never-read-silence-as-a-pass.test.ts"
         ],
         "integration": [
           "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
-          "tests/integration/ai-model-calls-are-governed.test.ts"
+          "tests/integration/ai-model-calls-are-governed.test.ts",
+          "tests/integration/pending08-qg11-go-is-refused-until-the-evaluations-pass.test.ts",
+          "tests/integration/pending08-qg11-the-ai-evaluations-reading-from-head-office.test.ts"
         ],
         "realDb": [
           "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
-          "tests/integration/ai-model-calls-are-governed.test.ts"
+          "tests/integration/ai-model-calls-are-governed.test.ts",
+          "tests/integration/pending08-qg11-go-is-refused-until-the-evaluations-pass.test.ts",
+          "tests/integration/pending08-qg11-the-ai-evaluations-reading-from-head-office.test.ts"
         ],
         "browser": [
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts",
           "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/pending08-qg11-the-ai-evaluations-reading-on-the-quality-gates-page.e2e.ts",
           "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "QG-12",
@@ -6871,7 +6898,7 @@
     },
     {
       "id": "MG-09",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 7,
         "integration": 5,
@@ -6916,7 +6943,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "MG-10",
