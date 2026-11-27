@@ -4,6 +4,7 @@ import {
   type Route, type HttpRequest,
 } from '../../services/kernel/src/index';
 import { tokenAuthenticator } from '../../services/identity/src/token';
+import { refusedAfterTheSignature, signInCallerKey } from '../../services/kernel/src/sign-in-attempts';
 import { AccessControl } from '../../packages/rbac/src/rbac';
 import { LocalIdp } from '../support/local-idp';
 
@@ -87,11 +88,31 @@ describe('audit 27 Nov item 1 — the sign-in lockout is per caller, and an expi
     expect((await handle(k, call(fresh('u-bala'), '198.51.100.4'))).status, 'another address is untouched').toBe(200);
   });
 
-  it('a garbage credential with no readable claims still counts, and a good sign-in clears the slate', async () => {
+  it('a garbage credential with no readable claims still counts (one shared key per address) — others keep working', async () => {
     const k = kernel();
-    for (let i = 0; i < 4; i += 1) expect((await handle(k, call('not-a-token'))).status).toBe(401);
+    for (let i = 0; i < 5; i += 1) expect((await handle(k, call('not-a-token'))).status).toBe(401);
+    expect((await handle(k, call('not-a-token'))).status).toBe(429);
     expect((await handle(k, call(fresh('u-chitra')))).status).toBe(200);
-    expect((await handle(k, call('not-a-token'))).status).toBe(401);
-    expect((await handle(k, call('not-a-token'))).status).toBe(401);
+  });
+
+  it('a genuine sign-in clears that caller\'s own count before it reaches a lockout', async () => {
+    const k = kernel();
+    for (let i = 0; i < 4; i += 1) expect((await handle(k, call(forged('u-chitra')))).status).toBe(401);
+    expect((await handle(k, call(fresh('u-chitra')))).status).toBe(200);
+    expect((await handle(k, call(forged('u-chitra')))).status).toBe(401);
+    expect((await handle(k, call(fresh('u-chitra')))).status).toBe(200);
+  });
+
+  it('only refusals reached AFTER the signature verified are spared; anything else — or anything new — counts', () => {
+    for (const r of ['expired', 'not_yet_valid', 'lifetime_too_long', 'issuer_not_ours', 'audience_not_ours', 'tenant_not_this_issuers', 'revoked']) expect(refusedAfterTheSignature(r), r).toBe(true);
+    for (const r of ['not_three_parts', 'header_unreadable', 'algorithm_not_ours', 'key_not_ours', 'signature_does_not_verify', 'a_reason_added_later']) expect(refusedAfterTheSignature(r), r).toBe(false);
+  });
+
+  it('the lockout key names the address and the claimed caller — never the token', () => {
+    const t = forged('u-anbu');
+    const key = signInCallerKey(SHOP, t);
+    expect(key).toBe(`ip:${SHOP}|as:${T}/u-anbu`);
+    expect(key).not.toContain(t.split('.')[2]);
+    expect(signInCallerKey(SHOP, 'not-a-token')).toBe(`ip:${SHOP}|as:-/-`);
   });
 });

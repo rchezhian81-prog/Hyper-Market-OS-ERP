@@ -16,6 +16,7 @@ const MAIN = readFileSync(join(ROOT, 'services/api/src/main.ts'), 'utf8');
 const CONTROLS: readonly { readonly name: string; readonly pattern: RegExp; readonly gap: string }[] = [
   { name: 'per-IP + per-tenant rate limit', pattern: /\brateLimit:\s*new TokenBucketRateLimiter\(/, gap: 'GAP-SEC-04' },
   { name: 'auth-attempt lockout', pattern: /\bauthThrottle:\s*new BackoffAuthThrottle\(/, gap: 'GAP-SEC-04' },
+  { name: 'address-wide ceiling on forged sign-ins (audit 27 Nov item 1)', pattern: /\bsourceAuthThrottle:\s*new BackoffAuthThrottle\(/, gap: 'GAP-SEC-04' },
   { name: 'SHA-256-chained audit sink', pattern: /\baudit:\s*new SqlAuditSink\(/, gap: 'GAP-SEC-03' },
   { name: 'pinned token verifier (revocation-aware since GAP-SEC-05)', pattern: /\bauthenticate:\s*(?:revocationAwareAuthenticator\(|withOfficeCalls\(\{[\s\S]{0,400}?fallback:\s*revocationAwareAuthenticator\()/, gap: 'SEC-03 / GAP-SEC-05' },
   { name: 'token lifetime ceiling from configuration', pattern: /maxLifetimeSeconds:\s*Number\(settings\['IDP_MAX_TOKEN_LIFETIME_SECONDS'\]\)/, gap: 'GAP-SEC-05' },
@@ -38,6 +39,7 @@ describe('guardrail: the production composition wires every security control the
     expect(CONTROLS[0]!.pattern.test('    // rateLimit: new TokenBucketRateLimiter(…) — the comment-out a refactor would leave')).toBe(true); // still matches: a comment-out must ALSO be caught by the next check
     expect(/^\s*\/\/.*rateLimit:/m.test(MAIN), 'the rate limit line is commented out').toBe(false);
     expect(/^\s*\/\/.*authThrottle:/m.test(MAIN), 'the auth throttle line is commented out').toBe(false);
+    expect(/^\s*\/\/.*sourceAuthThrottle:/m.test(MAIN), 'the address-wide sign-in ceiling line is commented out').toBe(false);
     expect(/^\s*\/\/.*audit:\s*new SqlAuditSink/m.test(MAIN), 'the audit sink line is commented out').toBe(false);
     expect(CONTROLS[3]!.pattern.test('authenticate: () => undefined,')).toBe(false);
   });

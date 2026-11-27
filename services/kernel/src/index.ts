@@ -36,6 +36,7 @@ export {
   type AccessResolver, type EntitlementResolver,
   type SessionChannel, type ChannelVerdict, type ChannelGuard,
   type BoundStoreGuard, type BoundStoreVerdict,
+  type AuthenticationContext, type AuthRefusal,
 } from './pipeline';
 
 export {

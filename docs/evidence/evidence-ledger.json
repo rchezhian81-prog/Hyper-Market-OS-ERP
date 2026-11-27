@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2564,
+  "testFiles": 2566,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -4182,7 +4182,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 11,
+        "integration": 12,
         "realDb": 8,
         "browser": 3,
         "connected": 2,
@@ -4202,6 +4202,7 @@
           "tests/unit/w3-security-people-and-operations-sessions.test.ts"
         ],
         "integration": [
+          "tests/integration/audit27-one-device-cannot-lock-out-the-shop.test.ts",
           "tests/integration/owner-dashboard-covers-every-domain.test.ts",
           "tests/integration/owner-figures-say-how-fresh-each-store-is.test.ts",
           "tests/integration/reporting-consolidation.test.ts",
