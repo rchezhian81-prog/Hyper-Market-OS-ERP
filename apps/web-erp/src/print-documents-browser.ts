@@ -1,5 +1,5 @@
-// Batch 18b · R1 / P1 / B2 — the Print button's sheet (M31-FR-02 · WF-03): a purchase order, a goods receipt (GRN) or a
-// supplier's statement laid out on an A4 page, then the browser's own Print / Save as PDF. No PDF library, nothing from the
+// Batch 18b · R1 / P1 / B2 — the Print button's sheet (M31-FR-02 · WF-03): a purchase order, a goods receipt (GRN), a
+// supplier's statement or (pending 5) a return-to-supplier note laid out on an A4 page, then the browser's own Print / Save as PDF. No PDF library, nothing from the
 // internet: the page's look is in the shared stylesheet every office page already holds (`sre-foundation.css`,
 // `.sre-print-*`), and `@media print` prints the page alone.
 //
@@ -14,6 +14,7 @@ const PATHS: Readonly<Record<PrintKind, string>> = Object.freeze({
   purchase_order: '/v1/documents/print/purchase-orders/',
   goods_receipt: '/v1/documents/print/goods-receipts/',
   supplier_statement: '/v1/documents/print/supplier-statements/',
+  supplier_return: '/v1/documents/print/supplier-returns/', // pending 5: a return-to-supplier note
 });
 
 export type PrintRead =

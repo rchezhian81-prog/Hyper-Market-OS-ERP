@@ -35,6 +35,9 @@ import type { PrintKind, PrintLineView, PrintParty, PrintView } from '../../../p
 import type { SignedPack } from '../../catalogue/src/pack';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { receiptAttachmentCounts } from './b20e-adapters'; // Batch 20e · R6: the printed GRN says how many files are kept with it
+import { shelfReturnsOf } from './b18c-adapters'; // Pending 5: the return-to-supplier note reads the return's own record
+import { allOf, inventoryAdapter, SHELF_DN_ACCEPTANCES_STREAM } from './adapters';
+import type { ShelfDebitNoteAcceptance } from '../../purchase/src/supplier-account';
 
 /** A stable text for any JSON value (object keys sorted), so the same record always fingerprints the same. */
 function canonical(v: unknown): string {
@@ -305,6 +308,44 @@ export function documentPrintAdapter(input: { readonly store: EventStore; readon
           lines, totalMinor: total, currency: grn.captured.lines[0]?.unitCost.currency ?? 'INR', readAt: now(),
           // Batch 20e · R6 (M07-FR-04): the photos and scans kept with this receipt, counted (the page says "N attachments").
           attachments: (await receiptAttachmentCounts(store, tenantId)).get(grn.grnId) ?? { kept: 0, mistaken: 0 },
+        };
+        return { outcome: 'ready', view, branchId };
+      }
+      if (kind === 'supplier_return') {
+        // Pending 5: a return of shelf stock to the supplier (batch 18c, S1) — read from the return's own record, the batch's
+        // expiry from the stock ledger, and the supplier's acceptance of its debit note (OB-879). A read: nothing changes.
+        const rec = (await shelfReturnsOf(store, tenantId)).find((r) => r.returnId === id);
+        if (rec === undefined) return { outcome: 'missing', detail: `There is no return to a supplier ${id}.` };
+        const branchId = (await branchOfLocation(store, now, tenantId))(rec.locationId);
+        const date = dayOf(rec.at);
+        const it = await (await itemsOf(tenantId, date))(rec.productId);
+        let expiry: string | null = null;
+        if (rec.batchId !== undefined) {
+          const batches = await inventoryAdapter({ store, now }).batches?.(tenantId, rec.productId) ?? [];
+          expiry = batches.find((b) => b.locationId === rec.locationId && b.batchId === rec.batchId)?.expiry ?? null;
+        }
+        const accepted = (await allOf<ShelfDebitNoteAcceptance>(store, tenantId, SHELF_DN_ACCEPTANCES_STREAM, 'ShelfDebitNoteAccepted'))
+          .find((a) => a.debitNoteRef === rec.debitNote.debitNoteRef && a.supplierId === rec.supplierId);
+        const known = rec.valueSource === 'stock_cost' && rec.unitCostMinor !== undefined;
+        const view: PrintView = {
+          kind, documentNumber: rec.documentNumber ?? null, date,
+          shop: await shopOf(tenantId, branchId), supplier: await supplierOf(tenantId, rec.supplierId),
+          facts: [],
+          lines: [{
+            productId: rec.productId, name: it.name, hsn: it.hsn, quantityMinor: rec.quantityMinor, uom: rec.uom,
+            rateMinor: known ? rec.unitCostMinor! : null, ratePer: 1, gstRateBps: it.gstRateBps, valueMinor: rec.valueMinor,
+            batchId: rec.batchId ?? null, expiry,
+          }],
+          totalMinor: rec.valueMinor, currency: rec.currency, readAt: now(),
+          supplierReturn: {
+            debitNoteNumber: rec.debitNote.number ?? null, reason: rec.reason, note: rec.note ?? null, returnedFrom: rec.locationId,
+            raisedBy: rec.raisedBy, approvedBy: rec.approvedBy, ewbNo: rec.ewbNo, valueSource: rec.valueSource,
+            acceptance: accepted === undefined ? null : {
+              creditNoteNo: accepted.supplierCreditNoteNo, creditNoteDate: accepted.supplierCreditNoteDate, acceptedMinor: accepted.acceptedMinor,
+              differenceMinor: accepted.differenceMinor, reason: accepted.reason ?? null,
+              gst: accepted.gst === undefined ? null : { cgstMinor: accepted.gst.cgstMinor, sgstMinor: accepted.gst.sgstMinor, igstMinor: accepted.gst.igstMinor },
+            },
+          },
         };
         return { outcome: 'ready', view, branchId };
       }

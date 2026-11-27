@@ -8,6 +8,7 @@
 //   GET /v1/documents/print/purchase-orders/:poId          (`purchase.commitment.read` — who reads orders)
 //   GET /v1/documents/print/goods-receipts/:grnId           (`inventory.goodsreceipt.read` — who opens the GRN list)
 //   GET /v1/documents/print/supplier-statements/:supplierId (`purchase.commitment.read` — who reads a supplier's account)
+//   GET /v1/documents/print/supplier-returns/:returnId      (`purchase.commitment.read` — pending 5, a return-to-supplier note)
 //
 // Each answers `{ view }` (packages/documents/src/print-view.ts). A record that does not exist is 404; an order still
 // proposed (a draft) or a receipt still waiting for a second person is 409 — a draft is never printed as the document. A
@@ -57,6 +58,13 @@ export function documentPrintRoutes(deps: DocumentPrintDeps): readonly Route[] {
       api: 'API-11', method: 'GET', path: '/v1/documents/print/supplier-statements/:supplierId',
       permission: 'purchase.commitment.read',
       handler: (ctx) => printed(deps, ctx, 'supplier_statement', ctx.params['supplierId'] ?? '', 'supplier statement'),
+    },
+    {
+      // Pending 5: a return of shelf stock to the supplier (RTS), with its debit note (SDN) and where that note stands.
+      // Who reads a supplier's account reads it (the store manager who returned it, the accountant who matches the note).
+      api: 'API-11', method: 'GET', path: '/v1/documents/print/supplier-returns/:returnId',
+      permission: 'purchase.commitment.read',
+      handler: (ctx) => printed(deps, ctx, 'supplier_return', ctx.params['returnId'] ?? '', 'return to the supplier'),
     },
   ];
 }

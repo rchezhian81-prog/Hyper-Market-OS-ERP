@@ -26,7 +26,8 @@ export const SHELF_RETURN_WORDS = Object.freeze({
     notAsked: 'The approval was not asked:', refused: 'Head office did not return it:', lost: 'Head office could not be reached, so nothing was returned.',
     nobody: 'Nobody is signed in on this page.', cannot: 'Your role does not return stock to a supplier.',
     listHeading: 'Returned to suppliers', none: 'Nothing has been returned to a supplier from the shelf yet.',
-    returnThis: 'Return to supplier', gstNote: 'The debit note is waiting for the supplier to accept: it is shown on the supplier\'s account, but not taken off what is owed until the supplier accepts it.',
+    printNote: 'Print return note', printNoteFor: 'Print return note {n}', // pending 5: the A4 return-to-supplier note
+    returnThis: 'Return to supplier', gstNote:'The debit note is waiting for the supplier to accept: it is shown on the supplier\'s account, but not taken off what is owed until the supplier accepts it.',
   },
   ta: {
     heading: 'விநியோகஸ்தருக்குத் திருப்பு', lede: 'அலமாரியில் காலாவதியான, காலாவதி நெருங்கிய அல்லது சேதமான பொருள் விநியோகஸ்தருக்குத் திரும்பும். தலைமை அலுவலகம் திருப்பு எண் தந்து, இருப்பைக் குறைத்து, பற்றுக் குறிப்பை வழங்கும்.',
@@ -39,7 +40,8 @@ export const SHELF_RETURN_WORDS = Object.freeze({
     notAsked: 'ஒப்புதல் கேட்கப்படவில்லை:', refused: 'தலைமை அலுவலகம் திருப்பவில்லை:', lost: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எதுவும் திருப்பப்படவில்லை.',
     nobody: 'இந்தப் பக்கத்தில் யாரும் உள்நுழையவில்லை.', cannot: 'உங்கள் பங்கு விநியோகஸ்தருக்கு இருப்பைத் திருப்புவதில்லை.',
     listHeading: 'விநியோகஸ்தருக்குத் திருப்பியவை', none: 'அலமாரியிலிருந்து இன்னும் எதுவும் திருப்பப்படவில்லை.',
-    returnThis: 'விநியோகஸ்தருக்குத் திருப்பு', gstNote: 'பற்றுக் குறிப்பு விநியோகஸ்தர் ஏற்றுக்கொள்ளக் காத்திருக்கிறது: விநியோகஸ்தர் கணக்கில் காட்டப்படும், ஆனால் அவர் ஏற்றுக்கொள்ளும் வரை நிலுவையிலிருந்து கழிக்கப்படாது.',
+    printNote: 'திருப்பும் குறிப்பை அச்சிடு', printNoteFor: 'திருப்பும் குறிப்பு {n} அச்சிடு',
+    returnThis: 'விநியோகஸ்தருக்குத் திருப்பு', gstNote:'பற்றுக் குறிப்பு விநியோகஸ்தர் ஏற்றுக்கொள்ளக் காத்திருக்கிறது: விநியோகஸ்தர் கணக்கில் காட்டப்படும், ஆனால் அவர் ஏற்றுக்கொள்ளும் வரை நிலுவையிலிருந்து கழிக்கப்படாது.',
   },
 } as const);
 
