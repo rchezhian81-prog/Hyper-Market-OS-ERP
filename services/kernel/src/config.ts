@@ -161,6 +161,10 @@ export function loadConfig(
 }
 
 /** What the cloud API needs. Nothing here has a usable default, deliberately. */
+/** A setting that must be a number above zero (a rate limit of 0 or less would refuse everything, or nothing). */
+const positive = (key: string) => (raw: string): string | undefined =>
+  Number(raw) > 0 ? undefined : `${key} is ${raw}; it must be a number above zero`;
+
 export const CLOUD_API_CONFIG: readonly Spec[] = [
   { key: 'DATABASE_URL', secret: true, minLength: 20 },
   { key: 'PACK_SIGNING_KEY', secret: true, minLength: 32 },
@@ -207,6 +211,16 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // IDP_SIGNING_KEY or BOX_HISTORY_SEAL_KEY (services/api/src/main.ts).
   { key: 'BOX_PRIVILEGE_SEAL_KEY', secret: true, optional: true, minLength: 32 },
   { key: 'PORT', numeric: true, fallback: '8081' },
+  // Audit 27 Nov 2026 item 3 (OB-916): head office's three request allowances, each a token bucket — a burst, then a
+  // steady rate per second. Per ADDRESS (one device or one shop's connection; before anything else), per SHOP for its
+  // staff and store computers, and per SHOP for its customers (the customer app). The shop's allowance must be at least
+  // one address's (the API refuses to start otherwise), so one caller can never spend the whole shop's.
+  { key: 'RATE_LIMIT_PER_ADDRESS_BURST', numeric: true, fallback: '240', check: positive('RATE_LIMIT_PER_ADDRESS_BURST') },
+  { key: 'RATE_LIMIT_PER_ADDRESS_PER_SECOND', numeric: true, fallback: '20', check: positive('RATE_LIMIT_PER_ADDRESS_PER_SECOND') },
+  { key: 'RATE_LIMIT_PER_SHOP_BURST', numeric: true, fallback: '2400', check: positive('RATE_LIMIT_PER_SHOP_BURST') },
+  { key: 'RATE_LIMIT_PER_SHOP_PER_SECOND', numeric: true, fallback: '200', check: positive('RATE_LIMIT_PER_SHOP_PER_SECOND') },
+  { key: 'RATE_LIMIT_CUSTOMERS_PER_SHOP_BURST', numeric: true, fallback: '1200', check: positive('RATE_LIMIT_CUSTOMERS_PER_SHOP_BURST') },
+  { key: 'RATE_LIMIT_CUSTOMERS_PER_SHOP_PER_SECOND', numeric: true, fallback: '100', check: positive('RATE_LIMIT_CUSTOMERS_PER_SHOP_PER_SECOND') },
   // ADR-0032 (CR-01 step 1): on the store computer the API is a Windows service and listens on that PC only. Loopback is
   // the only value accepted — the setting can keep the API on the PC, never open it wider. Unset in a container.
   { key: 'API_LISTEN_HOST', optional: true, oneOf: ['127.0.0.1', '::1'] },

@@ -165,6 +165,10 @@ export function apiHarness(opts: {
   rateLimit?: Kernel['rateLimit'];
   audit?: Kernel['audit'];
   refusalTally?: Kernel['refusalTally'];
+  /** Audit 27 Nov item 3: the shop's own allowance, the customers' allowance and who counts as a customer (main.ts runs all three). */
+  tenantRateLimit?: Kernel['tenantRateLimit'];
+  customerRateLimit?: Kernel['customerRateLimit'];
+  isCustomer?: Kernel['isCustomer'];
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -217,6 +221,9 @@ export function apiHarness(opts: {
     ...(opts.rateLimit === undefined ? {} : { rateLimit: opts.rateLimit }),
     ...(opts.audit === undefined ? {} : { audit: opts.audit }),
     ...(opts.refusalTally === undefined ? {} : { refusalTally: opts.refusalTally }),
+    ...(opts.tenantRateLimit === undefined ? {} : { tenantRateLimit: opts.tenantRateLimit }),
+    ...(opts.customerRateLimit === undefined ? {} : { customerRateLimit: opts.customerRateLimit }),
+    ...(opts.isCustomer === undefined ? {} : { isCustomer: opts.isCustomer }),
     signInLog: officeSignInLogAdapter({ store }),
     // W6 · M32-FR-03 · OB-688: each machine credential's use counted, as main.ts composes it.
     credentialUse: secretUse.record,

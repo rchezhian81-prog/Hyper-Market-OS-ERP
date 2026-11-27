@@ -16,6 +16,8 @@ const MAIN = readFileSync(join(ROOT, 'services/api/src/main.ts'), 'utf8');
 const CONTROLS: readonly { readonly name: string; readonly pattern: RegExp; readonly gap: string }[] = [
   { name: 'per-IP + per-tenant rate limit', pattern: /\brateLimit:\s*new TokenBucketRateLimiter\(/, gap: 'GAP-SEC-04' },
   { name: 'auth-attempt lockout', pattern: /\bauthThrottle:\s*new BackoffAuthThrottle\(/, gap: 'GAP-SEC-04' },
+  { name: 'the shop\'s own allowance, apart from the per-address one (audit 27 Nov item 3)', pattern: /\btenantRateLimit:\s*new TokenBucketRateLimiter\(/, gap: 'GAP-SEC-04' },
+  { name: 'the customers\' own allowance, apart from the staff and store computers (audit 27 Nov item 3)', pattern: /\bcustomerRateLimit:\s*new TokenBucketRateLimiter\([\s\S]{0,200}?isCustomer:\s*isCustomerCaller/, gap: 'GAP-SEC-04' },
   { name: 'address-wide ceiling on forged sign-ins (audit 27 Nov item 1)', pattern: /\bsourceAuthThrottle:\s*new BackoffAuthThrottle\(/, gap: 'GAP-SEC-04' },
   { name: 'SHA-256-chained audit sink', pattern: /\baudit:\s*new SqlAuditSink\(/, gap: 'GAP-SEC-03' },
   { name: 'anonymous refusals counted into the chained audit (audit 27 Nov item 2)', pattern: /new AuditedRefusalTally\(new SqlAuditSink\(pgPoolClient\(db\)/, gap: 'GAP-SEC-03' },

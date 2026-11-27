@@ -365,10 +365,23 @@ export interface KernelOptions {
   readonly audit?: AuditSink;
   /**
    * Request rate limiter (audit FND-03). Optional in the type (a test that is not about limiting
-   * omits it) and supplied in a deployment. Keyed per source IP before authentication (flood
-   * protection) and per tenant after (fair share).
+   * omits it) and supplied in a deployment. Keyed per source IP, before anything else (flood protection).
    */
   readonly rateLimit?: RateLimiter;
+  /**
+   * Audit 27 Nov 2026 item 3: the SHOP's own allowance (fair share between shops), keyed on the signed tenant after
+   * authentication, for staff and store computers. A limiter of its own — never the per-address one — and larger, so one
+   * caller spending its address's allowance has not spent the shop's. Absent → no per-shop limit (a test).
+   */
+  readonly tenantRateLimit?: RateLimiter;
+  /**
+   * Audit 27 Nov 2026 item 3: the shop's CUSTOMERS' allowance (the customer app), keyed on the signed tenant, apart from the
+   * staff and store computers' — so a busy hour on the customer app never refuses a till, and the tills never refuse a
+   * customer. Used for a caller `isCustomer` says is one; absent → customers draw on `tenantRateLimit` like everyone else.
+   */
+  readonly customerRateLimit?: RateLimiter;
+  /** Audit 27 Nov 2026 item 3: is this signed caller a customer (the customer realm's people)? Read from the signed principal. */
+  readonly isCustomer?: (principal: Principal) => boolean;
   /**
    * Auth-attempt lockout (audit FND-03). Optional in the type; supplied in a deployment. Consulted
    * before authenticating a source and updated with the outcome, so repeated failed sign-ins from
@@ -637,9 +650,12 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     auditPrincipal = principal;
 
     // Per-tenant fair share, after authentication: one tenant's burst cannot starve another's lane
-    // (audit FND-03). Keyed on the signed tenant, never anything the caller supplied.
-    if (opts.rateLimit !== undefined) {
-      const perTenant = await opts.rateLimit.take(`tenant:${principal.tenantId}`);
+    // (audit FND-03). Keyed on the signed tenant, never anything the caller supplied. Audit 27 Nov item 3: the shop's
+    // allowance is its own limiter (never the per-address one), and its customers have a separate allowance.
+    const customer = opts.customerRateLimit !== undefined && opts.isCustomer?.(principal) === true;
+    const shopLimit = customer ? opts.customerRateLimit : opts.tenantRateLimit;
+    if (shopLimit !== undefined) {
+      const perTenant = await shopLimit.take(`${customer ? 'customers' : 'tenant'}:${principal.tenantId}`);
       if (!perTenant.allowed) throw rateLimited(perTenant.retryAfterSeconds);
     }
 
