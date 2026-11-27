@@ -96,6 +96,20 @@ export function personNamedBy(event: DomainEvent): { readonly ok: true; readonly
   return { ok: true, userId: named };
 }
 
+/**
+ * D-031: the OTHER people a phone record names — the people who scanned the lines a warehouse handheld carries INSIDE its
+ * receipt (held on the phone until "send"). Each must have held THIS phone too, exactly as each scan used to be checked
+ * when it travelled on its own; anybody else is refused by name (hard rule #10).
+ */
+export function othersNamedBy(event: DomainEvent): readonly string[] {
+  if (event.type !== 'ReceivingCompleted' || !isObj(event.payload) || !Array.isArray(event.payload['scans'])) return [];
+  const named = new Set<string>();
+  for (const line of event.payload['scans'] as unknown[]) {
+    if (isObj(line) && typeof line['receivedBy'] === 'string' && line['receivedBy'].trim() !== '') named.add(line['receivedBy'].trim());
+  }
+  return [...named];
+}
+
 /** The screen's own field naming the person doing the job. */
 const PERSON_KEY: Readonly<Record<HandheldSource, string>> = Object.freeze({ warehouse: 'workerId', picker: 'pickerId', driver: 'driverId' });
 

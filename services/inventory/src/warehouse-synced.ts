@@ -19,7 +19,7 @@
 //   • every scan is also kept on its own GRN-scans register, so the delivery can be assembled into its goods receipt
 //     and folded into the purchase order later (SP-6) without re-asking the handheld.
 
-import type { Route } from '../../kernel/src/index';
+import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { applyMovement, type MovementCommand, type MovementKind } from '../../../packages/warehouse/src/movements';
 import type { StockState } from '../../../packages/stock/src/position';
@@ -240,7 +240,7 @@ export interface ReceivingScanDeps {
 /** States that put the goods on the SELLABLE position. Anything else is kept out of stock and said so. */
 const ON_HAND_STATES: ReadonlySet<string> = new Set(['on_hand', 'good']);
 
-interface RelayedScan {
+export interface RelayedScan {
   readonly grnId: string; readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number;
   readonly uom: string; readonly source: string; readonly poId: string | null; readonly state: string; readonly expiry: string | null;
   readonly receivedBy: string; readonly storeId: string; readonly at: string;
@@ -250,7 +250,7 @@ interface RelayedScan {
   readonly qcFailed?: true;
 }
 
-function readRelayedScan(body: unknown, commandId: string, now: string): RelayedScan | undefined {
+export function readRelayedScan(body: unknown, commandId: string, now: string): RelayedScan | undefined {
   if (!isObj(body)) return undefined;
   if (isStr(body['commandId']) && body['commandId'] !== commandId) return undefined;
   if (!isStr(body['grnId']) || !isStr(body['productId']) || !isPosInt(body['quantityMinor']) || !isStr(body['receivedBy']) || !isStr(body['storeId'])) return undefined;
@@ -279,6 +279,111 @@ function readRelayedScan(body: unknown, commandId: string, now: string): Relayed
   };
 }
 
+/** The refusal for a body that cannot be read as a receiving scan (nothing saved; the store keeps it for a person). */
+export const unreadableScan = (): Error => apiError(400, {
+  code: 'not_readable_as_a_receiving_scan',
+  whatHappened: 'This payload could not be read as a receiving scan from a handheld — it needs the commandId matching the path, grnId, productId, a whole quantityMinor, receivedBy and storeId.',
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — goods that were scanned in are in the building.',
+});
+
+/**
+ * D-031: read and JUDGE one relayed receiving scan — everything that can refuse it — WITHOUT writing anything. The scan's
+ * own route runs it before it posts; the receipt that carries its lines inside it (a handheld that held its scans until
+ * "send") runs it for EVERY line before it posts any, so a receipt is refused whole or booked whole.
+ */
+export async function judgeRelayedScan(deps: ReceivingScanDeps, ctx: RequestContext, commandId: string, body: unknown): Promise<{ readonly scan: RelayedScan; readonly alreadyRecorded: boolean }> {
+  const s = commandId === '' ? undefined : readRelayedScan(body, commandId, deps.now());
+  if (s === undefined) throw unreadableScan();
+  await assertLocationInScope(ctx, s.storeId, deps.locationBranches); // PA-01-r1: only the relayer's own store
+  if (await deps.scanExists(ctx.tenantId, commandId)) return { scan: s, alreadyRecorded: true };
+  // B4 · OB-504 (owner, 28 Oct 2026): a PACKED product's batch is not received without its month and year of manufacture —
+  // the product master's word (its department is regulated `packed`), never the phone's. Refused by name (422), so the box
+  // keeps the scan as a dead letter for a person (hard rule #6) and nothing is posted.
+  const rule = deps.productRule === undefined ? undefined : await deps.productRule(ctx.tenantId, s.productId);
+  if (manufactureDateVerdict(rule?.packaged === true, s.manufacturedOn) !== 'ok') {
+    throw apiError(422, {
+      code: 'manufacture_date_required',
+      whatHappened: s.manufacturedOn === undefined
+        ? `${s.productId} is a packed product, and this scan for ${s.grnId} carries no month and year of manufacture. A packed product's batch is not received without it (B4 · OB-504).`
+        : `The manufacture date "${s.manufacturedOn}" on this scan for ${s.grnId} cannot be read — it is written YYYY-MM (or YYYY-MM-DD), as printed on the pack (OB-504).`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Nothing was posted. The scan stays on the store computer for a person: scan the item again with the month and year printed on the pack.',
+    });
+  }
+  return { scan: s, alreadyRecorded: false };
+}
+
+/**
+ * Post one JUDGED receiving scan: the `received` movement for good stock (M08-FR-01), the scan on the GRN's register, the
+ * audit entry. Idempotent on the scan's own command id (the movement id and the register's key are both built from it).
+ */
+export async function postRelayedScan(deps: ReceivingScanDeps, ctx: RequestContext, commandId: string, s: RelayedScan, now: string): Promise<{ readonly onHand: boolean; readonly flags: readonly string[] }> {
+  const rule = deps.productRule === undefined ? undefined : await deps.productRule(ctx.tenantId, s.productId);
+  const flags = await verifyWorker(deps.permissionsOfUser, ctx.tenantId, s.receivedBy, 'receiver_unknown', 'receiver_lacks_authority');
+  // SP-6b: the delivery was already assembled into its GRN — this scan is still the truth about goods in the building,
+  // so it is recorded and posted exactly as before, and SAID, so the receipt is reviewed against its late scans.
+  if (deps.receiptExists !== undefined && (await deps.receiptExists(ctx.tenantId, s.grnId))) flags.push('after_assembly');
+  // OB-31 "A": the master's unit, never the phone's default; a different unit named by the scan is said, not hidden.
+  const masterUnit = deps.productUom === undefined ? undefined : normaliseUom((await deps.productUom(ctx.tenantId, s.productId)) ?? '');
+  if (masterUnit !== undefined && normaliseUom(s.uom) !== masterUnit) flags.push('unit_from_master');
+  const uom = masterUnit ?? s.uom;
+  // M07-FR-02: the cost the issued order agreed for these goods — head office's own record, never the body.
+  const unitCostMinor = s.poId === null || deps.orderUnitCost === undefined ? undefined : await deps.orderUnitCost(ctx.tenantId, s.poId, s.productId);
+
+  // Wave 3 · SF-07 part 3: a cold-chain item (the product master's word) with no reading, or one out of its limits, is
+  // recorded but NOT put on-hand — the same limits the receipt is judged by; its assembled line is held for a second person.
+  let coldChainHeld: ReceivingScanRecord['coldChainHeld'];
+  if (ON_HAND_STATES.has(s.state) && deps.productRule !== undefined) {
+    const policy = deps.receiptPolicy === undefined ? undefined : await deps.receiptPolicy(ctx.tenantId);
+    const verdict = coldChainVerdict(rule, { ...(policy?.coldChainMaxC === undefined ? {} : { coldChainMaxC: policy.coldChainMaxC }) }, s.temperatureC);
+    if (verdict !== 'ok' && verdict !== 'not_cold_chain') { coldChainHeld = verdict; flags.push('cold_chain_held'); }
+  }
+
+  // Good stock rises the store's on-hand position at once (M08-FR-01); anything else is recorded and HELD.
+  let onHandMovementId: string | null = null;
+  if (ON_HAND_STATES.has(s.state) && coldChainHeld === undefined) {
+    onHandMovementId = `recv:${s.grnId}:${commandId}`;
+    if (!(await deps.isKnown(ctx.tenantId, onHandMovementId))) {
+      await deps.appendMovement(ctx.tenantId, {
+        movementId: onHandMovementId, productId: s.productId, locationId: s.storeId, kind: 'received',
+        quantityMinor: s.quantityMinor, uom, occurredAt: s.at, enteredBy: s.receivedBy,
+        reason: `receiving scan ${commandId} for ${s.grnId}`,
+        ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
+        ...(s.batchId !== null ? { batchId: s.batchId } : {}),
+        ...(s.expiry !== null ? { expiry: s.expiry } : {}),
+      });
+    }
+  } else if (coldChainHeld === undefined) {
+    flags.push('held_out_of_stock');
+  }
+
+  const record: ReceivingScanRecord = {
+    commandId, grnId: s.grnId, productId: s.productId, batchId: s.batchId, quantityMinor: s.quantityMinor, uom,
+    source: s.source, poId: s.poId, state: s.state, expiry: s.expiry, receivedBy: s.receivedBy, relayedBy: ctx.userId,
+    storeId: s.storeId, at: s.at, onHandMovementId, governanceFlags: flags,
+    ...(s.temperatureC === undefined ? {} : { temperatureC: s.temperatureC }),
+    ...(coldChainHeld === undefined ? {} : { coldChainHeld }),
+    ...(s.manufacturedOn === undefined ? {} : { manufacturedOn: s.manufacturedOn }),
+    // Batch 20a: the MRP on the pack and "failed the check / refused at the door", as the handheld sent them.
+    ...(s.mrpMinor === undefined ? {} : { mrpMinor: s.mrpMinor }),
+    ...(s.qcFailed === true ? { qcFailed: true as const } : {}),
+  };
+  await deps.recordScan(ctx.tenantId, record);
+  await deps.recordAudit?.(ctx.tenantId, {
+    actorId: s.receivedBy, action: 'receipt.scan', objectType: 'goods_receipt', objectId: s.grnId,
+    at: now, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+    before: null,
+    after: {
+      commandId, productId: s.productId, quantityMinor: String(s.quantityMinor), uom, state: s.state, poId: s.poId ?? '',
+      storeId: s.storeId, onHandMovementId: onHandMovementId ?? '', relayedBy: ctx.userId, flags: flags.join(','),
+      mrpMinor: s.mrpMinor === undefined ? '' : String(s.mrpMinor), qcFailed: s.qcFailed === true ? 'true' : '',
+    },
+    correlationId: s.grnId,
+  });
+  return { onHand: onHandMovementId !== null, flags };
+}
+
 export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
   return [
     {
@@ -287,96 +392,13 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
       handler: async (ctx) => {
         const commandId = (ctx.params['commandId'] ?? '').trim();
         const now = deps.now();
-        const s = commandId === '' ? undefined : readRelayedScan(ctx.body, commandId, now);
-        if (s === undefined) {
-          throw apiError(400, {
-            code: 'not_readable_as_a_receiving_scan',
-            whatHappened: 'This payload could not be read as a receiving scan from a handheld — it needs the commandId matching the path, grnId, productId, a whole quantityMinor, receivedBy and storeId.',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — goods that were scanned in are in the building.',
-          });
-        }
-        await assertLocationInScope(ctx, s.storeId, deps.locationBranches); // PA-01-r1: only the relayer's own store
-        if (await deps.scanExists(ctx.tenantId, commandId)) {
+        const { scan: s, alreadyRecorded } = await judgeRelayedScan(deps, ctx, commandId, ctx.body);
+        if (alreadyRecorded) {
           const prior = (await deps.scansOf(ctx.tenantId, s.grnId)).find((r) => r.commandId === commandId);
           return { status: 200, body: { commandId, grnId: s.grnId, recorded: true, alreadyRecorded: true, onHand: prior?.onHandMovementId !== null, flags: prior?.governanceFlags ?? [] } };
         }
-        // B4 · OB-504 (owner, 28 Oct 2026): a PACKED product's batch is not received without its month and year of manufacture —
-        // the product master's word (its department is regulated `packed`), never the phone's. Refused by name (422), so the box
-        // keeps the scan as a dead letter for a person (hard rule #6) and nothing is posted.
-        const rule = deps.productRule === undefined ? undefined : await deps.productRule(ctx.tenantId, s.productId);
-        if (manufactureDateVerdict(rule?.packaged === true, s.manufacturedOn) !== 'ok') {
-          throw apiError(422, {
-            code: 'manufacture_date_required',
-            whatHappened: s.manufacturedOn === undefined
-              ? `${s.productId} is a packed product, and this scan for ${s.grnId} carries no month and year of manufacture. A packed product's batch is not received without it (B4 · OB-504).`
-              : `The manufacture date "${s.manufacturedOn}" on this scan for ${s.grnId} cannot be read — it is written YYYY-MM (or YYYY-MM-DD), as printed on the pack (OB-504).`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Nothing was posted. The scan stays on the store computer for a person: scan the item again with the month and year printed on the pack.',
-          });
-        }
-        const flags = await verifyWorker(deps.permissionsOfUser, ctx.tenantId, s.receivedBy, 'receiver_unknown', 'receiver_lacks_authority');
-        // SP-6b: the delivery was already assembled into its GRN — this scan is still the truth about goods in the building,
-        // so it is recorded and posted exactly as before, and SAID, so the receipt is reviewed against its late scans.
-        if (deps.receiptExists !== undefined && (await deps.receiptExists(ctx.tenantId, s.grnId))) flags.push('after_assembly');
-        // OB-31 "A": the master's unit, never the phone's default; a different unit named by the scan is said, not hidden.
-        const masterUnit = deps.productUom === undefined ? undefined : normaliseUom((await deps.productUom(ctx.tenantId, s.productId)) ?? '');
-        if (masterUnit !== undefined && normaliseUom(s.uom) !== masterUnit) flags.push('unit_from_master');
-        const uom = masterUnit ?? s.uom;
-        // M07-FR-02: the cost the issued order agreed for these goods — head office's own record, never the body.
-        const unitCostMinor = s.poId === null || deps.orderUnitCost === undefined ? undefined : await deps.orderUnitCost(ctx.tenantId, s.poId, s.productId);
-
-        // Wave 3 · SF-07 part 3: a cold-chain item (the product master's word) with no reading, or one out of its limits, is
-        // recorded but NOT put on-hand — the same limits the receipt is judged by; its assembled line is held for a second person.
-        let coldChainHeld: ReceivingScanRecord['coldChainHeld'];
-        if (ON_HAND_STATES.has(s.state) && deps.productRule !== undefined) {
-          const policy = deps.receiptPolicy === undefined ? undefined : await deps.receiptPolicy(ctx.tenantId);
-          const verdict = coldChainVerdict(rule, { ...(policy?.coldChainMaxC === undefined ? {} : { coldChainMaxC: policy.coldChainMaxC }) }, s.temperatureC);
-          if (verdict !== 'ok' && verdict !== 'not_cold_chain') { coldChainHeld = verdict; flags.push('cold_chain_held'); }
-        }
-
-        // Good stock rises the store's on-hand position at once (M08-FR-01); anything else is recorded and HELD.
-        let onHandMovementId: string | null = null;
-        if (ON_HAND_STATES.has(s.state) && coldChainHeld === undefined) {
-          onHandMovementId = `recv:${s.grnId}:${commandId}`;
-          if (!(await deps.isKnown(ctx.tenantId, onHandMovementId))) {
-            await deps.appendMovement(ctx.tenantId, {
-              movementId: onHandMovementId, productId: s.productId, locationId: s.storeId, kind: 'received',
-              quantityMinor: s.quantityMinor, uom, occurredAt: s.at, enteredBy: s.receivedBy,
-              reason: `receiving scan ${commandId} for ${s.grnId}`,
-              ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
-              ...(s.batchId !== null ? { batchId: s.batchId } : {}),
-              ...(s.expiry !== null ? { expiry: s.expiry } : {}),
-            });
-          }
-        } else if (coldChainHeld === undefined) {
-          flags.push('held_out_of_stock');
-        }
-
-        const record: ReceivingScanRecord = {
-          commandId, grnId: s.grnId, productId: s.productId, batchId: s.batchId, quantityMinor: s.quantityMinor, uom,
-          source: s.source, poId: s.poId, state: s.state, expiry: s.expiry, receivedBy: s.receivedBy, relayedBy: ctx.userId,
-          storeId: s.storeId, at: s.at, onHandMovementId, governanceFlags: flags,
-          ...(s.temperatureC === undefined ? {} : { temperatureC: s.temperatureC }),
-          ...(coldChainHeld === undefined ? {} : { coldChainHeld }),
-          ...(s.manufacturedOn === undefined ? {} : { manufacturedOn: s.manufacturedOn }),
-          // Batch 20a: the MRP on the pack and "failed the check / refused at the door", as the handheld sent them.
-          ...(s.mrpMinor === undefined ? {} : { mrpMinor: s.mrpMinor }),
-          ...(s.qcFailed === true ? { qcFailed: true as const } : {}),
-        };
-        await deps.recordScan(ctx.tenantId, record);
-        await deps.recordAudit?.(ctx.tenantId, {
-          actorId: s.receivedBy, action: 'receipt.scan', objectType: 'goods_receipt', objectId: s.grnId,
-          at: now, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-          before: null,
-          after: {
-            commandId, productId: s.productId, quantityMinor: String(s.quantityMinor), uom, state: s.state, poId: s.poId ?? '',
-            storeId: s.storeId, onHandMovementId: onHandMovementId ?? '', relayedBy: ctx.userId, flags: flags.join(','),
-            mrpMinor: s.mrpMinor === undefined ? '' : String(s.mrpMinor), qcFailed: s.qcFailed === true ? 'true' : '',
-          },
-          correlationId: s.grnId,
-        });
-        return { status: 202, body: { commandId, grnId: s.grnId, recorded: true, onHand: onHandMovementId !== null, flags } };
+        const posted = await postRelayedScan(deps, ctx, commandId, s, now);
+        return { status: 202, body: { commandId, grnId: s.grnId, recorded: true, onHand: posted.onHand, flags: posted.flags } };
       },
     },
     {

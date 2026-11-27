@@ -491,6 +491,7 @@ describe('OB-536 (keep): put-away of goods already received is accepted on a bar
       barcodes: [{ barcode: '890DET', productId: 'p-det', level: 'unit' }], packs: [{ productId: 'p-det', baseUom: 'ea', levels: [{ level: 'unit', containsMinor: 1, barcode: '890DET' }] }] as never,
     }, outbox, { now: () => AT });
     expect(s.receive({ commandId: 'c-1', grnId: 'g-1', barcode: '890DET', scannedQuantity: 1, source: 'po' }).result.accepted).toBe(true);
+    expect(s.completeReceiving({ grnId: 'g-1' }).accepted).toBe(true); // D-031: received = sent as the receipt
     s.barNewWork(judgeClientVersion(OLD, POLICY, 'warehouse').words!);
     expect(s.receive({ commandId: 'c-2', grnId: 'g-2', barcode: '890DET', scannedQuantity: 1, source: 'po' }).result.outcome).toBe('app_version_too_old');
     const queued = outbox.all().length;

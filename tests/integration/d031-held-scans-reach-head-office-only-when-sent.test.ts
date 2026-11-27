@@ -238,6 +238,64 @@ describe.each(backings)('D-031 — held scans reach head office only when the re
     expect(grn.grn).toMatchObject({ availableMinor: 7, assembledFrom: { scanCount: 2, commandIds: ['old-1', 'new-1'] } });
   }, 60_000);
 
+  it('all or nothing: a receipt with one line head office cannot read books NONE of its lines — the store computer keeps it as a visible dead letter', async () => {
+    const c = await setup();
+    const line = (id: string, qty: number) => ({ commandId: id, productId: 'p-rice', batchId: null, quantityMinor: qty, uom: 'EA', source: 'po', poId: null, state: 'on_hand', expiry: null, receivedBy: 'u-worker', at: AT });
+    const receipt = makeEvent({
+      id: 'recv-done-grn-1', type: 'ReceivingCompleted', occurredAt: AT, idempotencyKey: 'recv-done:grn-1', source: 'A-1',
+      payload: { grnId: 'grn-1', poId: 'po-1', completedBy: 'u-worker', storeId: 'store-1', at: AT, scanCount: 2, commandIds: ['a', 'b'], source: 'warehouse-handheld', scans: [line('a', 2), line('b', 0)] },
+    });
+    const res = await savedFetch(`${c.base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: c.cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: receipt.idempotencyKey, event: receipt }] }) });
+    expect(res.status).toBe(200);
+    expect((await c.edge.syncOnce!()).dead).toBe(1);
+    expect(c.edge.deviceEventsOutbox.deadLetters().map((i) => i.key)).toEqual(['recv-done:grn-1']);
+    expect(await c.onHand()).toBe(0);
+    expect(await c.scansAtHeadOffice()).toEqual([]);
+    expect((await c.receipt()).status).toBe(404);
+  }, 60_000);
+
+  it('a receipt carrying a scan by somebody who never held this phone is refused at the store computer, by name', async () => {
+    const c = await setup();
+    const receipt = makeEvent({
+      id: 'recv-done-grn-1', type: 'ReceivingCompleted', occurredAt: AT, idempotencyKey: 'recv-done:grn-1', source: 'A-1',
+      payload: { grnId: 'grn-1', poId: 'po-1', completedBy: 'u-worker', storeId: 'store-1', at: AT, scanCount: 1, commandIds: ['a'], source: 'warehouse-handheld',
+        scans: [{ commandId: 'a', productId: 'p-rice', batchId: null, quantityMinor: 2, uom: 'EA', source: 'po', poId: null, state: 'on_hand', expiry: null, receivedBy: 'u-stranger', at: AT }] },
+    });
+    const res = await savedFetch(`${c.base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: c.cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: receipt.idempotencyKey, event: receipt }] }) });
+    const body = (await res.json()) as { acks: { key: string; status: string; reason?: string }[] };
+    expect(body.acks).toEqual([{ key: 'recv-done:grn-1', status: 'refused', reason: expect.stringMatching(/u-stranger, who has not been signed in on this phone/) }]);
+    expect(c.edge.deviceEventsOutbox.all()).toHaveLength(0);
+  }, 60_000);
+
+  it('OB-623 holds for the lines inside a receipt too: a scan by a Warehouse user (who may not receive) refuses the whole receipt at head office — nothing booked', async () => {
+    const c = await setup();
+    await c.h.provisionRole(c.A, 'u-wh', 'warehouse_user', ['store-1']);
+    const line = (id: string, by: string) => ({ commandId: id, productId: 'p-rice', batchId: null, quantityMinor: 2, uom: 'EA', source: 'po', poId: null, state: 'on_hand', expiry: null, receivedBy: by, at: AT });
+    const res = await c.h.request({
+      method: 'POST', path: '/v1/inventory/goods-receipt/grn-1/assembled', userId: 'u-box', tenantId: c.A, idempotencyKey: 'recv-done:grn-1',
+      body: { grnId: 'grn-1', poId: 'po-1', completedBy: 'u-worker', storeId: 'store-1', at: AT, scanCount: 2, commandIds: ['a', 'b'], source: 'warehouse-handheld', scans: [line('a', 'u-worker'), line('b', 'u-wh')] },
+    });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: 'not_your_kind_of_stock_movement' } });
+    expect(await c.onHand()).toBe(0);
+    expect(await c.scansAtHeadOffice()).toEqual([]);
+  }, 60_000);
+
+  it('the largest receipt (300 scans) goes through the store computer as one record and is booked once', async () => {
+    const c = await setup();
+    const phone = phoneStorage();
+    const big: WarehouseAssignment = { ...ASSIGNMENT, ordered: [{ productId: 'p-rice', quantityMinor: 1000, unitCost: { minor: 4000, currency: 'INR' } }] };
+    const outbox = openDeviceOutbox(phone.outbox, () => {});
+    const s = new WarehouseSession(big, outbox, { now: () => AT, held: phone.held } as ConstructorParameters<typeof WarehouseSession>[2]);
+    for (let i = 0; i < 300; i += 1) expect(scan(s, `big-${String(i).padStart(3, '0')}`, 1).signal.code).toBe('received');
+    expect(scan(s, 'big-300', 1).signal.code).toBe('receipt_full');
+    expect(s.completeReceiving({ grnId: 'grn-1', at: AT }).accepted).toBe(true);
+    expect((await c.handOver(outbox)).handed).toBe(1);
+    expect((await c.edge.syncOnce!()).sent).toBe(1);
+    expect(await c.onHand()).toBe(300);
+    expect((await c.received())).toHaveLength(300);
+  }, 180_000);
+
   it('an OLD phone with no held scans at all: its scans and its completion (no lines inside) are booked as before', async () => {
     const c = await setup();
     const res = await savedFetch(`${c.base}/lane/outbox`, {

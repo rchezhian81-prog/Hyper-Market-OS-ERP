@@ -116,13 +116,19 @@ describe.skipIf(!HAVE_BROWSER)('warehouse handheld delivery, end to end in a rea
     await page.keyboard.press('Enter');
   };
 
-  it('receiving a known delivery barcode queues the goods-received event to the device outbox (§31/P-01)', async () => {
+  it('receiving a known delivery barcode holds it on the phone; "send the receipt" queues ONE record to the device outbox (§31/P-01 · D-031)', async () => {
     const { page, teardown } = await open(assignment());
     try {
       expect(await unsent(page)).toBe(0);
       await page.click('#receive');
       await scan(page, '890RICE'); // resolves to p-rice, which is on order → received
       await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
+      await page.waitForSelector('#banner:not([hidden])');
+      await page.click('#banner-ok');
+      // D-031: held on the phone — nothing queued until the receipt is sent.
+      expect(await unsent(page)).toBe(0);
+      await page.waitForSelector('#held-scans .item.held');
+      await page.click('#done-receiving');
       await page.waitForFunction(
         () => ((globalThis as unknown as BrowserGlobals).warehouseOutbox?.unsentCount() ?? 0) >= 1,
         undefined, { timeout: 10_000 },

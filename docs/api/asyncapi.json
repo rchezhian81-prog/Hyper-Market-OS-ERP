@@ -4774,6 +4774,12 @@
               },
               "additionalProperties": true
             }
+          },
+          "removedOnPhone": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemovedOnPhone"
+            }
           }
         },
         "additionalProperties": true
@@ -7557,6 +7563,57 @@
             ]
           },
           "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RemovedOnPhone": {
+        "type": "object",
+        "required": [
+          "commandId",
+          "productId",
+          "batchId",
+          "quantityMinor",
+          "state",
+          "receivedBy",
+          "at",
+          "removedBy",
+          "removedAt"
+        ],
+        "properties": {
+          "commandId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string"
+          },
+          "receivedBy": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "removedBy": {
+            "type": "string"
+          },
+          "removedAt": {
             "type": "string"
           }
         },

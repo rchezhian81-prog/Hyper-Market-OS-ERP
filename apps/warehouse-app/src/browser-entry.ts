@@ -17,9 +17,10 @@
 // handheld gets left on a shelf; what is on it should be worth nothing to whoever finds it.
 
 import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
-import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
+import { openDeviceOutbox, guardedStore, type DeviceOutbox, type DeviceStore } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
-import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
+import { pageStamping, type SignInClock, type SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
+import type { DomainEvent } from '../../../packages/contracts/src/event';
 import { WarehouseSession, type WarehouseAssignment } from './warehouse-session';
 import { DsdDoorSession, type DsdDoorData } from './dsd-door';
 import { openNewWorkGate, bindNewWorkGate, APP_BUILD_VERSION, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A) · OB-537 (R9)
@@ -117,9 +118,13 @@ export function bootWarehouse(
   data: WarehouseAssignment | undefined,
   outbox: DeviceOutbox,
   now: () => string = () => new Date().toISOString(),
+  /** D-031: the phone's storage for the receiving scans held until the receipt is sent, and who hears of a problem with it. */
+  held?: { readonly store: DeviceStore; readonly onProblem: (why: string) => void; readonly stamp?: (event: DomainEvent) => SignInStamp | undefined },
 ): WarehouseSession | null {
   if (data?.assignmentId === undefined || data.bins === undefined) return null;
-  return new WarehouseSession(data, outbox, { now });
+  return new WarehouseSession(data, outbox, {
+    now, ...(held === undefined ? {} : { held: held.store, onHeldProblem: held.onProblem, ...(held.stamp === undefined ? {} : { stampHeld: held.stamp }) }),
+  });
 }
 
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
@@ -147,7 +152,11 @@ if (browserWindow !== undefined) {
   const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
   browserWindow.warehouseData = withChosenDelivery(browserWindow.warehouseData, new URLSearchParams(search).get('delivery'));
   browserWindow.warehouseOutbox = outbox;
-  const session = bootWarehouse(browserWindow.warehouseData, outbox);
+  // D-031: the receiving scans wait on THIS phone until the receipt is sent — kept in the phone's storage under the STORE (a
+  // new assignment next morning must not hide them), so a reload, the phone sleeping or the browser closed loses none.
+  const onHeldProblem = (why: string): void => { browserWindow.warehouseStorageProblem = why; };
+  const heldStore = guardedStore(`sre.warehouse.held-receipts.${browserWindow.warehouseData?.storeId ?? 'unassigned'}`, storage, onHeldProblem);
+  const session = bootWarehouse(browserWindow.warehouseData, outbox, undefined, { store: heldStore, onProblem: onHeldProblem, ...(stamping === undefined ? {} : { stamp: stamping.stamp }) });
   // Batch 20e · R6 (OB-906): the photos taken here go on their OWN queue on this phone (a photo that cannot be kept never
   // touches a scan), stamped with the sign-in like every record; each photo's bytes leave the phone's storage once the store
   // computer holds it, so photos never fill a cheap phone. Handed over one at a time on the same device door.

@@ -188,16 +188,15 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('Received');
     await page.click('#banner-ok');
-    await waitHanded(page, 'receipt');
-    // "delivery complete" names the chosen order, so head office folds the receipt into PO-0002
+    // "delivery complete" names the chosen order, so head office folds the receipt into PO-0002 — D-031: the scan rides inside it
     await page.waitForSelector('#done-receiving:not([hidden])');
     await page.click('#done-receiving');
     await page.waitForSelector('#banner:not([hidden])');
     await page.click('#banner-ok');
     await waitHanded(page, 'receipt_done');
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: Record<string, unknown> });
-    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-po-2-1', productId: 'p-rice' });
-    expect(records[1]?.payload).toMatchObject({ grnId: 'grn-po-2-1', poId: 'po-2' });
+    expect(records).toHaveLength(1);
+    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-po-2-1', poId: 'po-2', scans: [expect.objectContaining({ productId: 'p-rice' })] });
   });
 
   it('receive + delivery complete + put away + a blind count → saved here → with the store computer (durable on the box); reload → all still listed, nothing re-sent', async () => {
@@ -210,20 +209,18 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/warehouse/', undefined, { timeout: 15_000 });
     await ready(page);
 
-    // RECEIVE: the delivery barcode resolves to the ordered product → accepted → queued → handed to the box.
+    // RECEIVE: the delivery barcode resolves to the ordered product → accepted → HELD on the phone (D-031): nothing handed over.
     await page.click('#receive');
     await scan(page, '890RICE');
     await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('Received');
     await page.click('#banner-ok');
-    await waitHanded(page, 'receipt');
-    // The list and the badge follow the relay's render (the state moves before the paint).
-    await page.waitForSelector('#sent-work .sent[data-kind="receipt"][data-state="handed_to_box"]');
-    await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('with the store computer'), undefined, { timeout: 10_000 });
+    await page.waitForSelector('#held-scans .item.held');
+    expect(edge.deviceEventsOutbox.all()).toHaveLength(0);
 
-    // DELIVERY COMPLETE (SP-6b): the button appears only once something was received here; one tap queues ONE completion
-    // behind the scan, naming the pack's order — no quantity is typed or sent. Then the button is gone.
+    // DELIVERY COMPLETE (SP-6b): the button appears only once something was received here; one tap queues ONE receipt with
+    // the held scan inside it, naming the pack's order. Then the button is gone.
     await page.waitForSelector('#done-receiving:not([hidden])');
     await page.click('#done-receiving');
     await page.waitForSelector('#banner:not([hidden])');
@@ -231,6 +228,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.click('#banner-ok');
     await waitHanded(page, 'receipt_done');
     await page.waitForSelector('#sent-work .sent[data-kind="receipt_done"][data-state="handed_to_box"]');
+    await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('with the store computer'), undefined, { timeout: 10_000 });
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).document.querySelector('#done-receiving')?.hidden)).toBe(true);
 
     // PUT AWAY: the good goods-in item into the pickable bin.
@@ -263,31 +261,29 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await waitHanded(page, 'count');
     await page.waitForSelector('#sent-work .sent[data-kind="count"][data-state="handed_to_box"]');
 
-    // The BOX has all four, on its fsync'd log and queued for head office — the scan, the delivery's completion behind it,
-    // the applied command, the blind count.
-    expect(edge.deviceEventsOutbox.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned', 'ReceivingCompleted', 'WarehouseMovementApplied', 'StockCounted']);
+    // The BOX has all three, on its fsync'd log and queued for head office — the receipt (the scan inside it, D-031), the
+    // applied command, the blind count.
+    expect(edge.deviceEventsOutbox.pending().map((i) => i.event.type)).toEqual(['ReceivingCompleted', 'WarehouseMovementApplied', 'StockCounted']);
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: Record<string, unknown> });
-    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-1', productId: 'p-rice', quantityMinor: 1, receivedBy: 'u-worker', storeId: 'store-1' });
-    expect(records[1]?.payload).toMatchObject({ grnId: 'grn-1', poId: 'po-1', completedBy: 'u-worker', storeId: 'store-1', scanCount: 1, source: 'warehouse-handheld' });
-    expect(records[1]?.payload).not.toHaveProperty('quantityMinor');
-    expect(records[2]?.payload).toMatchObject({ movedBy: 'u-worker', command: { kind: 'put_away', productId: 'p-good', toBinId: 'BIN-A', quantityMinor: 6 } });
-    expect(records[3]?.payload).toMatchObject({ productId: 'p-good', binId: 'BIN-A', countedMinor: 5, counterId: 'u-worker', source: 'warehouse-handheld' });
-    expect(records[3]?.payload).not.toHaveProperty('expectedMinor');
-    expect(await sent(page)).toEqual([['count', 'handed_to_box'], ['put_away', 'handed_to_box'], ['receipt_done', 'handed_to_box'], ['receipt', 'handed_to_box']]);
+    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-1', poId: 'po-1', completedBy: 'u-worker', storeId: 'store-1', scanCount: 1, source: 'warehouse-handheld' });
+    expect(records[0]?.payload['scans']).toEqual([expect.objectContaining({ productId: 'p-rice', quantityMinor: 1, receivedBy: 'u-worker' })]);
+    expect(records[1]?.payload).toMatchObject({ movedBy: 'u-worker', command: { kind: 'put_away', productId: 'p-good', toBinId: 'BIN-A', quantityMinor: 6 } });
+    expect(records[2]?.payload).toMatchObject({ productId: 'p-good', binId: 'BIN-A', countedMinor: 5, counterId: 'u-worker', source: 'warehouse-handheld' });
+    expect(records[2]?.payload).not.toHaveProperty('expectedMinor');
+    expect(await sent(page)).toEqual([['count', 'handed_to_box'], ['put_away', 'handed_to_box'], ['receipt_done', 'handed_to_box']]);
 
     // RELOAD: the durable device queue is the authority — all listed, all with the store computer, box unchanged.
     await page.reload({ waitUntil: 'load' });
     await ready(page);
-    await page.waitForSelector('#sent-work .sent[data-kind="receipt"][data-state="handed_to_box"]');
     await page.waitForSelector('#sent-work .sent[data-kind="receipt_done"][data-state="handed_to_box"]');
     await page.waitForSelector('#sent-work .sent[data-kind="put_away"][data-state="handed_to_box"]');
     await page.waitForSelector('#sent-work .sent[data-kind="count"][data-state="handed_to_box"]');
-    await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('4 with the store computer'), undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => ((globalThis as unknown as HandheldWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('3 with the store computer'), undefined, { timeout: 10_000 });
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).warehouseOutbox!.unsentCount())).toBe(0);
     // The completed delivery stays completed across the reload — the durable queue remembers, so the button stays away.
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).document.querySelector('#done-receiving')?.hidden)).toBe(true);
-    expect(edge.deviceEventsOutbox.all()).toHaveLength(4);
-    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(4);
+    expect(edge.deviceEventsOutbox.all()).toHaveLength(3);
+    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(3);
   }, 60_000);
 
   it('the receiving screen takes a probed arrival temperature on its own keypad: a malformed reading is refused and nothing is set; a number rides on the scan to the store computer (Wave 3 · SF-07 part 3)', async () => {
@@ -324,10 +320,14 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('Received');
     await page.click('#banner-ok');
-    await waitHanded(page, 'receipt');
+    // D-031: the reading travels on the scan's line inside the receipt, once it is sent.
+    await page.click('#done-receiving');
+    await page.waitForSelector('#banner:not([hidden])');
+    await page.click('#banner-ok');
+    await waitHanded(page, 'receipt_done');
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { payload: Record<string, unknown> });
     expect(records).toHaveLength(1);
-    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-1', productId: 'p-rice', quantityMinor: 1, temperatureC: -18 });
+    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-1', scans: [expect.objectContaining({ productId: 'p-rice', quantityMinor: 1, temperatureC: -18 })] });
 
     // "No reading" clears it.
     await page.click('#recv-temp');
@@ -378,15 +378,21 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('Received');
     await page.click('#banner-ok');
-    await waitHanded(page, 'receipt');
     // Cancel on the keypad records nothing.
     await page.click('#receive');
     await scan(page, '890RICE');
     await page.waitForSelector('#qty:not([hidden])');
     await page.click('#qty-cancel');
+    // D-031: the 44 wait on the phone as ONE held scan until the receipt is sent; nothing reached the store computer yet.
+    expect(await page.locator('#held-scans .item.held').count()).toBe(1);
+    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(0);
+    await page.click('#done-receiving');
+    await page.waitForSelector('#banner:not([hidden])');
+    await page.click('#banner-ok');
+    await waitHanded(page, 'receipt_done');
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { payload: Record<string, unknown> });
     expect(records).toHaveLength(1);
-    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-po-old-1', productId: 'p-rice', quantityMinor: 44 });
+    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-po-old-1', poId: 'po-old', scans: [expect.objectContaining({ productId: 'p-rice', quantityMinor: 44 })] });
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).warehouseOutbox!.unsentCount())).toBe(0);
   }, 60_000);
 });

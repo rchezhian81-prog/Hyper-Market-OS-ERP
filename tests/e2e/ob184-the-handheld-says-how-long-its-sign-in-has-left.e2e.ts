@@ -51,6 +51,12 @@ describe.skipIf(!HAVE_BROWSER)('OB-184: the handheld says how long its sign-in h
   });
 
   const left = (page: Page): Promise<string | null> => page.textContent('[data-phone-holder] [data-sign-in-left]');
+  /** D-031: the receiving scans held on the phone until the receipt is sent (its own storage, under the store). */
+  const held = (page: Page): Promise<{ commandId: string; stamp?: { userId: string; ref: string } }[]> => page.evaluate(() => {
+    const raw = (globalThis as unknown as { localStorage: { getItem(k: string): string | null } }).localStorage.getItem('sre.warehouse.held-receipts.store-1');
+    const saved = raw === null ? { receipts: {} } : JSON.parse(raw) as { receipts: Record<string, { scans: { commandId: string; stamp?: { userId: string; ref: string } }[] }> };
+    return Object.values(saved.receipts).flatMap((r) => r.scans);
+  });
   const queued = (page: Page): Promise<Queued[]> => page.evaluate(() => JSON.parse((globalThis as unknown as { localStorage: { getItem(k: string): string | null } }).localStorage.getItem('sre.warehouse.outbox.A-1') ?? '[]') as Queued[]);
   const scanIce = async (page: Page): Promise<void> => {
     await page.click('#receive');
@@ -111,8 +117,10 @@ describe.skipIf(!HAVE_BROWSER)('OB-184: the handheld says how long its sign-in h
     await page.clock.fastForward('03:58:00');
     await expect.poll(() => left(page), { timeout: 10_000 }).toBe('Sign-in ends in 0 h 2 min · உள்நுழைவு முடிய 0 மணி 2 நிமிடம்');
     await scanIce(page);
-    await expect.poll(async () => (await queued(page)).length, { timeout: 10_000 }).toBe(1);
-    expect((await queued(page))[0]).toMatchObject({ event: { type: 'ReceivingScanned' }, stamp: { userId: 'u-worker' } });
+    // D-031: the scan is held on the phone until the receipt is sent — stamped with the sign-in like every record.
+    await expect.poll(async () => (await held(page)).length, { timeout: 10_000 }).toBe(1);
+    expect((await held(page))[0]).toMatchObject({ stamp: { userId: 'u-worker' } });
+    expect(await queued(page)).toHaveLength(0);
 
     // ── Past four hours (OB-186): the screen goes to the sign-in page by itself; nothing more can be scanned; the stamped
     //    scan is still kept on the phone. ─────────────────────────────────────────────────────────────────────────────
@@ -121,7 +129,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-184: the handheld says how long its sign-in h
     await page.waitForSelector('input[name="staffId"]');
     expect(await page.$('#receive')).toBeNull();
     expect(await page.$('[data-phone-holder]')).toBeNull();
-    expect(await queued(page)).toHaveLength(1);
-    expect((await queued(page))[0]).toMatchObject({ event: { type: 'ReceivingScanned' }, stamp: { userId: 'u-worker' } });
+    expect(await held(page)).toHaveLength(1);
+    expect((await held(page))[0]).toMatchObject({ stamp: { userId: 'u-worker' } });
   });
 });

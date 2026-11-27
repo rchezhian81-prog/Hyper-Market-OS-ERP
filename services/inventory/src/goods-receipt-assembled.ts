@@ -22,6 +22,13 @@
 //   • the receipt folds into the order in the SAME append as the GRN (SP-6), exactly like any other.
 // Idempotent per grnId: the same completion again is 200 `alreadyReceived`; a scan that arrives AFTER assembly is still
 // recorded and posted by its own route (the goods are in the building) and flagged `after_assembly` for the review.
+//
+// D-031 (pending list 27 Nov 2026, item 3): the handheld now HOLDS its scans until the person sends the receipt, and the
+// completion carries them INSIDE it (`scans`, plus `removed`: the scans taken off before sending, who and when). Head
+// office judges EVERY carried line first — the same `judgeRelayedScan` the scan's own route runs — and refuses the whole
+// receipt if any line is refused, so nothing is half-booked; then posts each line exactly as its own route would (the same
+// `postRelayedScan`, the same movement id `recv:<grnId>:<commandId>`, so a retry or a scan that also came on its own posts
+// once), then assembles as above. A completion with no lines inside (an old phone) is handled exactly as before.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -35,12 +42,19 @@ import {
   type GrnRecord, type ReceiptFlag, type AssembledFromScans,
 } from './goods-receipt';
 import type { SyncedGoodsReceiptDeps } from './goods-receipt-synced';
-import type { ReceivingScanDeps, ReceivingScanRecord } from './warehouse-synced';
+import { judgeRelayedScan, postRelayedScan, unreadableScan, type ReceivingScanDeps, type ReceivingScanRecord, type RelayedScan } from './warehouse-synced';
+import type { RemovedOnPhone } from './goods-receipt';
+import type { RequestContext } from '../../kernel/src/index';
 import { shopClock } from '../../../packages/calendar/src/shop-clock';
 
 export interface AssembledGoodsReceiptDeps extends SyncedGoodsReceiptDeps {
   /** The delivery's scans as head office keeps them (the SP-3a register) — the ONLY source of the assembled lines. */
   readonly scansOf: ReceivingScanDeps['scansOf'];
+  /**
+   * D-031: the receiving-scan route's own deps — the lines a handheld carried INSIDE its receipt are judged and posted with
+   * exactly them. Absent (a bare stub): a receipt carrying lines is refused, nothing posted.
+   */
+  readonly carriedScans?: ReceivingScanDeps;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -164,6 +178,8 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   readonly relayedBody?: unknown;
   /** OB-288 P3 (M07-FR-01): the advance ship notice the handheld received against (cached on it, offline). */
   readonly asnId?: string;
+  /** D-031: scans removed on the handheld before the receipt was sent — kept on the record, never booked. */
+  readonly removedOnPhone?: readonly RemovedOnPhone[];
 }): Promise<AssembleOutcome> {
   const existing = await deps.grn(input.tenantId, input.grnId);
   if (existing !== undefined) return { ok: true, record: existing, alreadyReceived: true };
@@ -261,6 +277,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
       scanCount: scans.length, commandIds: scans.map((s) => s.commandId), scannedBy: [...new Set(scans.map((s) => s.receivedBy))],
       completedBy: input.completedBy, completedAt: input.completedAt, onHandByLine,
       onHandMovementIds: assembled.flatMap((a) => a.onHandMovementIds), disagreements,
+      ...(input.removedOnPhone === undefined || input.removedOnPhone.length === 0 ? {} : { removedOnPhone: input.removedOnPhone }),
     },
   };
   // NO movements: the scans posted the stock (hard rule #2). The GRN and its posting against the order are one append.
@@ -296,6 +313,56 @@ function readRelayedCompletion(body: unknown, grnId: string): RelayedCompletion 
   };
 }
 
+/** D-031: the lines a handheld carried inside its receipt, read strictly — undefined when they cannot be read. */
+interface CarriedLines { readonly scans: readonly { readonly commandId: string; readonly body: Record<string, unknown> }[]; readonly removed: readonly RemovedOnPhone[] }
+function readCarriedLines(body: unknown, c: RelayedCompletion): CarriedLines | undefined {
+  if (!isObj(body)) return undefined;
+  const rawScans = body['scans'];
+  const rawRemoved = body['removed'];
+  if (!(rawScans === undefined || Array.isArray(rawScans)) || !(rawRemoved === undefined || Array.isArray(rawRemoved))) return undefined;
+  const scans: { commandId: string; body: Record<string, unknown> }[] = [];
+  const seen = new Set<string>();
+  for (const line of (rawScans ?? []) as unknown[]) {
+    if (!isObj(line) || !isStr(line['commandId']) || seen.has(line['commandId'])) return undefined;
+    seen.add(line['commandId']);
+    // The delivery and the store are the receipt's own: a line never names another.
+    if (line['grnId'] !== undefined && line['grnId'] !== c.grnId) return undefined;
+    if (line['storeId'] !== undefined && line['storeId'] !== c.storeId) return undefined;
+    scans.push({ commandId: line['commandId'], body: { ...line, grnId: c.grnId, storeId: c.storeId } });
+  }
+  const removed: RemovedOnPhone[] = [];
+  for (const r of (rawRemoved ?? []) as unknown[]) {
+    if (!isObj(r) || !isStr(r['commandId']) || !isStr(r['productId']) || typeof r['quantityMinor'] !== 'number' || !isStr(r['removedBy']) || !isIso(r['removedAt'])) return undefined;
+    removed.push({
+      commandId: r['commandId'], productId: r['productId'], batchId: isStr(r['batchId']) ? r['batchId'] : null, quantityMinor: r['quantityMinor'],
+      state: isStr(r['state']) ? r['state'] : 'on_hand', receivedBy: isStr(r['receivedBy']) ? r['receivedBy'] : '', at: isIso(r['at']) ? r['at'] : r['removedAt'],
+      removedBy: r['removedBy'], removedAt: r['removedAt'],
+    });
+  }
+  return { scans, removed };
+}
+
+/**
+ * D-031: book the lines a handheld carried inside its receipt — ALL judged before ANY is posted (a refused line refuses the
+ * whole receipt, nothing posted), then each posted exactly as its own route would, keyed on its own command id.
+ */
+async function bookCarriedLines(deps: AssembledGoodsReceiptDeps, ctx: RequestContext, lines: CarriedLines): Promise<void> {
+  if (lines.scans.length === 0) return;
+  const scanDeps = deps.carriedScans;
+  if (scanDeps === undefined) {
+    throw apiError(422, {
+      code: 'receipt_lines_not_taken',
+      whatHappened: 'This receipt carries its scans inside it, and this head office cannot book scans carried that way.',
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — the goods are in the building. Nothing was posted.',
+    });
+  }
+  const judged: { commandId: string; scan: RelayedScan; alreadyRecorded: boolean }[] = [];
+  for (const line of lines.scans) judged.push({ commandId: line.commandId, ...(await judgeRelayedScan(scanDeps, ctx, line.commandId, line.body)) });
+  const now = scanDeps.now();
+  for (const j of judged) if (!j.alreadyRecorded) await postRelayedScan(scanDeps, ctx, j.commandId, j.scan, now);
+}
+
 const refusal = (out: Extract<AssembleOutcome, { ok: false }>, relayed: boolean) => apiError(422, {
   code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved',
   nextSafeAction: out.refusedBecause === 'no_scans_for_receipt'
@@ -325,11 +392,26 @@ export function assembledGoodsReceiptRoutes(deps: AssembledGoodsReceiptDeps): re
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — the scans behind it are already at head office.',
           });
         }
+        // D-031: the lines a handheld held until "send" travel inside the receipt — judged together, then booked, then assembled.
+        const lines = readCarriedLines(ctx.body, c);
+        if (lines === undefined) throw unreadableScan();
+        await bookCarriedLines(deps, ctx, lines);
         const out = await assembleReceipt(deps, {
           tenantId: ctx.tenantId, grnId, poId: c.poId, completedBy: c.completedBy, completedAt: c.at, relayedBy: ctx.userId, storeId: c.storeId,
           source: c.source, via: 'relayed', branchId: ctx.branchId ?? null, idempotencyKey: ctx.idempotencyKey ?? grnId, relayedBody: ctx.body,
           ...(c.asnId === undefined ? {} : { asnId: c.asnId }),
+          ...(lines.removed.length === 0 ? {} : { removedOnPhone: lines.removed }),
         });
+        // D-031: each scan taken off the receipt on the phone is kept on head office's audit trail too — who, when, what.
+        for (const r of lines.removed) {
+          await deps.recordAudit?.(ctx.tenantId, {
+            actorId: r.removedBy, action: 'receipt.scan.removed_on_phone', objectType: 'goods_receipt', objectId: grnId,
+            at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+            before: { commandId: r.commandId, productId: r.productId, quantityMinor: String(r.quantityMinor), state: r.state, scannedBy: r.receivedBy, scannedAt: r.at, removedAt: r.removedAt },
+            after: null,
+            correlationId: grnId,
+          });
+        }
         if (!out.ok) throw refusal(out, true);
         // 202, not 201: the delivery was completed at the store and this records that it happened.
         return { status: out.alreadyReceived ? 200 : 202, body: body(out.record, out.alreadyReceived) };

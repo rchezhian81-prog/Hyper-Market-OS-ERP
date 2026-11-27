@@ -40,7 +40,10 @@ describe('the handheld: the pack\'s MRP and a failed quality check (M07-FR-02/03
     const s = handheld(outbox);
     expect(s.receive({ commandId: 'c-1', grnId: 'g-1', barcode: '890OIL', scannedQuantity: 9, source: 'po', mrpMinor: 22_000 }).result.accepted).toBe(true);
     expect(s.receive({ commandId: 'c-2', grnId: 'g-1', barcode: '890OIL', scannedQuantity: 3, source: 'po', qcFailed: true }).result.accepted).toBe(true);
-    const payloads = outbox.all().map((i) => i.event.payload as Record<string, unknown>);
+    // D-031: both are held on the phone and travel as lines inside the one receipt.
+    expect(outbox.all()).toEqual([]);
+    expect(s.completeReceiving({ grnId: 'g-1' }).accepted).toBe(true);
+    const payloads = (outbox.all()[0]!.event.payload as { scans: Record<string, unknown>[] }).scans;
     expect(payloads[0]).toMatchObject({ productId: 'p-oil', quantityMinor: 9, state: 'on_hand', mrpMinor: 22_000 });
     expect(payloads[0]).not.toHaveProperty('qcFailed');
     expect(payloads[1]).toMatchObject({ productId: 'p-oil', quantityMinor: 3, state: 'quarantine', qcFailed: true });

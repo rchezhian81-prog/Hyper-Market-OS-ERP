@@ -76,6 +76,9 @@
         display: flex; align-items: center; gap: var(--space-2); font-size: 14px; font-weight: 700; color: var(--muted);
         text-transform: uppercase; letter-spacing: var(--tracking-caps); margin: var(--space-4) 2px var(--space-2);
       }
+      /* D-031: a heading the script hides stays hidden — `display: flex` above would otherwise outrank [hidden] and show an
+         empty list's heading with a 0 beside it ("To pick 0", "Waiting to send 0"). */
+      h2.section[hidden] { display: none; }
       h2.section[data-count]::after {
         content: attr(data-count); margin-left: auto; min-width: 28px; padding: 2px 10px; border-radius: var(--radius-pill);
         background: var(--panel); border: 1px solid var(--line); color: var(--ink); font-size: 15px; letter-spacing: 0;
@@ -101,6 +104,10 @@
       .item.transfer { border-left-color: var(--accent); }
       .item.transfer[disabled] { border-left-color: var(--ok, var(--line-strong)); cursor: default; }
       .item .flag.done { background: var(--mint); color: var(--ink); }
+      /* D-031: a held scan — waiting on this phone; its "Remove" sits under it, full width, easy to hit with a thumb. */
+      .item.held { border-left-color: var(--warn, var(--line-strong)); }
+      .item.held .when { font-size: 14px; color: var(--muted); }
+      .item.held .remove { grid-column: 1 / span 2; min-height: 56px; margin-top: var(--space-2); justify-content: center; }
       .item .where { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1.2; }
       .item .what { font-size: 19px; font-weight: 700; line-height: 1.3; }
       .item .where + .what { font-size: 16px; font-weight: 600; color: var(--ink-2); }
@@ -315,6 +322,11 @@
       <p class="stale" id="deliveries-choose" hidden></p>
       <div id="deliveries"></div>
       <p class="stale" id="deliveries-asof" hidden></p>
+      <!-- D-031: the scans held on this phone until "Delivery complete — send the receipt" — not stock yet; a wrong one is removed here. -->
+      <h2 class="section" id="held-heading" hidden>—</h2>
+      <p class="hint" id="held-hint" hidden></p>
+      <div id="held-scans"></div>
+      <p class="hint" id="held-removed" hidden></p>
       <!-- R3 D-11 (OB-141): a direct delivery at the back door — check it in against its order or route; no cash at the door. -->
       <button id="dsd-open" class="item" type="button">Direct delivery at the door (no cash)</button>
       <h2 class="section" id="goods-in-heading">—</h2>

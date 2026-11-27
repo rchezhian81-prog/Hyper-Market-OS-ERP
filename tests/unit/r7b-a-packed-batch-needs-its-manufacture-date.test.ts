@@ -88,7 +88,8 @@ describe('offline: the handheld\'s scan engine and the manager\'s screen refuse 
     expect(FEEDBACK_CODES).toContain('manufacture_date_required');
     const ok = s.receive({ commandId: 'c-2', grnId: 'g-1', barcode: '890DET', scannedQuantity: 1, source: 'po', manufacturedOn: '2026-09' });
     expect(ok.result.accepted).toBe(true);
-    expect(outbox.all()[0]!.event.payload).toMatchObject({ productId: 'p-det', manufacturedOn: '2026-09' });
+    expect(s.completeReceiving({ grnId: 'g-1' }).accepted).toBe(true); // D-031: the scan travels inside the receipt
+    expect((outbox.all()[0]!.event.payload as { scans: unknown[] }).scans[0]).toMatchObject({ productId: 'p-det', manufacturedOn: '2026-09' });
   });
 
   it('the manager\'s Receive form refuses a packed line with no month (nothing saved, no stock moved); with it the line carries it', () => {
