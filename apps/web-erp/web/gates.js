@@ -32,6 +32,7 @@ let register = null;
 let evidence = null; // OB-423: the last read of the release script's QG-10 notes (an Outcome)
 let outside = null; // W3: the last read of the outside evidence (an Outcome)
 let qg01 = null; // W7: the last read of the CI's QG-01 requirement-records reading (an Outcome)
+let qg11 = null; // Pending item 8: the last read of head office's AI control, for the QG-11 reading (an Outcome)
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['show', 'search'], ['record', 'badge-check']]) { const i = icon(name); if (i !== null) $(id).prepend(i, ' '); }
@@ -82,6 +83,7 @@ function gateRow(g) {
   }
   if (g.gate === 'QG-10') li.append(qg10Notes());
   if (g.gate === 'QG-01') li.append(qg01Reading());
+  if (g.gate === 'QG-11') li.append(qg11Reading());
   return li;
 }
 
@@ -132,6 +134,36 @@ function qg01Reading() {
   head.className = `tone-${v.tone}`;
   head.append(chipOfMark(v.icon), ' ', text('span', v.headline, 'words'));
   box.append(head, ...v.lines.map((l) => text('div', l, 'facts')));
+  return box;
+}
+
+// Pending item 8 · QG-11: the AI gate's reading — each agent in the evaluation set with its latest run, the kill switch and the
+// budgets — an icon AND words. No live model, an agent not complete-and-passing, or a reading that could not be read holds the
+// gate; all complete and passing is evidence for the owner's decision, never "passed".
+function qg11Reading() {
+  const box = document.createElement('div');
+  box.className = 'qg11';
+  box.id = 'qg11-reading';
+  box.append(text('h4', t('qg11H')), text('p', t('qg11Lead'), 'facts'));
+  const v = api.qg11View(lang, qg11);
+  box.dataset.qg11 = v.state;
+  const head = document.createElement('p');
+  head.className = `tone-${v.tone}`;
+  head.append(chipOfMark(v.icon), ' ', text('span', v.headline, 'words'));
+  box.append(head);
+  if (v.agents.length > 0) {
+    const ul = document.createElement('ul');
+    ul.className = 'qg11-agents';
+    for (const a of v.agents) {
+      const li = document.createElement('li');
+      li.dataset.agent = a.agentId;
+      li.dataset.state = a.state;
+      li.append(chipOfMark(a.icon), ' ', text('span', a.words, 'words'));
+      ul.append(li);
+    }
+    box.append(ul);
+  }
+  box.append(...v.lines.map((l) => text('div', l, 'facts')));
   return box;
 }
 
@@ -203,6 +235,7 @@ async function show() {
     evidence = await session.readEvidence(); // OB-423: the QG-10 notes, read with the register (never on a timer)
     outside = await session.readOutside(); // W3: the outside evidence, read with the register
     qg01 = await session.readQg01(); // W7: the CI's QG-01 reading, read with the register
+    qg11 = await session.readQg11(); // Pending item 8: the AI gate's reading, read with the register (never on a timer)
   } else { say('page-status', out); }
   paint();
 }

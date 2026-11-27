@@ -298,7 +298,8 @@ parallel run after it — the shop keeps trading on the old ERP. Anything that c
 and every parallel-run day shows differences nobody can explain.
 
 **What the software already does:** `POST /v1/migration/deltas` applies stock and sale changes exactly once, refuses
-a change dated before the extract cut-off (it is already in the load), and records each one. It does **not** apply
+a change dated before the extract cut-off (it is already in the load), and records each one. A person sends it from
+the Old system checks page ("Load the changes made after the final extract", step 4 below). It does **not** apply
 product, barcode or price changes — those are refused by name, never counted as applied.
 
 **The procedure, until the old ERP's export facts below are known:**
@@ -312,8 +313,13 @@ product, barcode or price changes — those are refused by name, never counted a
 3. **During the parallel run,** every item, barcode and price change in the department is keyed into both systems the
    same day by the same named person, and initialled on the change sheet. The daily reconciliation (the migration
    screen, "Running both") shows any day the two disagree.
-4. **Stock** arrives in the new system by goods receipt on the set-up day; stock and sales changes after the cut-off go
-   through `POST /v1/migration/deltas` — once each, never twice.
+4. **Stock** arrives in the new system by goods receipt on the set-up day. Stock and sales changes made after the
+   cut-off go in from the screen, not by hand: open **Old system checks**, go to the step **"Load the changes made
+   after the final extract"**, type the day and time the final extract was taken, choose the changes file, press
+   **Read the file** and look at the list it shows (nothing is sent yet), then press **Load the changes** and confirm.
+   Each change is then shown as applied, already applied, or refused with the reason. Loading the same file again
+   changes nothing; a change dated before the extract is refused because it is already in the load. (Behind the
+   screen this is `POST /v1/migration/deltas` — once each, never twice.)
 
 **What we need to know from the old ERP before delta capture can be automated** (owner, with whoever supports the old
 ERP — each answer goes in the workbook):

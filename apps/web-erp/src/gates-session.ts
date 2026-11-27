@@ -66,6 +66,33 @@ export const GATES_COPY = {
     qg01NotPassed: 'This is evidence for the owner\'s QG-01 decision, not the decision — the gate is not passed until he records it with his signed review.',
     qg01Holds: 'QG-01 holds until a complete reading finds nothing missing.', qg01Unread: 'The requirement-records reading could not be read — this is not the same as "none".',
     qg01LatestK: 'Latest reading', qg01RunK: 'run', qg01CommitK: 'commit',
+    // Pending item 8 · QG-11: the AI evaluations reading, built on head office's AI control read (GET /v1/ai/control).
+    qg11H: 'The AI checks: evaluations, kill switch and budgets',
+    qg11Lead: 'Each assistant in the evaluation set is tested against fixed cases for accuracy and safety. A run counts only when every case reached a model.',
+    qg11NoLiveModel: 'HOLD — no live model is connected (OB-296; live provider EX-12), so no agent\'s evaluation can be complete.',
+    qg11HoldsN: 'HOLD — {n} of {m} agents have no complete, passing evaluation.',
+    qg11Holds: 'HOLD',
+    qg11Empty: 'HOLD — no agent has evaluation cases on record, so nothing has been evaluated.',
+    qg11Clean: 'Every agent\'s latest evaluation is complete and passing, with no unsafe case.',
+    qg11NotPassed: 'This is evidence for the owner\'s QG-11 decision, not the decision — the gate is not passed until he records it with his signed review.',
+    qg11HoldsUntil: 'QG-11 holds until every agent in the evaluation set has a complete, passing evaluation against a live model (R8, OB-382).',
+    qg11Unread: 'The AI evaluations reading could not be read — this is not the same as "none".',
+    qg11NotRun: 'no evaluation has been run yet',
+    qg11NotComplete: 'NOT COMPLETE: it did not reach a model, so it proves nothing',
+    qg11Unsafe: 'UNSAFE: {u} unsafe case; {p} of {t} passed',
+    qg11Failed: 'failed: {p} of {t} passed',
+    qg11Passed: 'complete and passing: {p} of {t}',
+    qg11RunK: 'run',
+    qg11KillOff: 'Kill switch: off — no assistant is stopped by it.',
+    qg11KillMaster: 'Kill switch: the shop-wide AI switch is ON — every assistant is stopped.',
+    qg11KillScoped: 'Kill switch: {n} switch is stopping an assistant ({who}).',
+    qg11CapNone: 'Shop AI budget: not set — no call that costs anything can be made.',
+    qg11Cap: 'Shop AI budget: {cap} a month, {spent} spent (platform ceiling {ceiling}).',
+    qg11OwnNone: 'Agents with a budget of their own: none — only the shop budget applies.',
+    qg11Own: 'Agents with a budget of their own: {who}.',
+    qg11ProviderNone: 'Model: none connected — the assistants work on tested rules only.',
+    qg11Provider: 'Model: a model provider is connected behind the governed call.',
+    cannotReadAi: 'Your role cannot read the AI records, so the AI gate\'s reading cannot be shown.',
     c_health: 'health', c_smoke: 'smoke', c_reconciliation: 'reconciliation', c_monitoring: 'monitoring', c_rollback: 'rollback',
     o_deployed: 'deployed', o_rolled_back: 'rolled back', o_rolled_back_on_reconcile: 'rolled back — the books did not reconcile',
     o_rolled_back_in_canary_bake: 'rolled back — failed its canary watch', o_rollback_failed: 'rollback failed — a person was needed',
@@ -116,6 +143,32 @@ export const GATES_COPY = {
     qg01NotPassed: 'இது உரிமையாளரின் QG-01 முடிவுக்கான சான்று, முடிவு அல்ல — அவர் கையொப்பமிட்ட மதிப்பாய்வுடன் பதிவு செய்யும் வரை வாயில் கடக்கவில்லை.',
     qg01Holds: 'முழுமையான வாசிப்பு எதுவும் விடுபடவில்லை என்று காணும் வரை QG-01 நிறுத்தி வைக்கப்படுகிறது.', qg01Unread: 'தேவைப் பதிவுகளின் வாசிப்பைப் படிக்க முடியவில்லை — இது "எதுவும் இல்லை" என்பதற்குச் சமம் அல்ல.',
     qg01LatestK: 'கடைசி வாசிப்பு', qg01RunK: 'ஓட்டம்', qg01CommitK: 'பதிப்பு',
+    qg11H: 'செயற்கை நுண்ணறிவுச் சோதனைகள்: மதிப்பீடுகள், நிறுத்து சுவிட்ச், செலவு வரம்புகள்',
+    qg11Lead: 'மதிப்பீட்டுத் தொகுப்பில் உள்ள ஒவ்வொரு உதவியாளரும் நிலையான சோதனைகளுக்கு எதிராகத் துல்லியம் மற்றும் பாதுகாப்புக்காகச் சோதிக்கப்படுகிறார். ஒவ்வொரு சோதனையும் ஒரு மாதிரியை அடைந்தால் மட்டுமே ஓட்டம் கணக்கில் கொள்ளப்படும்.',
+    qg11NoLiveModel: 'நிறுத்தம் — நேரடி மாதிரி எதுவும் இணைக்கப்படவில்லை (OB-296; நேரடி வழங்குநர் EX-12), எனவே எந்த உதவியாளரின் மதிப்பீடும் முழுமையாக முடியாது.',
+    qg11HoldsN: 'நிறுத்தம் — {m} உதவியாளர்களில் {n} பேருக்கு முழுமையான, தேறிய மதிப்பீடு இல்லை.',
+    qg11Holds: 'நிறுத்தம்',
+    qg11Empty: 'நிறுத்தம் — எந்த உதவியாளருக்கும் மதிப்பீட்டுச் சோதனைகள் பதிவில் இல்லை, எனவே எதுவும் மதிப்பிடப்படவில்லை.',
+    qg11Clean: 'ஒவ்வொரு உதவியாளரின் கடைசி மதிப்பீடும் முழுமையானது, தேறியது, பாதுகாப்பற்ற சோதனை எதுவும் இல்லை.',
+    qg11NotPassed: 'இது உரிமையாளரின் QG-11 முடிவுக்கான சான்று, முடிவு அல்ல — அவர் கையொப்பமிட்ட மதிப்பாய்வுடன் பதிவு செய்யும் வரை வாயில் கடக்கவில்லை.',
+    qg11HoldsUntil: 'மதிப்பீட்டுத் தொகுப்பின் ஒவ்வொரு உதவியாளருக்கும் நேரடி மாதிரிக்கு எதிராக முழுமையான, தேறிய மதிப்பீடு வரும் வரை QG-11 நிறுத்தி வைக்கப்படுகிறது (R8, OB-382).',
+    qg11Unread: 'செயற்கை நுண்ணறிவு மதிப்பீட்டு வாசிப்பைப் படிக்க முடியவில்லை — இது "எதுவும் இல்லை" என்பதற்குச் சமம் அல்ல.',
+    qg11NotRun: 'இன்னும் எந்த மதிப்பீடும் செய்யப்படவில்லை',
+    qg11NotComplete: 'முழுமையில்லை: அது எந்த மாதிரியையும் அடையவில்லை, எனவே எதையும் நிரூபிக்கவில்லை',
+    qg11Unsafe: 'பாதுகாப்பற்றது: {u} பாதுகாப்பற்ற சோதனை; {t} இல் {p} தேறியது',
+    qg11Failed: 'தோற்றது: {t} இல் {p} தேறியது',
+    qg11Passed: 'முழுமையானது, தேறியது: {t} இல் {p}',
+    qg11RunK: 'ஓட்டம்',
+    qg11KillOff: 'நிறுத்து சுவிட்ச்: அணைந்துள்ளது — அதனால் எந்த உதவியாளரும் நிறுத்தப்படவில்லை.',
+    qg11KillMaster: 'நிறுத்து சுவிட்ச்: கடை முழுவதற்குமான சுவிட்ச் இயங்குகிறது — ஒவ்வொரு உதவியாளரும் நிறுத்தப்பட்டுள்ளார்.',
+    qg11KillScoped: 'நிறுத்து சுவிட்ச்: {n} சுவிட்ச் ஒரு உதவியாளரை நிறுத்தியுள்ளது ({who}).',
+    qg11CapNone: 'கடையின் செயற்கை நுண்ணறிவுச் செலவு வரம்பு: அமைக்கப்படவில்லை — செலவு ஆகும் எந்த அழைப்பும் செய்ய முடியாது.',
+    qg11Cap: 'கடையின் செயற்கை நுண்ணறிவுச் செலவு வரம்பு: மாதம் {cap}, செலவானது {spent} (தள உச்சவரம்பு {ceiling}).',
+    qg11OwnNone: 'தனக்கென செலவு வரம்பு உள்ள உதவியாளர்கள்: யாரும் இல்லை — கடையின் வரம்பு மட்டுமே பொருந்தும்.',
+    qg11Own: 'தனக்கென செலவு வரம்பு உள்ள உதவியாளர்கள்: {who}.',
+    qg11ProviderNone: 'மாதிரி: எதுவும் இணைக்கப்படவில்லை — உதவியாளர்கள் சோதிக்கப்பட்ட விதிகளில் மட்டுமே வேலை செய்கிறார்கள்.',
+    qg11Provider: 'மாதிரி: கட்டுப்படுத்தப்பட்ட அழைப்பின் பின்னால் ஒரு மாதிரி வழங்குநர் இணைக்கப்பட்டுள்ளார்.',
+    cannotReadAi: 'உங்கள் பங்கு செயற்கை நுண்ணறிவுப் பதிவுகளைப் படிக்க முடியாது, எனவே அந்த வாயிலின் வாசிப்பைக் காட்ட முடியாது.',
     c_health: 'நலம்', c_smoke: 'புகைச் சோதனை', c_reconciliation: 'கணக்குச் சரிபார்ப்பு', c_monitoring: 'கண்காணிப்பு', c_rollback: 'பின்வாங்கல்',
     o_deployed: 'நிறுவப்பட்டது', o_rolled_back: 'பின்வாங்கப்பட்டது', o_rolled_back_on_reconcile: 'பின்வாங்கப்பட்டது — கணக்குகள் பொருந்தவில்லை',
     o_rolled_back_in_canary_bake: 'பின்வாங்கப்பட்டது — முன்னோட்டக் கண்காணிப்பில் தோற்றது', o_rollback_failed: 'பின்வாங்கல் தோற்றது — ஒருவர் தேவைப்பட்டார்',
@@ -214,6 +267,80 @@ export function qg01ReadingView(lang: Lang, out: Outcome<Qg01ReadingRead> | null
   return { icon: '⚠', tone: 'error', state: r.standing, headline: r.latest === null ? w('qg01None') : w('qg01NotComplete'), lines: [...when, ...(r.latest?.incompleteBecause ?? []), w('qg01Holds')] };
 }
 
+/**
+ * Pending item 8 · QG-11: the part of head office's AI control read (GET /v1/ai/control, `ai.proposal.read`) the AI gate's
+ * reading needs — each agent's latest evaluation run, the kill switch, the budgets and whether a model is connected.
+ */
+export interface Qg11ControlRead {
+  readonly agents: readonly {
+    readonly agentId: string; readonly name: string; readonly enabled: boolean; readonly stopped: boolean; readonly stoppedBecause: string | null;
+    readonly ceilingMinor: number | null; readonly evaluationCases: number;
+    readonly lastEvaluation: {
+      readonly runId: string; readonly at: string; readonly passed: number; readonly total: number; readonly unsafe: number;
+      readonly complete: boolean; readonly fitToFacePeople: boolean; readonly detail: string;
+    } | null;
+  }[];
+  readonly killSwitch: { readonly masterOn: boolean; readonly active: readonly { readonly switchId: string; readonly scope: string; readonly agentId?: string }[] };
+  readonly budget: { readonly capMinor: number; readonly spentMinor: number; readonly platformCeilingMinor: number };
+  readonly provider: { readonly configured: boolean };
+}
+export type Qg11AgentState = 'not_run' | 'not_complete' | 'unsafe' | 'failed' | 'passed';
+export interface Qg11ReadingViewShape {
+  readonly icon: string; readonly tone: 'ok' | 'error'; readonly state: 'unread' | 'no_live_model' | 'holds' | 'evaluations_clean';
+  readonly headline: string;
+  readonly agents: readonly { readonly agentId: string; readonly icon: string; readonly state: Qg11AgentState; readonly words: string }[];
+  readonly lines: readonly string[];
+}
+
+const fill = (template: string, values: Readonly<Record<string, string | number>>): string => template.replace(/\{(\w+)\}/g, (m, k: string) => (k in values ? String(values[k]) : m));
+const rupeesOf = (paise: number): string => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** One agent's latest run, judged: a run counts only when every case reached a model (complete); unsafe outranks failed. */
+function qg11AgentState(e: Qg11ControlRead['agents'][number]['lastEvaluation']): Qg11AgentState {
+  if (e === null) return 'not_run';
+  if (!e.complete) return 'not_complete';
+  if (e.unsafe > 0) return 'unsafe';
+  return e.fitToFacePeople && e.passed === e.total ? 'passed' : 'failed';
+}
+
+/**
+ * Pending item 8 · QG-11: the AI gate's reading as the QG-11 row shows it — an icon AND words. Each agent the evaluation set has
+ * cases for, with its latest run; the kill switch and the budgets in words. With no live model connected nothing can be complete,
+ * so the gate HOLDS (OB-296; EX-12; R8 OB-382). With one connected, any agent not complete-and-passing holds it by name; all
+ * complete and passing is evidence for the owner's decision — never "passed". No agent in the set, or a reading that could not
+ * be read, holds too: silence is never a pass.
+ */
+export function qg11ReadingView(lang: Lang, out: Outcome<Qg11ControlRead> | null): Qg11ReadingViewShape {
+  const w = (k: string) => gatesWords(lang, k);
+  if (out === null || out.result !== 'ok') {
+    return { icon: '⚠', tone: 'error', state: 'unread', headline: out === null ? w('qg11Unread') : `${w('qg11Unread')} ${gatesOutcomeWords(lang, out)}`, agents: [], lines: [w('qg11HoldsUntil')] };
+  }
+  const r = out.value;
+  const inSet = r.agents.filter((a) => a.evaluationCases > 0);
+  const agents = inSet.map((a) => {
+    const e = a.lastEvaluation;
+    const state = qg11AgentState(e);
+    const icon = state === 'passed' ? '✓' : state === 'not_run' ? '○' : '⚠';
+    const what = state === 'not_run' ? w('qg11NotRun') : state === 'not_complete' ? w('qg11NotComplete')
+      : fill(w(state === 'unsafe' ? 'qg11Unsafe' : state === 'failed' ? 'qg11Failed' : 'qg11Passed'), { u: e!.unsafe, p: e!.passed, t: e!.total });
+    const when = e === null ? '' : ` · ${w('qg11RunK')} ${e.runId} · ${shopDateTimeOf(e.at) || e.at}`;
+    return { agentId: a.agentId, icon, state, words: `${a.agentId} · ${a.name} — ${what}${when}` };
+  });
+  const scoped = r.killSwitch.active.filter((s) => s.scope !== 'all_ai');
+  const kill = r.killSwitch.masterOn ? w('qg11KillMaster')
+    : scoped.length === 0 ? w('qg11KillOff')
+      : fill(w('qg11KillScoped'), { n: scoped.length, who: scoped.map((s) => s.agentId ?? s.scope).join(', ') });
+  const cap = r.budget.capMinor === 0 ? w('qg11CapNone')
+    : fill(w('qg11Cap'), { cap: rupeesOf(r.budget.capMinor), spent: rupeesOf(r.budget.spentMinor), ceiling: rupeesOf(r.budget.platformCeilingMinor) });
+  const own = r.agents.filter((a) => a.ceilingMinor !== null).map((a) => a.agentId);
+  const controls = [r.provider.configured ? w('qg11Provider') : w('qg11ProviderNone'), kill, cap, own.length === 0 ? w('qg11OwnNone') : fill(w('qg11Own'), { who: own.join(', ') })];
+  const short = agents.filter((a) => a.state !== 'passed').length;
+  if (!r.provider.configured) return { icon: '⚠', tone: 'error', state: 'no_live_model', headline: w('qg11NoLiveModel'), agents, lines: [...controls, w('qg11HoldsUntil')] };
+  if (agents.length === 0) return { icon: '⚠', tone: 'error', state: 'holds', headline: w('qg11Empty'), agents, lines: [...controls, w('qg11HoldsUntil')] };
+  if (short > 0) return { icon: '⚠', tone: 'error', state: 'holds', headline: fill(w('qg11HoldsN'), { n: short, m: agents.length }), agents, lines: [...controls, w('qg11HoldsUntil')] };
+  return { icon: '✓', tone: 'ok', state: 'evaluations_clean', headline: w('qg11Clean'), agents, lines: [...controls, w('qg11NotPassed')] };
+}
+
 /** W3: the outside evidence kinds, in the register's order (packages/compliance GATE_EVIDENCE_SPECS). */
 export const OUTSIDE_KINDS = Object.freeze(['offline_72h_simulation', 'power_process_chaos', 'scan_to_line_p95', 'total_tender_p95', 'independent_pentest'] as const);
 export type OutsideKind = (typeof OUTSIDE_KINDS)[number];
@@ -246,6 +373,8 @@ export interface GatesSession {
   readEvidence(): Promise<Outcome<Qg10EvidenceRead>>;
   /** W7 · QG-01: the CI's reading of the requirement records (a GET — the register's read right). */
   readQg01(): Promise<Outcome<Qg01ReadingRead>>;
+  /** Pending item 8 · QG-11: head office's AI control read (a GET — needs the register's read right AND the AI records' read right). */
+  readQg11(): Promise<Outcome<Qg11ControlRead>>;
   decide(input: {
     readonly gate: string; readonly release: string; readonly decision: string;
     readonly evidenceLabel: string; readonly evidenceRef: string; readonly rationale: string;
@@ -282,6 +411,12 @@ export function createGatesSession(input: { readonly viewer: ViewerIdentity | un
       if (!named) return { result: 'invalid', why: 'nobody' };
       if (!may.read) return { result: 'invalid', why: 'cannotRead' };
       return call('GET', '/v1/compliance/gate-register/qg01-reading');
+    },
+    readQg11: async () => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      if (!may.read) return { result: 'invalid', why: 'cannotRead' };
+      if (!perms.has('ai.proposal.read')) return { result: 'invalid', why: 'cannotReadAi' };
+      return call('GET', '/v1/ai/control');
     },
     decide: async (d) => {
       if (!named) return { result: 'invalid', why: 'nobody' };
