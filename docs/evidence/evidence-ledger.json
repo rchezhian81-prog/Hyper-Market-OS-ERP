@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2583,
+  "testFiles": 2586,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -3624,8 +3624,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 12,
-        "integration": 13,
-        "realDb": 8,
+        "integration": 14,
+        "realDb": 9,
         "browser": 9,
         "connected": 5,
         "device": 0,
@@ -3656,6 +3656,7 @@
           "tests/integration/goods-receipt.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
+          "tests/integration/pending09-a-credit-or-debit-note-e-invoice-is-refused-on-supplier-bills.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/purchase-price-variance-per-product-and-receipt.test.ts",
           "tests/integration/rebates.test.ts",
@@ -3668,6 +3669,7 @@
           "tests/integration/a-typed-scan-is-linked-to-its-invoice.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
+          "tests/integration/pending09-a-credit-or-debit-note-e-invoice-is-refused-on-supplier-bills.test.ts",
           "tests/integration/rebates.test.ts",
           "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts"
         ],
@@ -5127,8 +5129,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 4,
-        "integration": 12,
-        "realDb": 6,
+        "integration": 13,
+        "realDb": 7,
         "browser": 5,
         "connected": 4,
         "device": 0,
@@ -5148,6 +5150,7 @@
           "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
+          "tests/integration/pending09-a-credit-or-debit-note-e-invoice-is-refused-on-supplier-bills.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/purchase-to-payment.test.ts",
@@ -5160,6 +5163,7 @@
           "tests/integration/ob866-a-supplier-bills-round-off-waits-for-the-accountants-account.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/pending06-an-e-invoices-own-round-off-is-read.test.ts",
+          "tests/integration/pending09-a-credit-or-debit-note-e-invoice-is-refused-on-supplier-bills.test.ts",
           "tests/integration/purchase-to-payment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts"
         ],

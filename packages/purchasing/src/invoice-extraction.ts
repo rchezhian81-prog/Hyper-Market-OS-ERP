@@ -52,6 +52,12 @@ export interface ExtractedInvoice {
    * the figure is unreadable (said in `warnings`), and on a credit or debit note (no rule for one yet — said).
    */
   readonly roundOffMinor?: number;
+  /**
+   * OB-937 A (27 Nov 2026): what kind of document this is, when it says it is NOT a tax invoice — the e-invoice's
+   * `DocDtls.Typ` (upper case): `CRN` a supplier's credit note, `DBN` a supplier's debit note. Absent on a bill (`INV`, or no
+   * type given). Head office refuses a CRN or DBN on Supplier bills — it is never read into a bill.
+   */
+  readonly documentType?: string;
   readonly confidence: number;
   readonly warnings: readonly string[];
 }
@@ -169,7 +175,7 @@ export function parseGstEInvoice(json: unknown): { readonly ok: true; readonly i
       supplierGstin: str((seller as Record<string, unknown>)['Gstin'])?.toUpperCase() ?? null,
       supplierInvoiceNo: str((doc as Record<string, unknown>)['No']), invoiceDate: isoFromDdMmYyyy((doc as Record<string, unknown>)['Dt']),
       irn: str(json['Irn']), lines, statedTotalMinor, ...(otherChargesMinor !== undefined && otherChargesMinor > 0 ? { otherChargesMinor } : {}),
-      ...(roundOffMinor === undefined ? {} : { roundOffMinor }), confidence: 1, warnings,
+      ...(roundOffMinor === undefined ? {} : { roundOffMinor }), ...(docType === 'INV' ? {} : { documentType: docType }), confidence: 1, warnings,
     },
   };
 }
@@ -182,6 +188,7 @@ export function parseGstEInvoice(json: unknown): { readonly ok: true; readonly i
  *   GSTIN: 33AAAAA0000A1Z5
  *   INVOICE: INV-77
  *   DATE: 2026-10-05
+ *   TYPE: CRN            (optional — what the paper says it is: CRN credit note, DBN debit note; none = a bill)
  *   LINE: <item code>|<description>|<hsn>|<qty>|<unit>|<rate ₹>|<amount ₹>|<cgst ₹>|<sgst ₹>|<igst ₹>
  *   TOTAL: <₹>
  *
@@ -213,10 +220,12 @@ export class FakeOcrExtractor implements InvoiceExtractor {
       };
     });
     const total = field('TOTAL');
+    const type = field('TYPE')?.toUpperCase() ?? 'INV';
     const confidence = lines.length === 0 ? 0 : Math.min(...lines.map((l) => l.confidence));
     return Promise.resolve({
       channel: 'ocr', engine: this.engine, supplierGstin: field('GSTIN')?.toUpperCase() ?? null, supplierInvoiceNo: field('INVOICE'),
-      invoiceDate: field('DATE'), irn: null, lines, statedTotalMinor: total === null ? null : rupeesToPaise(total) ?? null, confidence, warnings,
+      invoiceDate: field('DATE'), irn: null, lines, statedTotalMinor: total === null ? null : rupeesToPaise(total) ?? null,
+      ...(type === 'INV' || type === '' ? {} : { documentType: type }), confidence, warnings,
     });
   }
 }

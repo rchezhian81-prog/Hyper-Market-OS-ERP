@@ -163,6 +163,15 @@ export function invoiceIngestionRoutes(deps: InvoiceIngestionDeps): readonly Rou
             if (extracted.lines.length === 0) { state = 'unreadable'; problems.push('the engine read no lines off the scan: type this bill on the capture screen'); }
           }
         }
+        // OB-937 A (owner, 27 Nov 2026, in writing): a supplier's CREDIT NOTE (e-invoice `Typ` CRN) or DEBIT NOTE (DBN) is not a
+        // bill. It is refused here — at head office, so neither the screen, an OCR upload nor the API can turn one into a bill —
+        // and nothing is written (no draft, no bill, no audit record: a refused hand-in is not recorded, like every other one).
+        if (extracted !== null && (extracted.documentType === 'CRN' || extracted.documentType === 'DBN')) {
+          const which = `${extracted.supplierInvoiceNo ?? '(no number)'} from GSTIN ${extracted.supplierGstin ?? '(none on it)'}`;
+          throw extracted.documentType === 'CRN'
+            ? refuse(422, 'einvoice_is_credit_note', `This file (${which}) is a supplier's credit note, not a bill. It was not put on Supplier bills.`, 'Record it under Debit notes → Supplier accepted. Nothing was recorded.')
+            : refuse(422, 'einvoice_is_debit_note', `This file (${which}) is a supplier's debit note, not a bill. It was not put on Supplier bills.`, 'Ask the accountant how to record it. Nothing was recorded.');
+        }
         // Same bill twice (the IRN, or the number from the same GSTIN) is refused — one bill is one record.
         if (extracted !== null) {
           const dup = (await deps.documents(ctx.tenantId)).find((d) => d.extracted !== null && sameBill(d.extracted, extracted as ExtractedInvoice));

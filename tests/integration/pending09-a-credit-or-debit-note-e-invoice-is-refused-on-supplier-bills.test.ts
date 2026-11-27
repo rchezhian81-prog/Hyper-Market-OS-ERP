@@ -32,7 +32,7 @@ beforeAll(async () => {
 afterAll(async () => { await pool?.end(); });
 type Opts = { invoiceExtractor?: InvoiceExtractor; store?: ApiHarness['store'] };
 const backings: { name: string; harness: (o?: Opts) => ApiHarness }[] = [{ name: 'the in-memory event store', harness: (o = {}) => apiHarness(o) }];
-if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: (o = {}) => { const sql = pgPoolClient(pool!); const { store: _same, ...rest } = o; return apiHarness({ ...rest, store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
+if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: (o = {}) => { const sql = pgPoolClient(pool!); return apiHarness({ ...(o.invoiceExtractor === undefined ? {} : { invoiceExtractor: o.invoiceExtractor }), store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
 
 type Res = { status: number; body: unknown };
 const errorOf = (r: Res): { code?: string; whatHappened?: string; nextSafeAction?: string; wasItSaved?: string } => (r.body as { error?: Record<string, string> }).error ?? {};

@@ -368,6 +368,28 @@ export function otherChargesWords(lang: BillMatchLang, answer: OtherChargesAnswe
   return { good: false, text: answer.whatHappened === '' ? plain : `${plain} ${w['headOfficeSaid']!} ${answer.whatHappened}` };
 }
 
+/**
+ * OB-937 A (owner, 27 Nov 2026, in writing): head office refuses a supplier's credit note or debit note handed in as a bill
+ * (an e-invoice `Typ` CRN / DBN, or a scan read as one). The page says why in plain words, English and Tamil — nothing was
+ * recorded, and where it belongs instead.
+ */
+export const HAND_IN_WORDS: Readonly<Record<BillMatchLang, Readonly<Record<string, string>>>> = Object.freeze({
+  en: {
+    einvoice_is_credit_note: 'This file is a supplier\'s credit note, not a bill. Nothing was recorded. Record it under Debit notes → Supplier accepted.',
+    einvoice_is_debit_note: 'This file is a supplier\'s debit note, not a bill. Nothing was recorded. Ask the accountant how to record it.',
+  },
+  ta: {
+    einvoice_is_credit_note: 'இந்தக் கோப்பு சப்ளையரின் வரவுக் குறிப்பு, பில் அல்ல. எதுவும் பதிவு செய்யப்படவில்லை. அதைப் பற்றுக் குறிப்புகள் → சப்ளையர் ஏற்றார் என்பதில் பதிவு செய்யுங்கள்.',
+    einvoice_is_debit_note: 'இந்தக் கோப்பு சப்ளையரின் பற்றுக் குறிப்பு, பில் அல்ல. எதுவும் பதிவு செய்யப்படவில்லை. அதை எப்படிப் பதிவு செய்வது என்று கணக்காளரிடம் கேளுங்கள்.',
+  },
+});
+
+/** A hand-in refusal that has its own plain words (`HAND_IN_WORDS`), in the reader's language; null for any other answer. */
+export function handInWords(lang: BillMatchLang, answer: { readonly ok: boolean; readonly unreachable?: boolean; readonly code?: string }): string | null {
+  if (answer.ok || answer.unreachable === true || answer.code === undefined) return null;
+  return HAND_IN_WORDS[lang][answer.code] ?? null;
+}
+
 const rank = (s: MatchLineView['status']): number => (s === 'blocked' ? 0 : s === 'within_tolerance' ? 1 : 2);
 
 /** What still needs a person on a document, so the register can say it (control by exception, P-03). */
@@ -616,6 +638,8 @@ export interface SupplierBillsSession {
   readonly mayView: boolean;
   register(): Promise<Answer<BillRegister>>;
   handIn(file: PickedFile, named?: { readonly supplierId?: string; readonly poId?: string }): Promise<Answer<{ readonly document: BillDocument; readonly alreadyReceived: boolean }> | { readonly ok: false; readonly unreachable: false; readonly status: 0; readonly code: 'not_a_bill_file' | 'not_json'; readonly whatHappened: ''; readonly nextSafeAction: '' }>;
+  /** OB-937 A: the plain words for a credit or debit note refused as a bill (`handInWords`); null for any other answer. */
+  handInWords(lang: BillMatchLang, answer: { readonly ok: boolean; readonly unreachable?: boolean; readonly code?: string }): string | null;
   confirm(doc: BillDocument, input: Parameters<typeof confirmBody>[1]): Promise<Answer<{ readonly document: BillDocument; readonly invoiceId: string }>>;
   type(input: Parameters<typeof typedCaptureBody>[0]): Promise<Answer<{ readonly invoiceId: string }> | Extract<TypedCapture, { ok: false }>>;
   match(invoiceId: string): Promise<Answer<MatchView>>;
@@ -664,6 +688,7 @@ export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { reado
       return answerOf(await call({ method: 'POST', path: `/v1/purchase/invoice-documents/${encodeURIComponent(read.documentId)}`, body: read.body, idempotencyKey: `${read.documentId}-${nonce()}` }),
         (b) => b as { document: BillDocument; alreadyReceived: boolean });
     },
+    handInWords,
     confirm: async (doc, input) => {
       const body = confirmBody(doc, input);
       return answerOf(await call({ method: 'POST', path: `/v1/purchase/invoice-documents/${encodeURIComponent(doc.documentId)}/confirm`, body, idempotencyKey: bodyKey(`confirm-${doc.documentId}`, body) }),
