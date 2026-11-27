@@ -19,6 +19,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Pending list 27 Nov — item 2: D-043, the GST rate of a paper bill filled from its order (27 Nov 2026)
+- **Was it still broken?** No. Batch 20b already fills each typed line's GST rate from the item, including the lines filled from the received order; the register still said "NOT done". The first run of the new test failed only because that test shop had no published price list (the screen rightly said "no GST rate is held for this item — type the rate the bill shows"); with a price list holding rice 5% and dal 5%, every line filled from the order shows its rate, marked "from the item (5%) — check against the bill".
+- **Done:** the D-043 browser test now also proves the rates on lines filled from the order; D-043 marked fixed.
+- **Owner, in the store (after the next store-PC update):** Supplier bills → Type a paper bill → type the order number → "Fill the lines from the order": each line shows its GST rate, marked "check against the bill". Type CGST and SGST from the paper (OB-893 A).
+- **Blocked:** nothing.
+
 ## Pending list 27 Nov — item 1: D-078 and D-110 answered, the register says so (27 Nov 2026)
 - **Owner (27 Nov 2026, in writing): "Q1 B, Q2 A"** — both earlier answers re-confirmed, no change: OB-866 B (a supplier bill's round off posts to the accountant's own "Purchase round off" account) and OB-893 A (CGST and SGST stay typed from the paper bill; the item's GST rate only checks them).
 - **Done:** D-078 and D-110 no longer say they wait on an owner question; each names its fix, the merged pull request and the tests that prove it. A guardrail now fails whenever a defect still says it waits on a question the owner has answered (`tests/guardrails/a-defect-waiting-on-the-owner-names-a-question-still-open.test.ts`; it failed on exactly these two before the change).

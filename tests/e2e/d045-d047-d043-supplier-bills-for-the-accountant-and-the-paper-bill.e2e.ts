@@ -3,6 +3,7 @@ import { startBoxPageShop, says, HAVE_BROWSER, type BoxPageShop } from './lib/r4
 import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched } from '../support/p3-purchase';
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 import { approvedRequestId } from '../support/approval-request';
+import { makeEvent } from '../../packages/contracts/src/event';
 
 /**
  * **Fix batch 3 (bills and receiving) — the Supplier bills page, in a real browser on the real store computer, with head
@@ -54,6 +55,13 @@ describe.skipIf(!HAVE_BROWSER)('fix batch 3 — the accountant checks bills, a p
         const approvalId = await approvedRequestId(h, T, P3.OWNER, P3.MATCHER, { kind: 'supplier_bank_change', subjectRef: 'sup-1', details: { ...change, supplierId: 'sup-1' } });
         const bank = await call('POST', '/v1/purchase/suppliers/sup-1/bank-details', P3.OWNER, { ...change, approvalId });
         if (bank.status >= 300) throw new Error(`bank sup-1: ${bank.status} ${JSON.stringify(bank.body)}`);
+        // The published catalogue holds each item's GST rate (rice 5%, dal 5%) — what a real shop has after its first price
+        // load; the paper bill's lines filled from the order take their rate from here (D-043, pending list item 2).
+        await h.store.append(T, 'catalogue', makeEvent({ id: `pack-${T}-d043`, type: 'CataloguePublished', occurredAt: '2026-09-01T00:00:00.000Z', idempotencyKey: `catalogue-${T}-d043`, source: 'test/catalogue',
+          payload: { snapshot: { tenantId: T, version: 1, builtAt: '2026-09-01T00:00:00.000Z', scope: { tenantId: T }, barcodes: [], products: [
+            { productId: 'rice', sku: 'rice', name: 'Rice 1kg', unitPriceMinor: 6_000, taxBps: 500, status: 'active', baseUom: 'ea' },
+            { productId: 'dal', sku: 'dal', name: 'Toor dal 1kg', unitPriceMinor: 12_000, taxBps: 500, status: 'active', baseUom: 'ea' },
+          ] } } }));
         // po-c: issued and received; its paper bill has not been typed yet (D-043).
         const paper = [{ productId: 'rice', qty: 8, unitMinor: 5_000 }, { productId: 'dal', qty: 4, unitMinor: 10_000 }];
         await issuedOrder(call, 'po-c', paper);
@@ -146,6 +154,12 @@ describe.skipIf(!HAVE_BROWSER)('fix batch 3 — the accountant checks bills, a p
       const r2 = page.locator('#type-lines tr[data-row="2"]');
       expect([await r1.locator('.t-productId').inputValue(), await r1.locator('.t-quantity').inputValue(), await r1.locator('.t-unitPrice').inputValue(), await r1.locator('.t-amount').inputValue()]).toEqual(['rice', '8', '50.00', '400.00']);
       expect([await r2.locator('.t-productId').inputValue(), await r2.locator('.t-quantity').inputValue(), await r2.locator('.t-unitPrice').inputValue(), await r2.locator('.t-amount').inputValue()]).toEqual(['dal', '4', '100.00', '400.00']);
+      // D-043's last part (pending list item 2, 27 Nov 2026): the GST RATE of each line filled from the order is pre-filled from
+      // the item too, marked to check against the paper — the person types only what the paper shows differently.
+      for (const row of [r1, r2]) {
+        await page.waitForFunction((el) => (el as unknown as { value: string }).value.trim() !== '', await row.locator('.t-rate').elementHandle(), { timeout: 15_000 });
+        expect(await row.locator('.rate-mark').innerText()).toMatch(/^from the item \(\d+(\.\d+)?%\) — check against the bill$/);
+      }
       // Only what the paper says differently is typed: here, its total.
       await page.fill('#type-total', '800');
       await page.click('#type-save');
