@@ -26,6 +26,7 @@ import {
 import { isWrite, type Method, type Router } from './router';
 import { evaluateStepUp } from './step-up';
 import type { RateLimiter, AuthThrottle } from './rate-limit';
+import type { RefusalTally } from './refusal-tally';
 import { officeSignInAttempt, signInCallerKey, type SignInAttemptLog } from './sign-in-attempts';
 import { newWriteWitness, witnessing } from '../../../packages/persistence/src/write-witness';
 
@@ -382,6 +383,13 @@ export interface KernelOptions {
    */
   readonly sourceAuthThrottle?: AuthThrottle;
   /**
+   * Audit 27 Nov 2026 item 2: where a refusal of a caller NOBODY signed in as goes instead of one audit row each — counted
+   * per status, reason and source network per window, the first of each written at once (see `refusal-tally.ts`). A
+   * signed-in person's refusals, refused sign-ins and 5xx are always written one row each. Absent → every refusal is
+   * written one row each, as before (a test). Supplied in a deployment (main.ts).
+   */
+  readonly refusalTally?: RefusalTally;
+  /**
    * D13-FR-06 (W3): where each failed office sign-in, and each lockout it trips, is KEPT (head office writes it
    * append-only on PostgreSQL). The lockout itself stays the in-memory `authThrottle`; this is only the record. Never
    * the token or any secret. A failure to keep it never changes the reply.
@@ -492,12 +500,25 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
   let matchedApi: string | undefined;
   let resolvedAccess: AccessControl | undefined;
 
-  const writeAudit = async (status: number): Promise<void> => {
+  // Audit 27 Nov item 2: a credential was presented and not believed — a refused sign-in, kept one row each.
+  let credentialRefused = false;
+
+  const writeAudit = async (status: number, code?: string): Promise<void> => {
     if (opts.audit === undefined) return;
     // Successful reads are not audited — the volume would bury the writes. Everything else is:
     // every write, and every refusal of any kind.
     const interesting = isWrite(auditedMethod) || status >= 400;
     if (!interesting) return;
+    // Audit 27 Nov item 2: a refusal of a caller nobody signed in as (no token, a path that does not exist, the address
+    // limit) is COUNTED — the first of each kind written at once, the rest as one row with the count (refusal-tally.ts) —
+    // so a flood of anonymous junk is not a flood of database writes. Never a signed-in person's refusal, never a refused
+    // sign-in, never a 5xx: those stay one row each.
+    if (opts.refusalTally !== undefined && auditPrincipal === undefined && !credentialRefused && status >= 400 && status < 500) {
+      await opts.refusalTally.count({
+        status, code: code ?? String(status), method: auditedMethod, path: request.path, permission: auditPermission, traceId, clientIp,
+      });
+      return;
+    }
     await opts.audit.record({
       tenantId: auditPrincipal?.tenantId ?? 'unauthenticated',
       userId: auditPrincipal?.userId ?? 'unauthenticated',
@@ -541,6 +562,14 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
   const clientIp = request.clientIp ?? 'unknown';
 
   try {
+    // Per-IP flood limit, before anything else — before authentication AND before the route is looked up: a source
+    // hammering the API — the sign-in path, or paths that do not exist — is capped whether or not it ever presents a
+    // valid token or names a real route (audit FND-03; audit 27 Nov 2026 item 2).
+    if (opts.rateLimit !== undefined) {
+      const perIp = await opts.rateLimit.take(`ip:${clientIp}`);
+      if (!perIp.allowed) throw rateLimited(perIp.retryAfterSeconds);
+    }
+
     const matched = opts.router.match(request.method, request.path);
     if (matched === undefined) throw notFound(`${request.method} ${request.path}`);
     const { route, params } = matched;
@@ -548,13 +577,6 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     matchedApi = route.api;
     auditPermission = route.permission;
     auditedMethod = route.method;
-
-    // Per-IP flood limit, before authentication: a source hammering the API — including the sign-in
-    // path — is capped whether or not it ever presents a valid token (audit FND-03).
-    if (opts.rateLimit !== undefined) {
-      const perIp = await opts.rateLimit.take(`ip:${clientIp}`);
-      if (!perIp.allowed) throw rateLimited(perIp.retryAfterSeconds);
-    }
 
     const header = request.headers['authorization'] ?? request.headers['Authorization'] ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
@@ -583,6 +605,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       onRefused: (refusal) => { told.refusal = refusal; },
     });
     if (principal === undefined) {
+      credentialRefused = true;
       // A credential whose signature verified (an EXPIRED sign-in, a revoked one, a stale store-PC seal) is not a guess:
       // nobody guesses a correctly signed token. It is refused and kept, but never counted towards a lockout. Anything
       // else — forged, badly signed, unreadable, or an authenticator that did not say — counts. The caller still gets a
@@ -802,7 +825,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
 
     // The refusal goes on the record too. An audit trail that holds only what succeeded cannot
     // answer the question it exists for: who tried.
-    await writeAudit(failure.status);
+    await writeAudit(failure.status, (failure.body as { error?: { code?: string } } | undefined)?.error?.code);
     return finish(failure);
   }
 }
