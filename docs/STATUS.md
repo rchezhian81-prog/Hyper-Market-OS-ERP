@@ -72,9 +72,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, in the store (after the next store-PC update):** Supplier bills → Type a paper bill → type the order number → "Fill the lines from the order": each line shows its GST rate, marked "check against the bill". Type CGST and SGST from the paper (OB-893 A).
 - **Blocked:** nothing.
 
+## The update after #993 did not publish — a remote-door test read its log too early (D-156, 27 Nov 2026)
+- **What happened:** main's run after #993 failed one test, `tests/integration/ob840-the-owner-reaches-today-reports-and-approvals-remotely.test.ts` ("the store manager asks; the owner approves from outside"), so no new store-PC update was published (the latest stays 1.0.2323). The remote door writes its log line when the reply has finished going out; the test read the log the instant it had the reply, and on a busy build machine the line was not yet written. The store PC's behaviour is right; the test was not.
+- **Fix:** the test reads the door's log until the expected line is there (at most 5 s; never a fixed sleep, nothing skipped). Proved by holding the log write 300 ms: old test 2 of 9 fail, new test 9 of 9 pass; without the hold 9 of 9.
+- **Owner, in the store:** nothing. **Blocked:** nothing — the update publishes after this merges.
+
 ## Owner's list 27 Nov — credit/debit-note e-invoices are refused on Supplier bills (D-155, 27 Nov 2026)
 - **Was it still missing?** Yes, at main 6f15fcf0: a supplier's e-invoice whose type is CRN (credit note) or DBN (debit note) was read on Supplier bills as a draft BILL a person could confirm onto the register. **Proved first** (committed on its own): `tests/integration/pending09-a-credit-or-debit-note-e-invoice-is-refused-on-supplier-bills.test.ts` — all 6 tests failed (head office answered 201 with a draft for the credit note). Before / after runs: scratchpad `item6/before.txt`, `item6/after.txt`.
-- **Done (branch `claude/pending-09-credit-note-einvoice-refused`; pull request #993):**
+- **Done (branch `claude/pending-09-credit-note-einvoice-refused`; merged as pull request #993, 27 Nov 2026):**
   - **Refused at head office** (so no path — the screen, an OCR upload, the API — can make one a bill): a credit note is answered 422 `einvoice_is_credit_note`, a debit note 422 `einvoice_is_debit_note`. A scan the OCR engine reads as a credit or debit note is refused the same way. Nothing is written: no draft document, no bill, no audit "received", nothing in the books or stock. Handing the same note in again is refused again.
   - **The page says it in plain words**, English and Tamil: "This file is a supplier's credit note, not a bill. Nothing was recorded. Record it under Debit notes → Supplier accepted." / "This file is a supplier's debit note, not a bill. Nothing was recorded. Ask the accountant how to record it."
   - **A bill is unchanged:** an e-invoice whose type is INV (or gives no type) is read, confirmed and matched exactly as before.
