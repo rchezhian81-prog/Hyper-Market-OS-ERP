@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2578,
+  "testFiles": 2581,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1032,11 +1032,11 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 32,
-        "integration": 38,
-        "realDb": 12,
-        "browser": 13,
-        "connected": 5,
+        "unit": 33,
+        "integration": 39,
+        "realDb": 13,
+        "browser": 14,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -1060,6 +1060,7 @@
           "tests/unit/goods-in.test.ts",
           "tests/unit/lane2-recall-and-trace-engines.test.ts",
           "tests/unit/m13-fr-02-an-expired-batch-returned-at-the-till-is-held.test.ts",
+          "tests/unit/pending05-the-return-to-supplier-note.test.ts",
           "tests/unit/product-master.test.ts",
           "tests/unit/quality-cold-chain.test.ts",
           "tests/unit/quality-hold.test.ts",
@@ -1102,6 +1103,7 @@
           "tests/integration/inventory-near-expiry.test.ts",
           "tests/integration/lot-trace.test.ts",
           "tests/integration/m13-fr-02-an-expired-batch-returned-at-the-till-is-held-through-the-box.test.ts",
+          "tests/integration/pending05-a-return-to-supplier-note-prints-from-head-office.test.ts",
           "tests/integration/production.test.ts",
           "tests/integration/quality-cold-chain.test.ts",
           "tests/integration/quality-hold.test.ts",
@@ -1125,6 +1127,7 @@
           "tests/integration/b18c-s1-shelf-stock-goes-back-to-the-supplier.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/m13-fr-02-an-expired-batch-returned-at-the-till-is-held-through-the-box.test.ts",
+          "tests/integration/pending05-a-return-to-supplier-note-prints-from-head-office.test.ts",
           "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
@@ -1135,6 +1138,7 @@
           "tests/e2e/b18c-s1-shelf-stock-is-returned-to-the-supplier-from-quarantine.e2e.ts",
           "tests/e2e/expiry-recall-delivery.e2e.ts",
           "tests/e2e/food-safety-checks-are-saved-with-the-line-down.e2e.ts",
+          "tests/e2e/pending05-print-a-return-to-supplier-note.e2e.ts",
           "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts",
           "tests/e2e/the-expiry-page-shows-what-was-taken-off-sale.e2e.ts",
           "tests/e2e/the-recall-trace-page-is-served-from-the-store-box.e2e.ts",
@@ -1146,6 +1150,7 @@
         ],
         "connected": [
           "tests/e2e/b18c-s1-shelf-stock-is-returned-to-the-supplier-from-quarantine.e2e.ts",
+          "tests/e2e/pending05-print-a-return-to-supplier-note.e2e.ts",
           "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts",
           "tests/e2e/u6-the-stock-ledger-quarantine-and-adjustment-pages.e2e.ts",
           "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
@@ -2947,11 +2952,11 @@
       "id": "M31",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
-        "integration": 15,
-        "realDb": 8,
-        "browser": 6,
-        "connected": 4,
+        "unit": 10,
+        "integration": 16,
+        "realDb": 9,
+        "browser": 7,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -2962,6 +2967,7 @@
           "tests/unit/documents-templates.test.ts",
           "tests/unit/messaging-budget.test.ts",
           "tests/unit/notifications.test.ts",
+          "tests/unit/pending05-the-return-to-supplier-note.test.ts",
           "tests/unit/receipt-presets.test.ts",
           "tests/unit/receipt.test.ts",
           "tests/unit/w3-customers-sessions.test.ts",
@@ -2980,6 +2986,7 @@
           "tests/integration/notification-guard.test.ts",
           "tests/integration/notification-queue.test.ts",
           "tests/integration/notifications-send-themselves.test.ts",
+          "tests/integration/pending05-a-return-to-supplier-note-prints-from-head-office.test.ts",
           "tests/integration/second-person-is-a-separate-act.test.ts",
           "tests/integration/the-customer-is-told-where-their-order-is.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
@@ -2992,11 +2999,13 @@
           "tests/integration/do-not-contact-frequency-cert-in-and-capacity.test.ts",
           "tests/integration/documents-issue-from-their-records.test.ts",
           "tests/integration/notifications-send-themselves.test.ts",
+          "tests/integration/pending05-a-return-to-supplier-note-prints-from-head-office.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "browser": [
           "tests/e2e/batch18b-download-a-list-and-print-a-po-and-a-grn.e2e.ts",
           "tests/e2e/document-template-publish-delivery.e2e.ts",
+          "tests/e2e/pending05-print-a-return-to-supplier-note.e2e.ts",
           "tests/e2e/r4c-the-do-not-contact-list.e2e.ts",
           "tests/e2e/w3-a-document-past-its-keeping-time-is-disposed-on-the-retention-page.e2e.ts",
           "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts",
@@ -3004,6 +3013,7 @@
         ],
         "connected": [
           "tests/e2e/batch18b-download-a-list-and-print-a-po-and-a-grn.e2e.ts",
+          "tests/e2e/pending05-print-a-return-to-supplier-note.e2e.ts",
           "tests/e2e/w3-a-document-past-its-keeping-time-is-disposed-on-the-retention-page.e2e.ts",
           "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts",
           "tests/e2e/w4-m31-documents-and-messages-on-postgresql.e2e.ts"
