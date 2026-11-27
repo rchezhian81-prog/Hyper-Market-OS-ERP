@@ -253430,6 +253430,16 @@
                         "type": "string"
                       }
                     ]
+                  },
+                  "Typ": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": true
@@ -253599,6 +253609,16 @@
                 "type": "object",
                 "properties": {
                   "OthChrg": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "RndOffAmt": {
                     "anyOf": [
                       {
                         "type": "number"
@@ -296419,6 +296439,9 @@
             ]
           },
           "otherChargesMinor": {
+            "type": "number"
+          },
+          "roundOffMinor": {
             "type": "number"
           },
           "confidence": {

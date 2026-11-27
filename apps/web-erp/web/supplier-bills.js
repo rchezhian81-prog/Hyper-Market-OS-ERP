@@ -238,6 +238,8 @@ function factsOf(d) {
   if (x?.statedTotalMinor !== null && x?.statedTotalMinor !== undefined) parts.push(`${t('total')} ${inr(x.statedTotalMinor)}`);
   // M07-FR-04: the e-invoice's other charges head office read — part of the printed total, said so the sum is checkable.
   if (x?.otherChargesMinor) parts.push(`${t('otherCharges')} ${inr(x.otherChargesMinor)}`);
+  // OB-866 B (pending item 6): the e-invoice's own round off head office read — part of the printed total, said with its sign.
+  if (x?.roundOffMinor) parts.push(`${t('roundOff')} ${x.roundOffMinor < 0 ? '−' : '+'}${inr(Math.abs(x.roundOffMinor))}`);
   if (d.lines.length > 0) parts.push(`${d.lines.length} ${t('linesWord')}`);
   if (d.invoiceId) parts.push(`${d.state === 'captured' ? t('typedAs') : t('onRegisterAs')} ${d.invoiceId}`);
   if (d.typedBy) parts.push(`${t('typedBy')} ${d.typedBy}`);
@@ -368,6 +370,9 @@ function renderDrawer() {
 
 function renderDraft(d) {
   const typed = (l, cls, k) => { const box = input(cls, '', `${t('line')} ${l.lineNo} ${t(k)} — ${t('typeFigures')}`); return box; };
+  // D-150: a line head office read for sure shows its figures — before, the cell's render answered null and the shared list
+  // printed "Not known" for every read quantity, price and amount.
+  const readQty = (l) => `${l.quantity ?? '—'}${l.uom && l.uom !== 'ea' ? ` ${l.uom}` : ''}`;
   const reg = grid($('draft-lines'), {
     id: 'draft-lines', label: pair('confirmH'), pageSize: 1000, search: false, count: false,
     columns: [
@@ -375,9 +380,9 @@ function renderDraft(d) {
       { key: 'itemCode', label: pair('itemCode'), value: (l) => l.supplierItemCode ?? null },
       { key: 'description', label: pair('description'), value: (l) => l.description || null },
       // The figures head office was unsure of: typed from the paper, never the machine's guess.
-      { key: 'qty', label: pair('qty'), align: 'end', value: (l) => (l.needsFigures ? '' : `${l.quantity ?? '—'}${l.uom && l.uom !== 'ea' ? ` ${l.uom}` : ''}`), render: (l) => (l.needsFigures ? typed(l, 'f-qty', 'qty') : null) },
-      { key: 'price', label: pair('price'), align: 'end', value: (l) => (l.needsFigures ? '' : inr(l.unitPriceMinor)), render: (l) => (l.needsFigures ? typed(l, 'f-price', 'price') : null) },
-      { key: 'amount', label: pair('amount'), align: 'end', value: (l) => (l.needsFigures ? '' : inr(l.lineTotalMinor)), render: (l) => (l.needsFigures ? typed(l, 'f-amount', 'amount') : null) },
+      { key: 'qty', label: pair('qty'), align: 'end', value: (l) => (l.needsFigures ? '' : `${l.quantity ?? '—'}${l.uom && l.uom !== 'ea' ? ` ${l.uom}` : ''}`), render: (l) => (l.needsFigures ? typed(l, 'f-qty', 'qty') : readQty(l)) },
+      { key: 'price', label: pair('price'), align: 'end', value: (l) => (l.needsFigures ? '' : inr(l.unitPriceMinor)), render: (l) => (l.needsFigures ? typed(l, 'f-price', 'price') : inr(l.unitPriceMinor)) },
+      { key: 'amount', label: pair('amount'), align: 'end', value: (l) => (l.needsFigures ? '' : inr(l.lineTotalMinor)), render: (l) => (l.needsFigures ? typed(l, 'f-amount', 'amount') : inr(l.lineTotalMinor)) },
       { key: 'tax', label: pair('tax'), align: 'end', value: (l) => inr(l.cgstMinor + l.sgstMinor + l.igstMinor) },
       { key: 'product', label: pair('product'), value: (l) => l.suggestedProductId ?? '', render: (l) => input('f-product', l.suggestedProductId ?? '', `${t('line')} ${l.lineNo} ${t('product')}`) },
     ],
