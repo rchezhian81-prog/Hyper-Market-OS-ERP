@@ -10,6 +10,7 @@ import { makeEvent } from '../../contracts/src/event';
 import type { Money } from '../../contracts/src/money';
 import { settle, type Tender } from '../../tender/src/tender';
 import type { Ledger } from '../../ledger/src/ledger';
+import { lineKeyAllocator } from '../../ledger/src/line-keys';
 import type { SyncOutbox } from '../../sync/src/outbox';
 
 export interface SaleLineInput {
@@ -66,13 +67,17 @@ export function commitSale(
     throw new UnpaidSaleError(input.id);
   }
 
+  // One movement per LINE (audit 27 Nov, item 7): a repeat of a product on the bill gets its own key; the first keeps the
+  // key it always had, so a bill re-committed after the upgrade posts nothing twice (`line-keys.ts`).
+  const lineKey = lineKeyAllocator();
   for (const line of input.lines) {
+    const k = lineKey.next(line.productId);
     stockLedger.append(
       makeEvent({
-        id: `${input.id}:move:${line.productId}`,
+        id: `${input.id}:move:${k}`,
         type: 'InventoryMoved',
         occurredAt: input.committedAt,
-        idempotencyKey: `sale-move:${input.id}:${line.productId}`,
+        idempotencyKey: `sale-move:${input.id}:${k}`,
         source: input.laneId,
         payload: {
           productId: line.productId,

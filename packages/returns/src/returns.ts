@@ -20,6 +20,7 @@ import { isNegative, compare, type Money } from '../../contracts/src/money';
 import type { TenderKind } from '../../contracts/src/enums';
 import type { DecidedRequest } from '../../approvals/src/approvals';
 import type { Ledger } from '../../ledger/src/ledger';
+import { lineKeyAllocator } from '../../ledger/src/line-keys';
 import type { SyncOutbox } from '../../sync/src/outbox';
 
 /** Where a returned unit goes. Only 'resell' re-enters sellable stock (M13-FR-02). */
@@ -429,6 +430,9 @@ export function commitReturn(
   let restockedLines = 0;
   let recallHeldLines = 0;
   let expiredHeldLines = 0;
+  // One movement per LINE (audit 27 Nov, item 7): one unit to resell and one damaged of the same product each move; the
+  // first keeps the key it always had, so a return re-committed after the upgrade posts nothing twice (`line-keys.ts`).
+  const lineKey = lineKeyAllocator();
   for (const { line, disposition, recallHeld, expiredHeld } of resolved) {
     if (recallHeld) recallHeldLines += 1;
     if (expiredHeld) expiredHeldLines += 1;
@@ -439,12 +443,13 @@ export function commitReturn(
     if (disposition === 'resell') {
       restockedLines += 1;
     }
+    const k = lineKey.next(line.productId);
     stockLedger.append(
       makeEvent({
-        id: `${input.id}:move:${line.productId}`,
+        id: `${input.id}:move:${k}`,
         type: 'InventoryMoved',
         occurredAt: input.processedAt,
-        idempotencyKey: `return-move:${input.id}:${line.productId}`,
+        idempotencyKey: `return-move:${input.id}:${k}`,
         source: input.laneId,
         payload: {
           productId: line.productId,

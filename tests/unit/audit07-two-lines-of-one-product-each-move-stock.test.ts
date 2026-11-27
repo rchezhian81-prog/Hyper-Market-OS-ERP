@@ -4,7 +4,7 @@ import { commitReceipt, type CommitReceiptInput } from '../../packages/receiving
 import { commitReturn } from '../../packages/returns/src/index';
 import { money } from '../../packages/contracts/src/money';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
+import { Ledger, InMemoryLedgerStore, lineKeyAllocator } from '../../packages/ledger/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
 
 // Audit 27 Nov 2026, item 7 (OB-924, D-141): the local commit of a sale, a goods receipt and a return each built its stock
@@ -148,5 +148,20 @@ describe('audit item 7 — compatibility: an old document re-sent after the upgr
     expect(ledger.entries()).toHaveLength(4);
     expect(total(ledger)).toBe(-5 + 5);
     expect(outbox.unsentCount()).toBe(2);
+  });
+
+  it('a line that moves no stock (wholly damaged on arrival) does not count: the next line of that product keeps the old key', () => {
+    const g = new Ledger(new InMemoryLedgerStore());
+    commitReceipt(receipt([
+      { productId: 'DAL', quantityMinor: 4, uom: 'ea', damagedMinor: 4 },
+      { productId: 'DAL', quantityMinor: 10, uom: 'ea' },
+    ]), g, new SyncOutbox());
+    expect(keys(g)).toEqual(['grn-move:G-1:DAL']);
+  });
+
+  it('the key allocator: the product id first, then #2, #3 …, never a key already taken on the document, and the same every time', () => {
+    const run = () => { const a = lineKeyAllocator(); return ['P', 'Q', 'P#2', 'P', 'P', 'Q'].map((p) => a.next(p)); };
+    expect(run()).toEqual(['P', 'Q', 'P#2', 'P#3', 'P#4', 'Q#2']);
+    expect(run()).toEqual(run());
   });
 });
