@@ -36,6 +36,7 @@ export {
   type AccessResolver, type EntitlementResolver,
   type SessionChannel, type ChannelVerdict, type ChannelGuard,
   type BoundStoreGuard, type BoundStoreVerdict,
+  type AuthenticationContext, type AuthRefusal,
 } from './pipeline';
 
 export {
@@ -63,3 +64,4 @@ export * from './audit-sink';
 export * from './audit-chain';
 export * from './rate-limit';
 export * from './sign-in-attempts';
+export * from './refusal-tally';
