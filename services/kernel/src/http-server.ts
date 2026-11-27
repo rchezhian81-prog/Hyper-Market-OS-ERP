@@ -60,8 +60,25 @@ export function startHttpServer(opts: ServerOptions): RunningServer {
   let draining = false;
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    void (async () => {
-      const url = new URL(req.url ?? '/', 'http://localhost');
+    // Audit 27 Nov 2026 item 4: nothing one request does may end the process. Anything that escapes the handling below is
+    // answered here (503, said on stderr — P-08), instead of reaching main.ts's last resort as an unhandled rejection,
+    // which drains and exits (70) and so let one stray request restart the API.
+    (async () => {
+      // An address that cannot be read (a request line such as `GET //`) is the caller's mistake: 400, in words.
+      let url: URL;
+      try { url = new URL(req.url ?? '/', 'http://localhost'); } catch {
+        req.resume();
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({
+          error: {
+            code: 'unreadable_address',
+            whatHappened: 'The address in this request could not be read.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send it again with an ordinary address such as /v1/… — nothing was changed.',
+          },
+        }));
+        return;
+      }
       const path = url.pathname;
 
       // The two probes, before authentication: an orchestrator holds no token, and a service that
@@ -140,7 +157,20 @@ export function startHttpServer(opts: ServerOptions): RunningServer {
 
       res.writeHead(reply.status, reply.headers as Record<string, string>);
       res.end(JSON.stringify(reply.body));
-    })();
+    })().catch((e: unknown) => {
+      process.stderr.write(`request ${req.method ?? '?'} could not be answered: ${e instanceof Error ? e.message : String(e)}\n`);
+      if (res.headersSent) { res.destroy(); return; }
+      res.writeHead(503, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        error: {
+          code: 'request_failed',
+          whatHappened: 'This request could not be answered because of a problem on the server.',
+          // Thrown from somewhere unexpected, so "did it save?" is genuinely unknown (the pipeline's own rule, pipeline.ts).
+          wasItSaved: 'unknown',
+          nextSafeAction: 'Do not simply repeat it. Check whether it applied, then resend under the same Idempotency-Key if it did not.',
+        },
+      }));
+    });
   });
 
   if (opts.host === undefined) server.listen(opts.port, () => { started = true; });
