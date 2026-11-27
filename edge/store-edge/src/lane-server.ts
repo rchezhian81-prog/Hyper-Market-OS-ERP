@@ -53,6 +53,7 @@
 // refund is durable on the disk before the lane calls it done, then queued for the cloud (M13-FR-01).
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { allowedHostNames, hostAllowed, NOT_THIS_COMPUTER, NOT_THIS_COMPUTER_CODE } from './host-allow-list';
 import { readableAddress, UNREADABLE_ADDRESS } from './request-address';
 import type { LaneSyncStatus } from './sync-status';
 import { returnIdOf, toCloudReturn } from './cloud-return';
@@ -863,7 +864,16 @@ export function startLaneServer(input: {
     laneMessage: `This lane could not save the ${noun}. Do not take payment or hand over ${noun === 'sale' ? 'the goods' : 'cash'} — use another lane and tell the manager.`,
   });
 
+  // Audit 27 Nov 2026 item 6 (DNS rebinding): the lane answers its loopback names only — it is bound to 127.0.0.1 and
+  // reached only by the till's browser on this PC (and, in the hosted demo, the relay inside the same container). A page
+  // whose name was re-pointed here still says its own name in `Host`; it is refused before anything is read or written.
+  const laneNames = allowedHostNames({ bind: LANE_HOST });
   const laneRequest = (req: IncomingMessage, res: ServerResponse): void => {
+    if (!hostAllowed(req.headers.host, laneNames)) {
+      req.resume();
+      send(res, 403, { error: NOT_THIS_COMPUTER, refusedBecause: NOT_THIS_COMPUTER_CODE, reason: NOT_THIS_COMPUTER });
+      return;
+    }
     // Audit 27 Nov 2026 item 4: an address that cannot be read (a request line such as `GET //`) is answered 400 in words,
     // before anything else looks at it.
     if (!readableAddress(req.url)) {

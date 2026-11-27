@@ -27,6 +27,7 @@
 
 import { periodFromUrl } from './report-period';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
+import { allowedHostNames, hostAllowed, NOT_THIS_COMPUTER } from './host-allow-list';
 import { readableAddress, UNREADABLE_ADDRESS } from './request-address';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
@@ -465,6 +466,11 @@ export async function startScreenServer(input: {
   readonly port: number;
   /** The address to bind — `SCREEN_HOST` (loopback) unless a deployment names another (see `SCREEN_HOST`). */
   readonly host?: string;
+  /**
+   * Audit 27 Nov 2026 item 6: names this socket answers besides the loopback names and `host` (`EDGE_ALLOWED_HOSTS` —
+   * the hosted copy's public name). A request naming anything else is refused (DNS rebinding). See host-allow-list.ts.
+   */
+  readonly allowedHosts?: readonly string[];
   /** Where `apps/` lives on this box. */
   readonly appsDir: string;
   /** Called per request, so every screen reload gets the CURRENT day rather than boot-time state. */
@@ -1319,7 +1325,15 @@ export async function startScreenServer(input: {
       send(res, 500, 'text/plain; charset=utf-8', SCREEN_REQUEST_FAILED);
     });
   };
-  const server: Server = createServer(handle);
+  // Audit 27 Nov 2026 item 6 (DNS rebinding): the screens answer the loopback names, the address they were told to bind
+  // and the names the deployment configured (`allowedHosts` — the hosted copy's public name the proxy forwards for
+  // /customer, ADR-0018); a page under any other name is refused before anything is read. The remote door below is not
+  // held to this: it answers only the owner's signed relay token, which such a page does not have.
+  const screenNames = allowedHostNames({ ...(input.host === undefined ? {} : { bind: input.host }), ...(input.allowedHosts === undefined ? {} : { extra: input.allowedHosts }) });
+  const server: Server = createServer((req, res) => {
+    if (!hostAllowed(req.headers.host, screenNames)) { req.resume(); send(res, 403, 'text/plain; charset=utf-8', NOT_THIS_COMPUTER); return; }
+    handle(req, res);
+  });
 
   // ── OB-840 · ADR-0035: the remote door ──────────────────────────────────────────────────────────────────────────
   // Who (the relay's token, against the pinned key, second factor), may they (the remote-allowed list), what (Today, the

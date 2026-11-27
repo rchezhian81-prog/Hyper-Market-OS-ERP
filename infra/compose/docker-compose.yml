@@ -200,6 +200,9 @@ services:
       # the public origin until a sign-in gate exists in front of them.
       EDGE_SCREEN_PORT: '8091'
       EDGE_SCREEN_HOST: '0.0.0.0'
+      # Audit 27 Nov 2026 item 6 (DNS rebinding): the screens (and the demo's handheld door) answer only this computer's
+      # own names and these — the public name the proxy forwards /customer under. Same value as the proxy's.
+      EDGE_ALLOWED_HOSTS: '${SRE_PUBLIC_HOST:-localhost, 127.0.0.1}'
       EDGE_APPS_DIR: apps
     volumes:
       # The one thing this container must be able to write is the one thing it must

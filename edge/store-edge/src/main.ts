@@ -89,6 +89,7 @@ import { watchStoreComputerStatus } from './store-computer-status-file';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { REMOTE_ACCESS_LOG, REMOTE_DOOR_HOST, readRemoteAccess, remoteLinkView } from './remote-door'; // OB-840 · ADR-0035
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
+import { parseAllowedHosts } from './host-allow-list'; // audit 27 Nov 2026 item 6
 import { ensureDeviceTls, sayDeviceTlsEvent, socketAddressesFor, type DeviceTlsMaterial } from './device-tls'; // OB-422
 import type { HandheldSealSource } from './handheld-seal'; // OB-424
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
@@ -2360,6 +2361,9 @@ export async function startEdge(
 
   const screenPort = settings['EDGE_SCREEN_PORT'];
   const screenHost = settings['EDGE_SCREEN_HOST'];
+  // Audit 27 Nov 2026 item 6: the extra names the screens and the handheld door answer (the hosted copy's public name).
+  const allowedHosts = parseAllowedHosts(settings['EDGE_ALLOWED_HOSTS']);
+  if (allowedHosts.length > 0) say(`screens and handheld door also answer to: ${allowedHosts.join(', ')} (EDGE_ALLOWED_HOSTS); a request naming any other address is refused`);
   if (officeGate !== null) say(`office screens: staff ID and own till PIN, checked on this box; a cashier opens only the till (${officeGate.live().length} office sign-in(s) still open).`);
   // OB-388 · ADR-0029: the office pages reach head office as the person signed in — their own head-office login and second
   // step, their own session carried to head office (never this box's machine credential, never a PIN). Off unless both
@@ -2566,6 +2570,7 @@ export async function startEdge(
     } : {}),
     port: Number(screenPort),
     ...(screenHost === undefined ? {} : { host: screenHost }),
+    ...(allowedHosts.length === 0 ? {} : { allowedHosts }),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
     snapshot,
     // Which lane this box is — told to the served till so every sale names it (SP-4b · F09).
@@ -2636,6 +2641,7 @@ export async function startEdge(
     onTls: say,
     port: Number(devicePort),
     ...(deviceHost === undefined ? {} : { host: deviceHost }),
+    ...(allowedHosts.length === 0 ? {} : { allowedHosts }),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
     snapshot,
     enrolments,

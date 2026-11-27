@@ -289,6 +289,13 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_SCREEN_HOST', optional: true },
   /**
+   * Audit 27 Nov 2026 item 6 (DNS rebinding): names the screens and the handheld door answer besides this computer's own
+   * (loopback, the bound address, the handheld certificate's addresses) — comma- or space-separated, the shape of
+   * SRE_PUBLIC_HOST. The hosted copy names its public name here (the proxy forwards /customer under it). A store PC sets
+   * none. A request naming anything else is refused. The lane socket never takes extra names: it is loopback only.
+   */
+  { key: 'EDGE_ALLOWED_HOSTS', optional: true },
+  /**
    * OB-388 · ADR-0029: where head office's sign-in is — the identity server realm's https address. With CLOUD_API_URL, the
    * office pages on this box send each person through their OWN head-office sign-in (password and second step) and carry
    * THEIR session to head office. Absent: the box never answers a page's head-office call (a lost link, said on the page).
