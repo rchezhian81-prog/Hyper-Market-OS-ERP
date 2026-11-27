@@ -183,7 +183,12 @@ export function createSignInHandler(deps: SignInDeps): (req: SignInRequest) => P
   };
 
   return async (req) => {
-    const url = new URL(req.url, 'https://sign-in.invalid');
+    // Audit 27 Nov 2026 item 4: an address that cannot be read (a request line such as `GET //`) is the caller's mistake —
+    // 400 in words, never the 503 "sign-in is not available" the socket gives for a real failure.
+    let url: URL;
+    try { url = new URL(req.url, 'https://sign-in.invalid'); } catch {
+      return page(400, 'Address not readable', 'The address in this request could not be read. Nothing was changed.');
+    }
     const path = url.pathname;
     const nowMs = deps.now();
     sweep(nowMs);

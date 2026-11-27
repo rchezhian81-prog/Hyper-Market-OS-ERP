@@ -430,7 +430,10 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
   return async (req, res) => {
     const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
     try {
-      const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+      // Audit 27 Nov 2026 item 4: an address that cannot be read (a request line such as `GET //`) is the caller's mistake —
+      // 400 in words, never "something went wrong on this PC".
+      let url: URL;
+      try { url = new URL(req.url ?? '/', 'http://127.0.0.1'); } catch { req.resume(); throw new Said(400, 'The address in this request could not be read. Nothing was changed.'); }
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
         res.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'" });
         res.end(deps.pageHtml);

@@ -80,17 +80,32 @@ describe('the cloud API socket (services/kernel/src/http-server.ts)', () => {
     const port = await start(() => { throw new Error('the readiness check itself failed'); });
     const res = await fetch(`http://127.0.0.1:${port}/readyz`);
     expect(res.status).toBe(503);
-    expect(await res.text()).toMatch(/"wasItSaved":"not_saved"/);
+    // Thrown from somewhere unexpected: whether anything was saved is honestly unknown (pipeline.ts's own rule).
+    expect(await res.text()).toMatch(/"wasItSaved":"unknown"/);
     expect((await fetch(`http://127.0.0.1:${port}/livez`)).status).toBe(200);
   });
 });
 
 describe('the store computer\'s lane socket (edge/store-edge/src/lane-server.ts)', () => {
+  const node = {
+    pack: () => undefined, commit: async () => ({}), commitReturn: async () => ({}), commitCompletion: async () => ({}),
+    commitConcessionTag: async () => ({}), lookupSale: async () => undefined, takePack: () => ({ accepted: true, staffMessage: '' }),
+  } as unknown as EdgeNode;
+
+  it('answers 500 in words when something inside the request handling throws, and keeps serving', async () => {
+    const lane = await startLaneServer({
+      node, port: 0, relayDeviceEvents: async () => ({ acks: [] }),
+      deviceEventStatus: () => { throw new Error('the outbox register could not be read'); },
+    });
+    stops.push(() => lane.stop());
+    const res = await fetch(`http://127.0.0.1:${lane.port}/lane/outbox/status?keys=k1`);
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toMatch(/could not be answered/);
+    const next = await fetch(`http://127.0.0.1:${lane.port}/lane/lookup?receipt=R-1`);
+    expect(next.status).toBe(200);
+  });
+
   it('answers GET // with 400 and a plain reason, then answers the next request', async () => {
-    const node = {
-      pack: () => undefined, commit: async () => ({}), commitReturn: async () => ({}), commitCompletion: async () => ({}),
-      commitConcessionTag: async () => ({}), lookupSale: async () => undefined, takePack: () => ({ accepted: true, staffMessage: '' }),
-    } as unknown as EdgeNode;
     const lane = await startLaneServer({ node, port: 0 });
     stops.push(() => lane.stop());
     const bad = await rawRequest(lane.port, BAD);
@@ -117,8 +132,22 @@ describe('the store computer\'s screen socket (edge/store-edge/src/screen-server
   });
 });
 
+describe('the store computer\'s screen socket — a throw inside', () => {
+  it('answers 500 in words when something inside the request handling throws, and keeps serving', async () => {
+    let broken = true;
+    const screens = await startScreenServer({ port: 0, appsDir: 'apps', snapshot: () => { if (broken) throw new Error('the store pack could not be read'); return snapshot(); } });
+    stops.push(() => screens.stop());
+    const res = await fetch(`http://${SCREEN_HOST}:${screens.port}/manager/`);
+    expect(res.status).toBe(500);
+    expect(await res.text()).toMatch(/could not be answered/);
+    broken = false;
+    const next = await fetch(`http://${SCREEN_HOST}:${screens.port}/fonts/not-a-font.woff2`);
+    expect(next.status).toBe(404);
+  });
+});
+
 describe('the store computer\'s handheld door (edge/store-edge/src/device-server.ts)', () => {
-  it('answers GET // with 400 and a plain reason (never the home page), then answers the next request', async () => {
+  const startDoor = async (devices: () => readonly never[] = () => []) => {
     const dir = await tempDir();
     const tlsDir = join(dir, 'device-tls');
     const made = ensureDeviceTls({ dir: tlsDir, addresses: ['127.0.0.1'], now: new Date() });
@@ -127,11 +156,28 @@ describe('the store computer\'s handheld door (edge/store-edge/src/device-server
     stops.push(() => enrolments.close());
     const door = await startDeviceServer({
       tls: { dir: tlsDir, addresses: ['127.0.0.1'], material: made.tls }, port: 0, appsDir: 'apps', snapshot, enrolments,
-      devices: () => [], relayDeviceEvents: async () => ({ acks: [] }), deviceEventStatus: () => [],
+      devices, relayDeviceEvents: async () => ({ acks: [] }), deviceEventStatus: () => [],
       syncStatus: () => ({ cloud: 'not_configured', unsent: 0, deadLettered: 0, lastSentAt: null, lastContactAt: null, now: '2026-11-27T10:00:00.000Z', staffMessage: '' }),
       operators: null, now: () => '2026-11-27T10:00:00.000Z', renewEveryMs: 0,
     });
     stops.push(() => door.stop());
+    return door;
+  };
+
+  it('answers 500 in words when something inside the request handling throws, and keeps serving', async () => {
+    let broken = true;
+    const door = await startDoor(() => { if (broken) throw new Error('the fleet register could not be read'); return []; });
+    const fetchBox = trustingFetch(door.authority().pem);
+    const res = await fetchBox(`https://127.0.0.1:${door.port}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: 'hh-01', code: 'ABCDE-FGHJK-LMNPQ-RSTUV' }) });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toMatch(/could not be answered/);
+    broken = false;
+    const next = await fetchBox(`https://127.0.0.1:${door.port}/lane/sync-status`);
+    expect(next.status).toBe(403);
+  });
+
+  it('answers GET // with 400 and a plain reason (never the home page), then answers the next request', async () => {
+    const door = await startDoor();
     const ca = door.authority().pem;
     const bad = await rawRequest(door.port, BAD, { tls: { ca } });
     expect(bad.timedOut).toBe(false);
