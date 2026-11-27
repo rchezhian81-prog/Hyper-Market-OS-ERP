@@ -6,6 +6,7 @@
 
 import { makeEvent } from '../../contracts/src/event';
 import type { Ledger } from '../../ledger/src/ledger';
+import { lineKeyAllocator } from '../../ledger/src/line-keys';
 import type { SyncOutbox } from '../../sync/src/outbox';
 import type { CarriedReceivingChecklist } from '../../facilities/src/food-safety';
 
@@ -160,17 +161,21 @@ export function commitReceipt(
     throw new EmptyReceiptError(input.id);
   }
 
+  // One movement per LINE (audit 27 Nov, item 7): two batches of one product each raise stock; the first keeps the key
+  // it always had, so a receipt re-committed after the upgrade posts nothing twice (`line-keys.ts`).
+  const lineKey = lineKeyAllocator();
   for (const line of input.lines) {
     // Fix batch 4b · D-029: a line that arrived wholly damaged raises no stock here (head office quarantines it).
     // Batch 18a · R4: nor does a line that failed the quality check (head office quarantines it too).
     const setAside = Math.max(0, line.damagedMinor ?? 0) + Math.max(0, line.qcFailedMinor ?? 0);
     if (Math.abs(line.quantityMinor) - setAside <= 0) continue;
+    const k = lineKey.next(line.productId);
     stockLedger.append(
       makeEvent({
-        id: `${input.id}:move:${line.productId}`,
+        id: `${input.id}:move:${k}`,
         type: 'InventoryMoved',
         occurredAt: input.receivedAt,
-        idempotencyKey: `grn-move:${input.id}:${line.productId}`,
+        idempotencyKey: `grn-move:${input.id}:${k}`,
         source: input.warehouseId,
         payload: {
           productId: line.productId,

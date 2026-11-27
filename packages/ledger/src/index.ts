@@ -3,3 +3,4 @@
 // idempotent. Grows one reviewed, tested unit at a time.
 
 export * from './ledger';
+export * from './line-keys';
