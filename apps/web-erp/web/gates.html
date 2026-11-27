@@ -52,6 +52,14 @@
       .qg01 h4 { margin: 0; font-size: 14px; }
       .qg01 p.tone-ok, .qg01 p.tone-error { margin: 0; border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; }
       .qg01 p.tone-ok { border-left-color: var(--ok); } .qg01 p.tone-error { border-left-color: var(--error); }
+      .qg11 { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+      .qg11 h4 { margin: 0; font-size: 14px; }
+      .qg11 p.tone-ok, .qg11 p.tone-error { margin: 0; border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; }
+      .qg11 p.tone-ok { border-left-color: var(--ok); } .qg11 p.tone-error { border-left-color: var(--error); }
+      ul.qg11-agents { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+      ul.qg11-agents > li { border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; overflow-wrap: anywhere; }
+      ul.qg11-agents > li[data-state="passed"] { border-left-color: var(--ok); }
+      ul.qg11-agents > li[data-state="not_complete"], ul.qg11-agents > li[data-state="unsafe"], ul.qg11-agents > li[data-state="failed"] { border-left-color: var(--error); }
       ul.qg10-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
       ul.qg10-notes > li { border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; }
       ul.qg10-notes > li.tone-ok { border-left-color: var(--ok); } ul.qg10-notes > li.tone-error { border-left-color: var(--error); }

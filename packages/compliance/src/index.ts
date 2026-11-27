@@ -19,3 +19,5 @@ export * from './gate-readings';
 export * from './branch-protection';
 // W7 · QG-01: the requirement-records reading (the CI guardrail's own check; not known holds the gate, never GO).
 export * from './requirement-records';
+// QG-11 (OB-935, owner decided A): GO refused while any assistant lacks a complete, passing evaluation against a live model.
+export * from './ai-evaluations-gate';
