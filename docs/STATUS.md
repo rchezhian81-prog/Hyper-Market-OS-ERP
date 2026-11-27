@@ -59,6 +59,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner decision needed:** none.
 - **Not done:** the limits live in each head-office process's memory (as before); a cloud with several head-office copies would need the shared store (Redis) the technology baseline names — not needed for one shop's head office.
 
+## Audit 27 Nov — item 5: the limiters forget idle callers and are capped; a flood never wipes a lockout (OB-917 · D-134)
+- **Was it real?** Yes, at e8cbd0db. `TokenBucketRateLimiter` kept a bucket for every key it ever saw and `BackoffAuthThrottle` an entry for every key that ever failed, for the life of the process — a slow memory leak a flood of addresses (or, since item 1, forged names) can speed up. **Proved first:** `tests/unit/audit27-limiters-forget-idle-callers-and-are-capped.test.ts` — 4 of 7 failed before (10 000 addresses held 10 000 buckets; 10 001 throttle entries; scratchpad `audit27/item5-before.txt`), all pass after (`audit27/item5-after.txt`).
+- **Done (branch `claude/audit-05-evict-idle-limiters`):**
+  - **A bucket that has refilled to full is forgotten** (it says nothing a fresh one would not). **A sign-in entry whose lock has run out and that has not failed for a day is forgotten** (its count starts from zero, as after a good sign-in).
+  - **Each holds at most 100 000 keys.** Past that, full / idle entries go first, then the least recently used. For the sign-in throttle, an **active lockout is never removed before its time**: ten thousand forged names cannot push a locked guesser out, and its doubling count survives (tested). If every entry is locked, the cap gives way rather than a lock.
+  - The tidying walks from the oldest entry and stops at the first it must keep, so it never pauses the server. The same classes guard the customer app's sign-in codes, which get the same protection.
+- **Decided under OB-801 (evening list):** OB-917 (the 100 000 cap, forget after a day, what goes first). Reversible: two defaults in `services/kernel/src/rate-limit.ts`.
+- **Owner, in the store:** nothing to do.
+- **Owner decision needed:** none.
+- **Not done:** nothing for this item.
+
 ## D-129 — the till's cash movements and close wait at most 5 seconds (22 Nov 2026) · D-130 closed too
 - **Why:** P-08 "no silent failure". The float, cash loan, pickup, safe drop and the shift close still asked the store computer with no time limit (up to 4 times). A slow store computer left the cashier waiting with nothing on the screen. They were left out of OB-908 because their words "the cash is NOT recorded yet" would be untrue after a time-out — the store computer may have recorded it. **Proved first:** a store computer that takes the call and never answers made the till hang (unit test: 8 s time-out on all five calls; browser test: no message in 15 s on the float and the close).
 - **Done (branch `claude/d129-cash-timeout`, pushed; no pull request yet):**

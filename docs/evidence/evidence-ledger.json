@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2571,
+  "testFiles": 2572,
   "sessions": {
     "total": 0,
     "pass": 0,
