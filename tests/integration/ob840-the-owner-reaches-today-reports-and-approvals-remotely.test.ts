@@ -149,6 +149,18 @@ async function signIn(url: string, userId: string): Promise<string | undefined> 
 
 const errorOf = async (r: Response): Promise<{ code: string; whatHappened: string; wasItSaved: string; nextSafeAction: string }> => ((await r.json()) as { error: { code: string; whatHappened: string; wasItSaved: string; nextSafeAction: string } }).error;
 const remoteLog = async (dir: string): Promise<Record<string, unknown>[]> => (await readLog(join(dir, REMOTE_ACCESS_LOG))).flatMap((r) => (r.ok ? [JSON.parse(r.record) as Record<string, unknown>] : []));
+/**
+ * The door writes its line when the reply has FINISHED going out (screen-server `res.on('finish')`), so the caller can hold
+ * the answer a moment before the line is on disk. Read until `done` holds (at most 5 s) — never a fixed sleep, never a skip.
+ */
+const remoteLogWhen = async (dir: string, done: (log: Record<string, unknown>[]) => boolean): Promise<Record<string, unknown>[]> => {
+  const until = Date.now() + 5000;
+  for (;;) {
+    const log = await remoteLog(dir);
+    if (done(log) || Date.now() > until) return log;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+};
 
 describe('OB-840: the remote door refuses everything it should, in plain words', () => {
   it('no token, another key, another issuer, expired, no one-time code, another shop — refused before anything is reached', async () => {
@@ -183,7 +195,7 @@ describe('OB-840: the remote door refuses everything it should, in plain words',
     expect(html).toContain('Was anything saved?');
     expect(html).toContain('lang="ta"');
     // Each refusal is on the door's own log, with no token in it.
-    const log = await remoteLog(b.dir);
+    const log = await remoteLogWhen(b.dir, (l) => l.filter((e) => e['channel'] === 'remote' && typeof e['refusedBecause'] === 'string').length >= cases.length);
     expect(log.filter((e) => e['channel'] === 'remote' && typeof e['refusedBecause'] === 'string').length).toBeGreaterThanOrEqual(cases.length);
     expect(JSON.stringify(log)).not.toMatch(/eyJ/);
   });
@@ -279,7 +291,8 @@ describe('OB-840: the owner sees Today, the reports and his approvals, and appro
     expect((asSeen.body as { mine: Record<string, unknown>[] }).mine).toContainEqual(expect.objectContaining({ requestId: req!.requestId, decidedBy: 'u-owner', decidedVia: 'remote' }));
 
     // The door's own log: who, what, the answer — channel "remote". No token.
-    const log = await remoteLog(b.dir);
+    const decidePath = `/v1/approvals/requests/${encodeURIComponent(req!.requestId)}/decide`;
+    const log = await remoteLogWhen(b.dir, (l) => l.some((e) => e['method'] === 'POST' && e['path'] === decidePath));
     expect(log).toContainEqual(expect.objectContaining({ channel: 'remote', userId: 'u-owner', method: 'POST', path: `/v1/approvals/requests/${encodeURIComponent(req!.requestId)}/decide`, status: 201 }));
     expect(JSON.stringify(log)).not.toMatch(/eyJ/);
   });
