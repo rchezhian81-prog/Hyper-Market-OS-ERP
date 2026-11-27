@@ -53,6 +53,7 @@
 // refund is durable on the disk before the lane calls it done, then queued for the cloud (M13-FR-01).
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { readableAddress, UNREADABLE_ADDRESS } from './request-address';
 import type { LaneSyncStatus } from './sync-status';
 import { returnIdOf, toCloudReturn } from './cloud-return';
 import { toCloudSale } from './cloud-sale';
@@ -92,6 +93,7 @@ import type { TaxInvoiceIdentity } from '../../../packages/receipt/src/tax-invoi
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
+
 
 /** The write routes this socket serves — a sale, and a refund. Both loopback-only, both POST. */
 const LANE_ROUTES = ['/lane/sales', '/lane/returns', '/lane/concession-tags'] as const;
@@ -861,7 +863,14 @@ export function startLaneServer(input: {
     laneMessage: `This lane could not save the ${noun}. Do not take payment or hand over ${noun === 'sale' ? 'the goods' : 'cash'} — use another lane and tell the manager.`,
   });
 
-  const server: Server = createServer((req, res) => {
+  const laneRequest = (req: IncomingMessage, res: ServerResponse): void => {
+    // Audit 27 Nov 2026 item 4: an address that cannot be read (a request line such as `GET //`) is answered 400 in words,
+    // before anything else looks at it.
+    if (!readableAddress(req.url)) {
+      req.resume();
+      send(res, 400, { error: UNREADABLE_ADDRESS, reason: UNREADABLE_ADDRESS });
+      return;
+    }
     // The path only — the lookup route carries a `?receipt=` query the write routes never do.
     const pathname = ((): string => {
       try { return new URL(req.url ?? '', 'http://lane').pathname; } catch { return req.url ?? ''; }
@@ -2245,6 +2254,16 @@ export function startLaneServer(input: {
         }
       })();
     });
+  };
+  // Audit 27 Nov 2026 item 4: nothing one request does may end the store computer's process (the till sells through it).
+  // A throw that escapes the handling above is answered 500 in words and said on stderr (P-08), never left to crash it.
+  const server: Server = createServer((req, res) => {
+    try { laneRequest(req, res); } catch (e) {
+      process.stderr.write(`lane request ${req.method ?? '?'} could not be answered: ${e instanceof Error ? e.message : String(e)}\n`);
+      req.resume();
+      if (res.headersSent) { res.destroy(); return; }
+      send(res, 500, { error: 'This request could not be answered because of a problem on this store computer. Try again, and tell the manager if it keeps happening.' });
+    }
   });
 
   return new Promise((resolve) => {

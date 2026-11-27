@@ -295,7 +295,12 @@ export function createDemoLoginHandler(deps: DemoLoginDeps): (req: LoginRequest)
     ({ status: 303, headers: { location: to, 'cache-control': 'no-store', ...(cookie === undefined ? {} : { 'set-cookie': cookie }) }, body: '' });
 
   return (req) => {
-    const url = new URL(req.url, 'https://demo.invalid');
+    // Audit 27 Nov 2026 item 4: an address that cannot be read (a request line such as `GET //`) is the caller's mistake —
+    // 400 in words, never the 500 the socket gives for a real failure.
+    let url: URL;
+    try { url = new URL(req.url, 'https://demo.invalid'); } catch {
+      return { status: 400, headers: { ...SECURITY_HEADERS, 'content-type': 'text/plain; charset=utf-8' }, body: 'The address in this request could not be read. Nothing was changed.' };
+    }
     const path = url.pathname;
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
 
